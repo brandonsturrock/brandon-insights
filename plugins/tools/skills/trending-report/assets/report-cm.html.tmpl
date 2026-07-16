@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{REPORT_TITLE}}</title>
+<!--
+  CONTRACT for scripts/build-report.mjs (owned by another workstream).
+  This file is the 4-PAGE "Current Month" report layout (Traffic / Core Web Vitals / Top Pages / Errors).
+  Its sibling report-trending.html.tmpl is the 3-page "Trending" layout — pick ONE per render, they are
+  two separate template files (not one file with a REPORT_TYPE switch).
+
+  PLACEHOLDERS (plain string replace, each appears exactly once):
+    {{REPORT_TITLE}}         - <title> text, e.g. "acme-shop — March 2026 Review"
+    {{FRONTEND_NAME}}         - shown top-right of every page header
+    {{ENVIRONMENT_NAME}}      - shown under frontend name; pass "" to omit (CSS :empty hides it)
+    {{DATE_RANGE_LABEL}}      - shown top-center (replaces "TRENDING" with the month name) and header, e.g. "March 2026"
+    {{GENERATED_AT}}          - footer-adjacent timestamp string
+    {{FINDINGS_TRAFFIC_HTML}} - pre-rendered HTML (glue script markdown -> HTML) for "## Traffic" notes. "" hides panel.
+    {{FINDINGS_CWV_HTML}}     - same, for "## Core Web Vitals" notes.
+    {{FINDINGS_PAGES_HTML}}   - same, for "## Pages" (Top Pages) notes.
+    {{FINDINGS_ERRORS_HTML}}  - same, for "## Error" notes.
+    {{DATA_JSON}}             - single JS object literal (valid JSON), assigned to `const DATA = {{DATA_JSON}};`
+                                below. Schema (all required unless noted; use [] / null for "no data"):
+
+    DATA = {
+      kpis: [ { label, value, change, color, lowerIsBetter }, ... ],   // same shape as trending template
+
+      cmDailyDevice: {                              // stacked bar chart, page 1
+        labels: ["1", "2", ... "31"],                // day-of-month labels
+        desktop: [120, 130, ...], mobile: [80, 95, ...],
+      },
+      deviceCompareRows: [                           // table, page 1 (one row per device type)
+        { deviceType: "Desktop", sessions: 40200, pageLoads: 38900, lcpP75: 2200, inpP75: 180, clsP75: 0.04 },
+        { deviceType: "Mobile",  sessions: 31000, pageLoads: 29800, lcpP75: 3100, inpP75: 260, clsP75: 0.09 },
+      ],
+
+      cmCwvTier: {                                    // horizontal 100%-stacked bar, page 2 (units: % 0-100)
+        lcp: { good: 72, ni: 18, poor: 10 },
+        inp: { good: 81, ni: 12, poor: 7 },
+        cls: { good: 90, ni: 7,  poor: 3 },
+      },
+      cmCwvDistribution: {                             // 3 small histograms, 11 buckets each, page 2
+        lcp: { buckets: ["0-1s","1-2s",...,"10s+"], counts: [.. 11 numbers ..], p75: 2200 },
+        inp: { buckets: [...11 labels...],           counts: [...11...],        p75: 180 },
+        cls: { buckets: ["0-0.1",...,"1.0+"],        counts: [...11...],        p75: 0.04 },
+      },                                                // p75 is shown as a text label (see note below), not a
+                                                         // rendered vertical ref-line, to avoid the annotation plugin
+      cmDailyCwv: {                                     // 3 line charts (device-split + threshold lines), page 2
+        labels: ["1", "2", ... "31"],
+        lcp: { desktop: [...], mobile: [...] },
+        inp: { desktop: [...], mobile: [...] },
+        cls: { desktop: [...], mobile: [...] },
+      },
+
+      topPagesRows: [                                  // table, page 3 (PagePerfRow shape, top 10 by visits)
+        { name: "/checkout", count: 9200, lcp: 2100, inp: 150, cls: 0.03, exceptions: 4, requestErrors: 2 },
+      ],
+
+      cmErrorRates: {                                   // 2 line charts (percent), page 4
+        labels: ["1", "2", ... "31"],
+        jsErrorRate: [0.4, 0.6, ...], reqErrorRate: [1.1, 0.9, ...],
+      },
+      cmErrorCounts: {                                   // stacked bar chart, page 4
+        labels: ["1", "2", ... "31"],
+        byType: { "JS Error": [3,5,...], "Timeout": [1,0,...] },   // any number of series, keyed by error type
+      },
+      topExceptionRows: [                                // table, page 4 (top 5 rendered)
+        { count: 120, type: "TypeError", message: "Cannot read properties of undefined", source: "app.bundle.js" },
+      ],
+      topRequestErrorRows: [                             // table, page 4 (top 5 rendered)
+        { count: 80, method: "GET", status: 500, host: "api.acme.com", path: "/v1/cart" },
+      ],
+    }
+
+  The template's own <script> block builds every Chart.js chart, the KPI row, and every table from DATA
+  on DOMContentLoaded. Markdown -> HTML conversion for findings is the glue script's job.
+-->
+<script src="chart.umd.min.js"></script>
+<style>
+  /* DT Flow, Dynatrace's brand font, served from Dynatrace's own public CDN
+     (same URL @dynatrace/strato-components' AppRoot.css loads it from) —
+     requires network access at render time; falls back to system fonts if unreachable. */
+  @font-face { font-family: DynatraceFlow; font-weight: 400; font-display: swap; src: url(https://dt-cdn.net/fonts/DTFlow-Regular-v1.2.1.woff2) format('woff2'); }
+  @font-face { font-family: DynatraceFlow; font-weight: 500; font-display: swap; src: url(https://dt-cdn.net/fonts/DTFlow-Medium-v1.2.1.woff2) format('woff2'); }
+  @font-face { font-family: DynatraceFlow; font-weight: 600; font-display: swap; src: url(https://dt-cdn.net/fonts/DTFlow-Semibold-v1.2.1.woff2) format('woff2'); }
+  @font-face { font-family: DynatraceFlow; font-weight: 700; font-display: swap; src: url(https://dt-cdn.net/fonts/DTFlow-Heavy-v1.2.1.woff2) format('woff2'); }
+  @page { size: A4 landscape; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; background: #0f1117; color: #eee;
+    font-family: DynatraceFlow, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+
+  .page {
+    width: 297mm; height: 210mm;
+    padding: 10mm 12mm;
+    background: #0f1117;
+    color: #eee;
+    display: flex;
+    flex-direction: column;
+    page-break-after: always;
+    position: relative;
+    overflow: hidden;
+  }
+  .page:last-child { page-break-after: auto; }
+
+  .page::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background-image: radial-gradient(circle, rgba(20,150,255,0.05) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+
+  .hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6mm; position: relative; }
+  .hdr-left { display: flex; align-items: center; gap: 10px; }
+  .hdr-left .brand { font-size: 11px; font-weight: 700; letter-spacing: 0.18em; color: #666e8c; text-transform: uppercase; }
+  .hdr-center { position: absolute; left: 50%; transform: translateX(-50%); text-align: center; }
+  .hdr-center .kind { font-size: 18px; font-weight: 700; letter-spacing: 0.24em; color: #fff; text-transform: uppercase; }
+  .hdr-center .section { font-size: 11px; font-weight: 500; color: #b1b2d2; letter-spacing: 0.14em; text-transform: uppercase; margin-top: 3px; }
+  .hdr-right { text-align: right; }
+  .hdr-right .name { font-size: 16px; font-weight: 700; color: #f4f6fb; }
+  .hdr-right .env { font-size: 11px; color: #1496ff; margin-top: 2px; }
+  .hdr-right .env:empty { display: none; }
+  .hdr-right .range { font-size: 11px; color: #b1b2d2; margin-top: 2px; }
+
+  .accent-line { height: 2px; border-radius: 1px; margin-bottom: 6mm; background: linear-gradient(90deg, #1496ff 0%, rgba(20,150,255,0.35) 45%, rgba(20,150,255,0) 100%); }
+
+  .content { flex: 1; display: flex; flex-direction: column; gap: 4mm; min-height: 0; }
+  .row { display: flex; gap: 12px; min-height: 0; }
+
+  .kpi-row { display: flex; gap: 12px; flex: 0 0 auto; }
+  .kpi-tile {
+    flex: 1; background: #1c1e2e; border: 1px solid rgba(20,150,255,0.16);
+    border-radius: 10px; padding: 14px 16px 12px; border-top: 3px solid var(--kpi-color, #1496ff);
+  }
+  .kpi-label { font-size: 11px; font-weight: 700; color: #b1b2d2; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
+  .kpi-value { font-size: 32px; font-weight: 700; color: #f4f6fb; line-height: 1; letter-spacing: -0.01em; }
+  .kpi-change { font-size: 12px; font-weight: 600; margin-top: 8px; }
+  .kpi-change.up { color: #2ECC85; }
+  .kpi-change.down { color: #E8345A; }
+  .kpi-change.neutral { color: #b1b2d2; }
+
+  .chart-card {
+    background: #1c1e2e; border: 1px solid rgba(20,150,255,0.16); border-radius: 10px;
+    padding: 12px 14px 10px; position: relative; display: flex; flex-direction: column; min-height: 0;
+  }
+  .chart-card::before {
+    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 10px 10px 0 0;
+    background: linear-gradient(90deg, rgba(20,150,255,0.5) 0%, transparent 60%);
+  }
+  .chart-title { font-size: 11px; font-weight: 700; color: #f4f6fb; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.85; margin-bottom: 8px; flex: 0 0 auto; }
+  .chart-subtitle { font-size: 10px; color: #b1b2d2; margin-bottom: 6px; flex: 0 0 auto; }
+  .chart-row { display: flex; gap: 12px; flex: 1; min-height: 0; }
+  .chart-body { position: relative; flex: 1; min-height: 0; min-width: 0; }
+  .chart-body canvas { width: 100% !important; height: 100% !important; }
+
+  .findings {
+    flex: 0 0 auto; background: #1c1e2e; border: 1px solid rgba(20,150,255,0.16); border-radius: 10px;
+    padding: 10px 16px 12px; position: relative; overflow: hidden;
+  }
+  .findings::before {
+    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 10px 10px 0 0;
+    background: linear-gradient(90deg, rgba(20,150,255,0.5) 0%, transparent 60%);
+  }
+  .findings .findings-label { font-size: 11px; font-weight: 700; color: #b1b2d2; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px; }
+  .findings-body { font-size: 12px; line-height: 1.55; color: #e8edf5; }
+  .findings-body h2 { font-size: 12px; margin: 0 0 4px; color: #1496ff; text-transform: uppercase; letter-spacing: 0.06em; }
+  .findings-body ul { margin: 0 0 4px; padding-left: 18px; }
+  .findings-body p { margin: 0 0 4px; }
+  .findings.is-empty { display: none; }
+
+  /* tables */
+  .dt-table-wrap { flex: 1; min-height: 0; overflow: hidden; }
+  table.dt-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  table.dt-table th {
+    text-align: left; font-size: 10px; font-weight: 700; color: #b1b2d2; text-transform: uppercase;
+    letter-spacing: 0.05em; padding: 5px 8px; border-bottom: 1px solid rgba(255,255,255,0.14);
+  }
+  table.dt-table td { padding: 5px 8px; color: #e8edf5; border-bottom: 1px solid rgba(255,255,255,0.05); }
+  table.dt-table tbody tr:nth-child(even) { background: rgba(255,255,255,0.025); }
+  table.dt-table td.num, table.dt-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* CWV stoplight (horizontal 100%-stacked bar per metric) */
+  .stoplight-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .stoplight-label { width: 34px; font-size: 11px; font-weight: 700; color: #b1b2d2; flex: 0 0 auto; }
+  .stoplight-bar { flex: 1; height: 20px; border-radius: 4px; overflow: hidden; display: flex; }
+  .stoplight-seg { display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: rgba(0,0,0,0.75); }
+  .stoplight-seg.poor { color: #fff; }
+  .stoplight-legend { display: flex; gap: 14px; justify-content: center; margin-top: 4px; }
+  .stoplight-legend span { font-size: 10px; color: #b1b2d2; }
+  .stoplight-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; }
+
+  .ftr { display: flex; align-items: center; justify-content: space-between; margin-top: 4mm; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.07); flex: 0 0 auto; }
+  .ftr span { font-size: 9px; color: #666e8c; letter-spacing: 0.05em; }
+  .ftr .brand-name { color: #1496ff; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<!-- ── Page 1: Traffic ───────────────────────────────────────────────── -->
+<section class="page" data-page="1">
+  <header class="hdr">
+    <div class="hdr-left"><span class="brand">Dynatrace · Business Insights</span></div>
+    <div class="hdr-center"><div class="kind">{{DATE_RANGE_LABEL}}</div><div class="section">Traffic</div></div>
+    <div class="hdr-right">
+      <div class="name">{{FRONTEND_NAME}}</div>
+      <div class="env">{{ENVIRONMENT_NAME}}</div>
+      <div class="range">{{DATE_RANGE_LABEL}}</div>
+    </div>
+  </header>
+  <div class="accent-line"></div>
+  <div class="content">
+    <div class="kpi-row" id="kpi-row"></div>
+    <div class="chart-card" style="flex: 0 0 45mm;">
+      <div class="chart-title">Daily Sessions by Device</div>
+      <div class="chart-body"><canvas id="chart-cmDailyDevice"></canvas></div>
+    </div>
+    <div class="chart-card" style="flex: 1;">
+      <div class="chart-title">Mobile vs Desktop</div>
+      <div class="dt-table-wrap"><table class="dt-table" id="table-deviceCompare"></table></div>
+    </div>
+    <div class="findings" id="findings-traffic">
+      <div class="findings-label">Analysis</div>
+      <div class="findings-body">{{FINDINGS_TRAFFIC_HTML}}</div>
+    </div>
+  </div>
+  <footer class="ftr">
+    <span>CONFIDENTIAL · FOR CUSTOMER USE ONLY</span>
+    <span>Page 1 of 4 · Powered by <span class="brand-name">Dynatrace</span> · {{GENERATED_AT}}</span>
+  </footer>
+</section>
+
+<!-- ── Page 2: Core Web Vitals ──────────────────────────────────────── -->
+<section class="page" data-page="2">
+  <header class="hdr">
+    <div class="hdr-left"><span class="brand">Dynatrace · Business Insights</span></div>
+    <div class="hdr-center"><div class="kind">{{DATE_RANGE_LABEL}}</div><div class="section">Core Web Vitals</div></div>
+    <div class="hdr-right">
+      <div class="name">{{FRONTEND_NAME}}</div>
+      <div class="env">{{ENVIRONMENT_NAME}}</div>
+      <div class="range">{{DATE_RANGE_LABEL}}</div>
+    </div>
+  </header>
+  <div class="accent-line"></div>
+  <div class="content">
+    <div class="row" style="flex: 0 0 40mm;">
+      <div class="chart-card" style="flex: 0 0 55mm;">
+        <div class="chart-title">Experience Distribution</div>
+        <div id="stoplight"></div>
+      </div>
+      <div class="chart-card" style="flex: 1;">
+        <div class="chart-title">Load Time Distribution</div>
+        <div class="chart-row">
+          <div class="chart-body"><canvas id="chart-dist-lcp"></canvas></div>
+          <div class="chart-body"><canvas id="chart-dist-inp"></canvas></div>
+          <div class="chart-body"><canvas id="chart-dist-cls"></canvas></div>
+        </div>
+      </div>
+    </div>
+    <div class="row" style="flex: 0 0 45mm;">
+      <div class="chart-card" style="flex: 1;"><div class="chart-title">LCP — Daily Trend</div><div class="chart-body"><canvas id="chart-daily-lcp"></canvas></div></div>
+      <div class="chart-card" style="flex: 1;"><div class="chart-title">INP — Daily Trend</div><div class="chart-body"><canvas id="chart-daily-inp"></canvas></div></div>
+      <div class="chart-card" style="flex: 1;"><div class="chart-title">CLS — Daily Trend</div><div class="chart-body"><canvas id="chart-daily-cls"></canvas></div></div>
+    </div>
+    <div class="findings" id="findings-cwv" style="flex: 1;">
+      <div class="findings-label">Analysis</div>
+      <div class="findings-body">{{FINDINGS_CWV_HTML}}</div>
+    </div>
+  </div>
+  <footer class="ftr">
+    <span>CONFIDENTIAL · FOR CUSTOMER USE ONLY</span>
+    <span>Page 2 of 4 · Powered by <span class="brand-name">Dynatrace</span> · {{GENERATED_AT}}</span>
+  </footer>
+</section>
+
+<!-- ── Page 3: Top Pages ────────────────────────────────────────────── -->
+<section class="page" data-page="3">
+  <header class="hdr">
+    <div class="hdr-left"><span class="brand">Dynatrace · Business Insights</span></div>
+    <div class="hdr-center"><div class="kind">{{DATE_RANGE_LABEL}}</div><div class="section">Top Pages</div></div>
+    <div class="hdr-right">
+      <div class="name">{{FRONTEND_NAME}}</div>
+      <div class="env">{{ENVIRONMENT_NAME}}</div>
+      <div class="range">{{DATE_RANGE_LABEL}}</div>
+    </div>
+  </header>
+  <div class="accent-line"></div>
+  <div class="content">
+    <div class="chart-card" style="flex: 1;">
+      <div class="chart-title">Page Performance Scorecard</div>
+      <div class="chart-subtitle">Top 10 pages by visit volume — LCP, INP, CLS, and error counts (p75)</div>
+      <div class="dt-table-wrap"><table class="dt-table" id="table-topPages"></table></div>
+    </div>
+    <div class="findings" id="findings-pages">
+      <div class="findings-label">Analysis</div>
+      <div class="findings-body">{{FINDINGS_PAGES_HTML}}</div>
+    </div>
+  </div>
+  <footer class="ftr">
+    <span>CONFIDENTIAL · FOR CUSTOMER USE ONLY</span>
+    <span>Page 3 of 4 · Powered by <span class="brand-name">Dynatrace</span> · {{GENERATED_AT}}</span>
+  </footer>
+</section>
+
+<!-- ── Page 4: Errors ───────────────────────────────────────────────── -->
+<section class="page" data-page="4">
+  <header class="hdr">
+    <div class="hdr-left"><span class="brand">Dynatrace · Business Insights</span></div>
+    <div class="hdr-center"><div class="kind">{{DATE_RANGE_LABEL}}</div><div class="section">Errors</div></div>
+    <div class="hdr-right">
+      <div class="name">{{FRONTEND_NAME}}</div>
+      <div class="env">{{ENVIRONMENT_NAME}}</div>
+      <div class="range">{{DATE_RANGE_LABEL}}</div>
+    </div>
+  </header>
+  <div class="accent-line"></div>
+  <div class="content">
+    <div class="row" style="flex: 0 0 38mm;">
+      <div class="chart-card" style="flex: 1;"><div class="chart-title">JS Error Rate</div><div class="chart-body"><canvas id="chart-jsErrorRate"></canvas></div></div>
+      <div class="chart-card" style="flex: 1;"><div class="chart-title">Request Error Rate</div><div class="chart-body"><canvas id="chart-reqErrorRate"></canvas></div></div>
+    </div>
+    <div class="chart-card" style="flex: 0 0 42mm;">
+      <div class="chart-title">Error Count (Daily)</div>
+      <div class="chart-body"><canvas id="chart-errorCounts"></canvas></div>
+    </div>
+    <div class="row" style="flex: 0 0 40mm;">
+      <div class="chart-card" style="flex: 1;">
+        <div class="chart-title">Top Exceptions</div>
+        <div class="dt-table-wrap"><table class="dt-table" id="table-topExceptions"></table></div>
+      </div>
+      <div class="chart-card" style="flex: 1;">
+        <div class="chart-title">Top Request Errors</div>
+        <div class="dt-table-wrap"><table class="dt-table" id="table-topRequestErrors"></table></div>
+      </div>
+    </div>
+    <div class="findings" id="findings-errors" style="flex: 1;">
+      <div class="findings-label">Analysis</div>
+      <div class="findings-body">{{FINDINGS_ERRORS_HTML}}</div>
+    </div>
+  </div>
+  <footer class="ftr">
+    <span>CONFIDENTIAL · FOR CUSTOMER USE ONLY</span>
+    <span>Page 4 of 4 · Powered by <span class="brand-name">Dynatrace</span> · {{GENERATED_AT}}</span>
+  </footer>
+</section>
+
+<script>
+const DATA = {{DATA_JSON}};
+
+// ── shared palette / helpers ──────────────────────────────────────────────
+const DEVICE_COLOR = { desktop: "#7B61FF", mobile: "#00A98F" };
+const STATUS_COLOR = { good: "#2ECC85", warn: "#F5A623", poor: "#E8345A" };
+const SERIES_COLOR = { lcp: "#F5A623", inp: "#1496ff", cls: "#73be28" };
+const THRESHOLDS = { lcp: { good: 2500, poor: 4000 }, inp: { good: 200, poor: 500 }, cls: { good: 0.1, poor: 0.25 } };
+const ERROR_SERIES_FALLBACK = ["#7B61FF", "#2ECC85", "#00A98F", "#F5A623", "#E8345A"];
+
+function fmtMs(ms) { return ms == null ? "—" : ms >= 1000 ? (ms / 1000).toFixed(1) + "s" : Math.round(ms) + "ms"; }
+function esc(s) { return s == null ? "" : String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+
+Chart.defaults.color = "#b1b2d2";
+Chart.defaults.borderColor = "rgba(255,255,255,0.08)";
+Chart.defaults.font.family = "DynatraceFlow, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif";
+Chart.defaults.animation = false;
+Chart.defaults.plugins.legend.labels.boxWidth = 10;
+Chart.defaults.plugins.legend.labels.font = { size: 10 };
+
+document.querySelectorAll(".findings-body").forEach(el => {
+  if (!el.textContent.trim()) el.closest(".findings").classList.add("is-empty");
+});
+
+function renderKpis(kpis) {
+  const row = document.getElementById("kpi-row");
+  if (!row || !kpis) return;
+  row.innerHTML = kpis.map(k => {
+    const positive = k.change != null && (k.lowerIsBetter ? k.change < 0 : k.change > 0);
+    const neutral = k.change == null || k.change === 0;
+    const cls = neutral ? "neutral" : positive ? "up" : "down";
+    const arrow = k.change == null ? "" : (k.change >= 0 ? "▲" : "▼");
+    const changeHtml = k.change == null ? "" :
+      `<div class="kpi-change ${cls}">${arrow} ${Math.abs(k.change).toFixed(1)}% vs prior month</div>`;
+    return `<div class="kpi-tile" style="--kpi-color:${k.color}">
+      <div class="kpi-label">${k.label}</div>
+      <div class="kpi-value">${k.value}</div>
+      ${changeHtml}
+    </div>`;
+  }).join("");
+}
+
+function renderTable(elId, columns, rows) {
+  const el = document.getElementById(elId);
+  if (!el || !rows) return;
+  const thead = "<thead><tr>" + columns.map(c => `<th class="${c.num ? "num" : ""}">${c.label}</th>`).join("") + "</tr></thead>";
+  const tbody = "<tbody>" + rows.map(r => "<tr>" + columns.map(c => {
+    const raw = r[c.key];
+    const val = c.render ? c.render(raw, r) : esc(raw ?? "—");
+    return `<td class="${c.num ? "num" : ""}">${val}</td>`;
+  }).join("") + "</tr>").join("") + "</tbody>";
+  el.innerHTML = thead + tbody;
+}
+
+function renderCmDailyDevice() {
+  const d = DATA.cmDailyDevice;
+  const el = document.getElementById("chart-cmDailyDevice");
+  if (!d || !el) return;
+  new Chart(el, {
+    type: "bar",
+    data: {
+      labels: d.labels,
+      datasets: [
+        { label: "Desktop", data: d.desktop, backgroundColor: DEVICE_COLOR.desktop, stack: "s" },
+        { label: "Mobile", data: d.mobile, backgroundColor: DEVICE_COLOR.mobile, stack: "s" },
+      ],
+    },
+    options: { responsive: true, maintainAspectRatio: false, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } } },
+  });
+}
+
+function renderDeviceCompareTable() {
+  renderTable("table-deviceCompare", [
+    { key: "deviceType", label: "Device" },
+    { key: "sessions", label: "Sessions", num: true, render: v => v.toLocaleString() },
+    { key: "pageLoads", label: "Page Loads", num: true, render: v => v.toLocaleString() },
+    { key: "lcpP75", label: "LCP p75", num: true, render: fmtMs },
+    { key: "inpP75", label: "INP p75", num: true, render: fmtMs },
+    { key: "clsP75", label: "CLS p75", num: true, render: v => v.toFixed(3) },
+  ], DATA.deviceCompareRows);
+}
+
+function renderStoplight() {
+  const d = DATA.cmCwvTier;
+  const el = document.getElementById("stoplight");
+  if (!d || !el) return;
+  const metrics = [["LCP", d.lcp], ["INP", d.inp], ["CLS", d.cls]];
+  el.innerHTML = metrics.map(([label, m]) => {
+    const seg = (pct, color, cls) => pct > 0 ? `<div class="stoplight-seg ${cls}" style="flex:${pct};background:${color}">${pct}%</div>` : "";
+    return `<div class="stoplight-row">
+      <div class="stoplight-label">${label}</div>
+      <div class="stoplight-bar">${seg(m.poor, STATUS_COLOR.poor, "poor")}${seg(m.ni, STATUS_COLOR.warn, "ni")}${seg(m.good, STATUS_COLOR.good, "good")}</div>
+    </div>`;
+  }).join("") + `<div class="stoplight-legend">
+    <span><i style="background:${STATUS_COLOR.good}"></i>Good</span>
+    <span><i style="background:${STATUS_COLOR.warn}"></i>Needs Improvement</span>
+    <span><i style="background:${STATUS_COLOR.poor}"></i>Poor</span>
+  </div>`;
+}
+
+// p75 is shown as a subtitle rather than a rendered vertical reference line —
+// ponytail: a real vertical marker needs the Chart.js annotation plugin (extra
+// vendor dependency); a text label gives the reader the same number for free.
+function renderDistribution() {
+  const d = DATA.cmCwvDistribution;
+  if (!d) return;
+  ["lcp", "inp", "cls"].forEach(metric => {
+    const m = d[metric];
+    const el = document.getElementById("chart-dist-" + metric);
+    if (!m || !el) return;
+    const card = el.closest(".chart-card") || el.closest(".chart-body").parentElement;
+    new Chart(el, {
+      type: "bar",
+      data: { labels: m.buckets, datasets: [{ label: metric.toUpperCase(), data: m.counts, backgroundColor: SERIES_COLOR[metric], borderRadius: 2 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, title: { display: true, text: `${metric.toUpperCase()} · p75 ${metric === "cls" ? m.p75.toFixed(3) : fmtMs(m.p75)}`, color: "#e8edf5", font: { size: 10, weight: 700 } } },
+        scales: { x: { ticks: { font: { size: 8 } } }, y: { beginAtZero: true } },
+      },
+    });
+  });
+}
+
+function renderDailyCwv() {
+  const d = DATA.cmDailyCwv;
+  if (!d) return;
+  ["lcp", "inp", "cls"].forEach(metric => {
+    const m = d[metric];
+    const el = document.getElementById("chart-daily-" + metric);
+    if (!m || !el) return;
+    const t = THRESHOLDS[metric];
+    const flat = v => d.labels.map(() => v);
+    new Chart(el, {
+      type: "line",
+      data: {
+        labels: d.labels,
+        datasets: [
+          { label: "Desktop", data: m.desktop, borderColor: DEVICE_COLOR.desktop, backgroundColor: DEVICE_COLOR.desktop, tension: 0.25, pointRadius: 1.5 },
+          { label: "Mobile", data: m.mobile, borderColor: DEVICE_COLOR.mobile, backgroundColor: DEVICE_COLOR.mobile, tension: 0.25, pointRadius: 1.5 },
+          { label: "Good", data: flat(t.good), borderColor: "rgba(46,204,133,0.5)", borderDash: [4, 4], borderWidth: 1, pointRadius: 0 },
+          { label: "Poor", data: flat(t.poor), borderColor: "rgba(232,52,90,0.5)", borderDash: [4, 4], borderWidth: 1, pointRadius: 0 },
+        ],
+      },
+      options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } },
+    });
+  });
+}
+
+function renderTopPagesTable() {
+  renderTable("table-topPages", [
+    { key: "name", label: "Page" },
+    { key: "count", label: "Visits", num: true, render: v => v.toLocaleString() },
+    { key: "lcp", label: "LCP", num: true, render: fmtMs },
+    { key: "inp", label: "INP", num: true, render: fmtMs },
+    { key: "cls", label: "CLS", num: true, render: v => v == null ? "—" : v.toFixed(3) },
+    { key: "exceptions", label: "Exceptions", num: true, render: v => (v ?? 0).toLocaleString() },
+    { key: "requestErrors", label: "Req. Errors", num: true, render: v => (v ?? 0).toLocaleString() },
+  ], DATA.topPagesRows);
+}
+
+function renderErrorRates() {
+  const d = DATA.cmErrorRates;
+  if (!d) return;
+  [["jsErrorRate", "chart-jsErrorRate", "#E8345A"], ["reqErrorRate", "chart-reqErrorRate", "#F5A623"]].forEach(([key, id, color]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    new Chart(el, {
+      type: "line",
+      data: { labels: d.labels, datasets: [{ label: key, data: d[key], borderColor: color, backgroundColor: color, tension: 0.25, pointRadius: 1.5 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { callback: v => v + "%" } } } },
+    });
+  });
+}
+
+function renderErrorCounts() {
+  const d = DATA.cmErrorCounts;
+  const el = document.getElementById("chart-errorCounts");
+  if (!d || !el) return;
+  const keys = Object.keys(d.byType);
+  new Chart(el, {
+    type: "bar",
+    data: {
+      labels: d.labels,
+      datasets: keys.map((k, i) => ({ label: k, data: d.byType[k], backgroundColor: ERROR_SERIES_FALLBACK[i % ERROR_SERIES_FALLBACK.length], stack: "s" })),
+    },
+    options: { responsive: true, maintainAspectRatio: false, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } } },
+  });
+}
+
+function renderTopExceptionsTable() {
+  renderTable("table-topExceptions", [
+    { key: "count", label: "#", num: true, render: v => v.toLocaleString() },
+    { key: "type", label: "Type" },
+    { key: "message", label: "Message" },
+    { key: "source", label: "Source" },
+  ], (DATA.topExceptionRows || []).slice(0, 5));
+}
+
+function renderTopRequestErrorsTable() {
+  const statusColor = code => code == null ? "#b1b2d2" : code >= 500 ? "#E8345A" : code >= 400 ? "#F5A623" : "#2ECC85";
+  renderTable("table-topRequestErrors", [
+    { key: "count", label: "#", num: true, render: v => v.toLocaleString() },
+    { key: "method", label: "Method" },
+    { key: "status", label: "Status", render: v => `<span style="color:${statusColor(v)};font-weight:700">${v ?? "—"}</span>` },
+    { key: "host", label: "Host" },
+    { key: "path", label: "Path" },
+  ], (DATA.topRequestErrorRows || []).slice(0, 5));
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  renderKpis(DATA.kpis);
+  renderCmDailyDevice();
+  renderDeviceCompareTable();
+  renderStoplight();
+  renderDistribution();
+  renderDailyCwv();
+  renderTopPagesTable();
+  renderErrorRates();
+  renderErrorCounts();
+  renderTopExceptionsTable();
+  renderTopRequestErrorsTable();
+});
+</script>
+</body>
+</html>

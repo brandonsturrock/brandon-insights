@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{REPORT_TITLE}}</title>
+<!--
+  CONTRACT for scripts/build-report.mjs (owned by another workstream).
+  This file is the 3-PAGE "Trending" report layout (Traffic / Core Web Vitals / Browser Performance).
+  Its sibling report-cm.html.tmpl is the 4-page "Current Month" layout — pick ONE per render,
+  they are two separate template files (not one file with a REPORT_TYPE switch).
+
+  PLACEHOLDERS (plain string replace, each appears exactly once):
+    {{REPORT_TITLE}}        - <title> text, e.g. "acme-shop — Trending Report"
+    {{FRONTEND_NAME}}        - shown top-right of every page header
+    {{ENVIRONMENT_NAME}}     - shown under frontend name; pass "" to omit (CSS :empty hides it)
+    {{DATE_RANGE_LABEL}}     - shown top-center under "TRENDING" and under frontend name, e.g. "Jan – Jun 2026"
+    {{GENERATED_AT}}         - footer-adjacent timestamp string, e.g. "Generated 2026-07-14 10:32 UTC"
+    {{FINDINGS_TRAFFIC_HTML}}  - pre-rendered HTML (glue script runs markdown -> HTML, e.g. via `marked`)
+                                 for the "## Traffic" section of the analyst notes. "" hides the panel.
+    {{FINDINGS_CWV_HTML}}      - same, for the "## Core Web Vitals" section.
+    {{FINDINGS_BROWSER_HTML}}  - same, for the "## Browser" (Browser & Device) section.
+    {{DATA_JSON}}            - a single JS object literal (valid JSON), assigned to `const DATA = {{DATA_JSON}};`
+                               in the <script> block below. Contains ALL chart + KPI + table data, keyed
+                               by chart id. Schema (all fields required unless noted; use [] / null for "no data"):
+
+    DATA = {
+      kpis: [                                   // rendered as the KPI tile row by this template's own JS
+        { label: "Sessions", value: "1.2M", change: 4.3, color: "#7B61FF", lowerIsBetter: false },
+        ...                                      // color = left accent bar; change is a percent, can be null;
+      ],                                         // lowerIsBetter=true means a NEGATIVE change is the good/green case
+                                                  // (use true for LCP/INP/CLS/error-rate style KPIs, false for
+                                                  // traffic/session-count style KPIs)
+
+      trafficMonthly: {                          // bar-in-cell table, page 1 (matches the live app's User Traffic panel)
+        labels: ["Jan 2026", "Feb 2026", ...],    // one row per month
+        sessions: [12000, 13500, ...],            // each column's bar width is relative to that column's own max
+        userActions: [34000, 36000, ...],
+        pageLoads: [15000, 15800, ...],
+        pctDesktop: [62, 61, ...],                 // optional: renders a "Device Split" bar column (% desktop, filled bar)
+      },
+
+      cwvMonthly: {                               // bar-in-cell table, page 2 (LCP/INP/CLS columns, one row per month)
+        labels: ["Jan 2026", "Feb 2026", ...],     // bars are colored per-point by good/warn/poor threshold
+        lcp: [2200, 2600, ...],                    // ms
+        inp: [180, 210, ...],                      // ms
+        cls: [0.05, 0.09, ...],                     // unitless
+      },
+
+      cwvWeekly: {                                // line chart w/ dashed good/poor threshold lines, page 2
+        labels: ["W1", "W2", ...],
+        lcp: [2200, ...], inp: [180, ...], cls: [0.05, ...],
+      },
+
+      browserPerf: {                              // page 3: grid of bar-in-cell tables, one panel per browser×device.
+        panels: [                                  // Selection policy (real apps can report 10+ browsers — showing
+          {                                        // all of them doesn't fit the page and buries the ones that carry
+            label: "Chrome · Desktop",             // real traffic): keep only the top N browser×device combos by
+            months: [                              // total visits over the period. N defaults to 6, overridable via
+              { label: "Jan 2026", visits: 12000, lcp: 2200, inp: 180, cls: 0.05 },
+              ...                                   // one entry per month, same months/order as trafficMonthly.labels
+            ],
+          },
+          ...                                       // build-report.mjs's `--max-browsers <N>` flag.
+        ],
+      },
+    }
+
+  The template's own <script> block (bottom of file) reads DATA on DOMContentLoaded and builds every
+  Chart.js chart + the KPI tile row. Tables are not used on this layout. Markdown->HTML conversion for
+  findings is the glue script's job (this template never runs a markdown parser) — vendor `marked` or
+  equivalent there, since bundling it here would just duplicate the "no CDN at render time" goal Chart.js
+  already solves.
+-->
+<script src="chart.umd.min.js"></script>
+<style>
+  /* DT Flow, Dynatrace's brand font, served from Dynatrace's own public CDN
+     (same URL @dynatrace/strato-components' AppRoot.css loads it from) —
+     requires network access at render time; falls back to system fonts if unreachable. */
+  @font-face { font-family: DynatraceFlow; font-weight: 400; font-display: swap; src: url(https://dt-cdn.net/fonts/DTFlow-Regular-v1.2.1.woff2) format('woff2'); }
+  @font-face { font-family: DynatraceFlow; font-weight: 500; font-display: swap; src: url(https://dt-cdn.net/fonts/DTFlow-Medium-v1.2.1.woff2) format('woff2'); }
+  @font-face { font-family: DynatraceFlow; font-weight: 600; font-display: swap; src: url(https://dt-cdn.net/fonts/DTFlow-Semibold-v1.2.1.woff2) format('woff2'); }
+  @font-face { font-family: DynatraceFlow; font-weight: 700; font-display: swap; src: url(https://dt-cdn.net/fonts/DTFlow-Heavy-v1.2.1.woff2) format('woff2'); }
+  @page { size: A4 landscape; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; background: #0f1117; color: #eee;
+    font-family: DynatraceFlow, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+
+  .page {
+    width: 297mm; height: 210mm;
+    padding: 10mm 12mm;
+    background: #0f1117;
+    color: #eee;
+    display: flex;
+    flex-direction: column;
+    page-break-after: always;
+    position: relative;
+    overflow: hidden;
+  }
+  .page:last-child { page-break-after: auto; }
+
+  /* texture / glow, purely decorative, matches the live app's PDF background */
+  .page::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background-image: radial-gradient(circle, rgba(20,150,255,0.05) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+
+  .hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6mm; position: relative; }
+  .hdr-left { display: flex; align-items: center; gap: 10px; }
+  .hdr-left .brand { font-size: 11px; font-weight: 700; letter-spacing: 0.18em; color: #666e8c; text-transform: uppercase; }
+  .hdr-left .divider { width: 1px; height: 22px; background: rgba(255,255,255,0.15); }
+  .hdr-center { position: absolute; left: 50%; transform: translateX(-50%); text-align: center; }
+  .hdr-center .kind { font-size: 18px; font-weight: 700; letter-spacing: 0.24em; color: #fff; text-transform: uppercase; }
+  .hdr-center .section { font-size: 11px; font-weight: 500; color: #b1b2d2; letter-spacing: 0.14em; text-transform: uppercase; margin-top: 3px; }
+  .hdr-right { text-align: right; }
+  .hdr-right .name { font-size: 16px; font-weight: 700; color: #f4f6fb; }
+  .hdr-right .env { font-size: 11px; color: #1496ff; margin-top: 2px; }
+  .hdr-right .env:empty { display: none; }
+  .hdr-right .range { font-size: 11px; color: #b1b2d2; margin-top: 2px; }
+
+  .accent-line { height: 2px; border-radius: 1px; margin-bottom: 6mm; background: linear-gradient(90deg, #1496ff 0%, rgba(20,150,255,0.35) 45%, rgba(20,150,255,0) 100%); }
+
+  .content { flex: 1; display: flex; flex-direction: column; gap: 4mm; min-height: 0; }
+
+  .kpi-row { display: flex; gap: 12px; flex: 0 0 auto; }
+  .kpi-tile {
+    flex: 1; background: #1c1e2e; border: 1px solid rgba(20,150,255,0.16);
+    border-radius: 10px; padding: 14px 16px 12px; border-top: 3px solid var(--kpi-color, #1496ff);
+  }
+  .kpi-label { font-size: 11px; font-weight: 700; color: #b1b2d2; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
+  .kpi-value { font-size: 32px; font-weight: 700; color: #f4f6fb; line-height: 1; letter-spacing: -0.01em; }
+  .kpi-change { font-size: 12px; font-weight: 600; margin-top: 8px; }
+  .kpi-change.up { color: #2ECC85; }
+  .kpi-change.down { color: #E8345A; }
+  .kpi-change.neutral { color: #b1b2d2; }
+
+  .chart-card {
+    background: #1c1e2e; border: 1px solid rgba(20,150,255,0.16); border-radius: 10px;
+    padding: 12px 14px 10px; position: relative; display: flex; flex-direction: column; min-height: 0;
+  }
+  .chart-card::before {
+    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 10px 10px 0 0;
+    background: linear-gradient(90deg, rgba(20,150,255,0.5) 0%, transparent 60%);
+  }
+  .chart-title { font-size: 11px; font-weight: 700; color: #f4f6fb; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.85; margin-bottom: 8px; flex: 0 0 auto; }
+  .chart-row { display: flex; gap: 12px; flex: 1; min-height: 0; }
+  .chart-body { position: relative; flex: 1; min-height: 0; min-width: 0; }
+  .chart-body canvas { width: 100% !important; height: 100% !important; }
+
+  /* Bar-in-cell table (matches the live app's User Traffic / Core Web Vitals
+     panels: one row per month, a horizontal bar sized relative to the column's
+     max value, value label after the bar). */
+  .bar-table-wrap { flex: 1; min-height: 0; overflow: auto; }
+  .bar-table { width: 100%; height: 100%; border-collapse: collapse; font-size: 12px; }
+  .bar-table th { text-align: left; font-size: 10px; font-weight: 700; color: #b1b2d2; text-transform: uppercase; letter-spacing: 0.06em; padding: 4px 10px 8px; }
+  .bar-table td { padding: 5px 10px; vertical-align: middle; white-space: nowrap; }
+  .bar-table .row-label { color: #b1b2d2; font-size: 12px; width: 1%; }
+  .bar-cell { display: flex; align-items: center; gap: 8px; }
+  .bar-track { flex: 1; min-width: 60px; }
+  .bar-fill { height: 20px; border-radius: 3px; min-width: 2px; }
+  /* Page 2's CWV table has less vertical budget than page 1's traffic table
+     (its card shares height with the weekly trend chart below it) — measured
+     20px bars overflowing by 14px there, so it gets a slightly shorter bar. */
+  #table-cwvMonthly .bar-fill { height: 16px; }
+  .bar-value { color: #e8edf5; font-size: 11px; min-width: 42px; }
+  .device-track { flex: 1; min-width: 100px; background: rgba(255,255,255,0.05); border-radius: 2px; }
+  .device-fill {
+    height: 16px; border-radius: 2px; background: #7B61FF;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 11px; font-weight: 700; min-width: 24px;
+  }
+
+  /* Browser Performance: grid of small bar-tables, one per browser×device
+     (capped upstream by build-report.mjs — see its --max-browsers). Column
+     headers are abbreviated (LCP/INP/CLS, not full metric names) and bar
+     tracks are narrower than the page-2 CWV table's — two panels side by
+     side at full metric-name width overflow the printed page width. */
+  /* 2 columns, matching the live app's layout — 3 columns fit more panels but
+     read as cramped small multiples. MAX_BROWSERS defaults to 4 (2×2) so each
+     panel gets real room instead of overflowing the page (see build-report.mjs). */
+  /* 2 columns × 3 rows for 6 panels (matches the live app's layout). 3 rows
+     means less height per panel than a 2×2 grid, so sizing is tighter here
+     than it would be for 4 panels — measured to confirm it still fits
+     without clipping (see the render notes in build-report.mjs). */
+  .browser-perf-grid { flex: 1; min-height: 0; overflow: hidden; display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px 14px; }
+  .browser-panel { border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 3px 8px; min-width: 0; display: flex; flex-direction: column; }
+  .browser-panel .browser-panel-title { font-size: 10px; font-weight: 700; color: #f4f6fb; margin-bottom: 1px; flex: 0 0 auto; }
+  .browser-panel .bar-table { table-layout: fixed; width: 100%; flex: 1; }
+  .browser-panel .bar-table th { font-size: 9px; }
+  .browser-panel .bar-table td, .browser-panel .bar-table th { padding: 1px 6px; }
+  .browser-panel .bar-table .row-label { width: 50px; font-size: 9.5px; }
+  .browser-panel .bar-value { font-size: 9.5px; min-width: 30px; }
+  .browser-panel .bar-track { min-width: 46px; }
+  .browser-panel .bar-fill { height: 9px; }
+
+  .findings {
+    flex: 0 0 auto; background: #1c1e2e; border: 1px solid rgba(20,150,255,0.16); border-radius: 10px;
+    padding: 10px 16px 12px; position: relative; max-height: 34mm; overflow: hidden;
+  }
+  .findings::before {
+    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 10px 10px 0 0;
+    background: linear-gradient(90deg, rgba(20,150,255,0.5) 0%, transparent 60%);
+  }
+  .findings .findings-label { font-size: 11px; font-weight: 700; color: #b1b2d2; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px; }
+  .findings-body { font-size: 12px; line-height: 1.55; color: #e8edf5; }
+  .findings-body h2 { font-size: 12px; margin: 0 0 4px; color: #1496ff; text-transform: uppercase; letter-spacing: 0.06em; }
+  .findings-body ul { margin: 0 0 4px; padding-left: 18px; }
+  .findings-body p { margin: 0 0 4px; }
+  .findings:empty, .findings.is-empty { display: none; }
+
+  .ftr { display: flex; align-items: center; justify-content: space-between; margin-top: 4mm; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.07); flex: 0 0 auto; }
+  .ftr span { font-size: 9px; color: #666e8c; letter-spacing: 0.05em; }
+  .ftr .brand-name { color: #1496ff; font-weight: 600; }
+</style>
+</head>
+<body>
+
+  <!-- ── Page 1: Traffic ─────────────────────────────────────────────── -->
+  <section class="page" data-page="1">
+    <header class="hdr">
+      <div class="hdr-left">
+        <span class="brand">Dynatrace · Business Insights</span>
+      </div>
+      <div class="hdr-center">
+        <div class="kind">Trending</div>
+        <div class="section">Traffic</div>
+      </div>
+      <div class="hdr-right">
+        <div class="name">{{FRONTEND_NAME}}</div>
+        <div class="env">{{ENVIRONMENT_NAME}}</div>
+        <div class="range">{{DATE_RANGE_LABEL}}</div>
+      </div>
+    </header>
+    <div class="accent-line"></div>
+    <div class="content">
+      <div class="kpi-row" id="kpi-row"></div>
+      <div class="chart-card" style="flex: 1;">
+        <div class="chart-title">User Traffic</div>
+        <div class="bar-table-wrap" id="table-trafficMonthly"></div>
+      </div>
+      <div class="findings" id="findings-traffic">
+        <div class="findings-label">Analysis</div>
+        <div class="findings-body">{{FINDINGS_TRAFFIC_HTML}}</div>
+      </div>
+    </div>
+    <footer class="ftr">
+      <span>CONFIDENTIAL · FOR CUSTOMER USE ONLY</span>
+      <span>Page 1 of 3 · Powered by <span class="brand-name">Dynatrace</span> · {{GENERATED_AT}}</span>
+    </footer>
+  </section>
+
+  <!-- ── Page 2: Core Web Vitals ─────────────────────────────────────── -->
+  <section class="page" data-page="2">
+    <header class="hdr">
+      <div class="hdr-left"><span class="brand">Dynatrace · Business Insights</span></div>
+      <div class="hdr-center">
+        <div class="kind">Trending</div>
+        <div class="section">Core Web Vitals</div>
+      </div>
+      <div class="hdr-right">
+        <div class="name">{{FRONTEND_NAME}}</div>
+        <div class="env">{{ENVIRONMENT_NAME}}</div>
+        <div class="range">{{DATE_RANGE_LABEL}}</div>
+      </div>
+    </header>
+    <div class="accent-line"></div>
+    <div class="content">
+      <div class="chart-card" style="flex: 1;">
+        <div class="chart-title">Core Web Vitals</div>
+        <div class="bar-table-wrap" id="table-cwvMonthly"></div>
+      </div>
+      <div class="chart-card" style="flex: 1;">
+        <div class="chart-title">Core Web Vitals Trend (Weekly)</div>
+        <div class="chart-body"><canvas id="chart-cwvWeekly"></canvas></div>
+      </div>
+      <div class="findings" id="findings-cwv">
+        <div class="findings-label">Analysis</div>
+        <div class="findings-body">{{FINDINGS_CWV_HTML}}</div>
+      </div>
+    </div>
+    <footer class="ftr">
+      <span>CONFIDENTIAL · FOR CUSTOMER USE ONLY</span>
+      <span>Page 2 of 3 · Powered by <span class="brand-name">Dynatrace</span> · {{GENERATED_AT}}</span>
+    </footer>
+  </section>
+
+  <!-- ── Page 3: Browser Performance ─────────────────────────────────── -->
+  <section class="page" data-page="3">
+    <header class="hdr">
+      <div class="hdr-left"><span class="brand">Dynatrace · Business Insights</span></div>
+      <div class="hdr-center">
+        <div class="kind">Trending</div>
+        <div class="section">Browser Performance</div>
+      </div>
+      <div class="hdr-right">
+        <div class="name">{{FRONTEND_NAME}}</div>
+        <div class="env">{{ENVIRONMENT_NAME}}</div>
+        <div class="range">{{DATE_RANGE_LABEL}}</div>
+      </div>
+    </header>
+    <div class="accent-line"></div>
+    <div class="content">
+      <div class="chart-card" style="flex: 1; min-height: 0;">
+        <div class="chart-title">Browser Performance</div>
+        <div class="browser-perf-grid" id="browser-perf-grid"></div>
+      </div>
+      <div class="findings" id="findings-browser">
+        <div class="findings-label">Analysis</div>
+        <div class="findings-body">{{FINDINGS_BROWSER_HTML}}</div>
+      </div>
+    </div>
+    <footer class="ftr">
+      <span>CONFIDENTIAL · FOR CUSTOMER USE ONLY</span>
+      <span>Page 3 of 3 · Powered by <span class="brand-name">Dynatrace</span> · {{GENERATED_AT}}</span>
+    </footer>
+  </section>
+
+<script>
+const DATA = {{DATA_JSON}};
+
+// ── shared palette / helpers ──────────────────────────────────────────────
+const SERIES_COLOR = { sessions: "#7B61FF", userActions: "#00A98F", pageLoads: "#1D8AB7", lcp: "#F5A623", inp: "#1496ff", cls: "#73be28" };
+const STATUS_COLOR = { good: "#2ECC85", warn: "#F5A623", poor: "#E8345A" };
+const THRESHOLDS = { lcp: { good: 2500, poor: 4000 }, inp: { good: 200, poor: 500 }, cls: { good: 0.1, poor: 0.25 } };
+function statusColor(metric, value) {
+  const t = THRESHOLDS[metric];
+  if (value == null) return "#4a5568";
+  if (value <= t.good) return STATUS_COLOR.good;
+  if (value <= t.poor) return STATUS_COLOR.warn;
+  return STATUS_COLOR.poor;
+}
+Chart.defaults.color = "#b1b2d2";
+Chart.defaults.borderColor = "rgba(255,255,255,0.08)";
+Chart.defaults.font.family = "DynatraceFlow, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif";
+Chart.defaults.animation = false;
+Chart.defaults.plugins.legend.labels.boxWidth = 10;
+Chart.defaults.plugins.legend.labels.font = { size: 10 };
+
+// hides empty findings panels so they don't leave a blank card
+document.querySelectorAll(".findings-body").forEach(el => {
+  if (!el.textContent.trim()) el.closest(".findings").classList.add("is-empty");
+});
+
+function renderKpis(kpis) {
+  const row = document.getElementById("kpi-row");
+  if (!row || !kpis) return;
+  row.innerHTML = kpis.map(k => {
+    const positive = k.change != null && (k.lowerIsBetter ? k.change < 0 : k.change > 0);
+    const neutral = k.change == null || k.change === 0;
+    const cls = neutral ? "neutral" : positive ? "up" : "down";
+    const arrow = k.change == null ? "" : (k.change >= 0 ? "▲" : "▼");
+    const changeHtml = k.change == null ? "" :
+      `<div class="kpi-change ${cls}">${arrow} ${Math.abs(k.change).toFixed(1)}% vs prior month</div>`;
+    return `<div class="kpi-tile" style="--kpi-color:${k.color}">
+      <div class="kpi-label">${k.label}</div>
+      <div class="kpi-value">${k.value}</div>
+      ${changeHtml}
+    </div>`;
+  }).join("");
+}
+
+// One flat bar/line chart per (metric) colored per-point by good/warn/poor threshold.
+// ── bar-in-cell table renderer (User Traffic / Core Web Vitals / Browser Performance) ──
+function compactFmt(n) {
+  if (n == null || Number.isNaN(n)) return "—";
+  if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(1) + "M";
+  if (Math.abs(n) >= 1e3) return (n / 1e3).toFixed(1) + "k";
+  return n.toFixed(1);
+}
+function fmtMsClient(ms) {
+  if (ms == null || Number.isNaN(ms)) return "—";
+  return ms >= 1000 ? (ms / 1000).toFixed(1) + "s" : Math.round(ms) + "ms";
+}
+function barTableHtml(rows, columns) {
+  const maxByCol = {};
+  columns.forEach((c) => {
+    maxByCol[c.key] = Math.max(0, ...rows.map((r) => (typeof r.values[c.key] === "number" ? r.values[c.key] : 0)));
+  });
+  const head = `<tr><th></th>${columns.map((c) => `<th>${c.label}</th>`).join("")}</tr>`;
+  const body = rows
+    .map((r) => {
+      const cells = columns
+        .map((c) => {
+          const v = r.values[c.key];
+          if (v == null) return `<td>—</td>`;
+          const max = maxByCol[c.key];
+          const pct = max > 0 ? Math.max(2, (v / max) * 100) : 0;
+          const color = c.metric ? statusColor(c.metric, v) : c.color;
+          const text = c.format ? c.format(v) : v;
+          return `<td><div class="bar-cell"><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div><span class="bar-value">${text}</span></div></td>`;
+        })
+        .join("");
+      return `<tr><td class="row-label">${r.label}</td>${cells}</tr>`;
+    })
+    .join("");
+  return `<table class="bar-table"><thead>${head}</thead><tbody>${body}</tbody></table>`;
+}
+
+function renderTrafficTable() {
+  const d = DATA.trafficMonthly;
+  const el = document.getElementById("table-trafficMonthly");
+  if (!d || !el) return;
+  const rows = d.labels.map((label, i) => ({
+    label,
+    values: { sessions: d.sessions[i], userActions: d.userActions[i], pageLoads: d.pageLoads[i] },
+  }));
+  const columns = [
+    { key: "sessions", label: "Sessions", color: SERIES_COLOR.sessions, format: compactFmt },
+    { key: "userActions", label: "User Actions", color: SERIES_COLOR.userActions, format: compactFmt },
+    { key: "pageLoads", label: "Page Loads", color: SERIES_COLOR.pageLoads, format: compactFmt },
+  ];
+  el.innerHTML = barTableHtml(rows, columns);
+  if (d.pctDesktop) {
+    const table = el.querySelector("table");
+    table.querySelector("thead tr").insertAdjacentHTML("beforeend", `<th>Device Split</th>`);
+    table.querySelectorAll("tbody tr").forEach((tr, i) => {
+      const pct = d.pctDesktop[i];
+      tr.insertAdjacentHTML(
+        "beforeend",
+        pct == null
+          ? "<td>—</td>"
+          : `<td><div class="device-track"><div class="device-fill" style="width:${Math.max(pct, 8)}%">${Math.round(pct)}%</div></div></td>`
+      );
+    });
+  }
+}
+
+function renderCwvTable() {
+  const d = DATA.cwvMonthly;
+  const el = document.getElementById("table-cwvMonthly");
+  if (!d || !el) return;
+  const rows = d.labels.map((label, i) => ({ label, values: { lcp: d.lcp[i], inp: d.inp[i], cls: d.cls[i] } }));
+  const columns = [
+    { key: "lcp", label: "Largest Contentful Paint", metric: "lcp", format: fmtMsClient },
+    { key: "inp", label: "Interaction to Next Paint", metric: "inp", format: fmtMsClient },
+    { key: "cls", label: "Cumulative Layout Shift", metric: "cls", format: (v) => v.toFixed(2) },
+  ];
+  el.innerHTML = barTableHtml(rows, columns);
+}
+
+// Line chart + flat dashed "reference line" datasets for the good/poor thresholds.
+// ponytail: no annotation plugin (extra vendor dep) — a constant-value line dataset
+// gives the same visual result for a fixed horizontal threshold.
+function refLineDataset(label, value, color) {
+  return { label, data: null, _flatValue: value, borderColor: color, borderDash: [4, 4], borderWidth: 1, pointRadius: 0, fill: false };
+}
+function renderCwvWeekly() {
+  const d = DATA.cwvWeekly;
+  const el = document.getElementById("chart-cwvWeekly");
+  if (!d || !el) return;
+  const flat = v => d.labels.map(() => v);
+  new Chart(el, {
+    type: "line",
+    data: {
+      labels: d.labels,
+      datasets: [
+        { label: "LCP (ms)", data: d.lcp, borderColor: SERIES_COLOR.lcp, backgroundColor: SERIES_COLOR.lcp, yAxisID: "ms", tension: 0.25, pointRadius: 2 },
+        { label: "INP (ms)", data: d.inp, borderColor: SERIES_COLOR.inp, backgroundColor: SERIES_COLOR.inp, yAxisID: "ms", tension: 0.25, pointRadius: 2 },
+        { label: "CLS", data: d.cls, borderColor: SERIES_COLOR.cls, backgroundColor: SERIES_COLOR.cls, yAxisID: "cls", tension: 0.25, pointRadius: 2 },
+        { label: "LCP good ≤2.5s", data: flat(THRESHOLDS.lcp.good), yAxisID: "ms", borderColor: "rgba(46,204,133,0.5)", borderDash: [4, 4], borderWidth: 1, pointRadius: 0 },
+        { label: "LCP poor >4s", data: flat(THRESHOLDS.lcp.poor), yAxisID: "ms", borderColor: "rgba(232,52,90,0.5)", borderDash: [4, 4], borderWidth: 1, pointRadius: 0 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: {
+        ms: { type: "linear", position: "left", title: { display: true, text: "ms" } },
+        cls: { type: "linear", position: "right", grid: { drawOnChartArea: false }, title: { display: true, text: "CLS" } },
+      },
+    },
+  });
+}
+
+// One panel per browser×device (already capped to the most relevant N by
+// build-report.mjs's --max-browsers — see its selection policy), each a
+// bar-table across all months, matching the live app's grid layout.
+function renderBrowserPerfPanels() {
+  const d = DATA.browserPerf;
+  const el = document.getElementById("browser-perf-grid");
+  if (!d || !el || !d.panels) return;
+  const columns = [
+    { key: "visits", label: "Visits", color: SERIES_COLOR.sessions, format: compactFmt },
+    { key: "lcp", label: "LCP", metric: "lcp", format: fmtMsClient },
+    { key: "inp", label: "INP", metric: "inp", format: fmtMsClient },
+    { key: "cls", label: "CLS", metric: "cls", format: (v) => v.toFixed(2) },
+  ];
+  el.innerHTML = d.panels
+    .map((p) => {
+      const rows = p.months.map((m) => ({ label: m.label, values: { visits: m.visits, lcp: m.lcp, inp: m.inp, cls: m.cls } }));
+      return `<div class="browser-panel"><div class="browser-panel-title">${p.label}</div>${barTableHtml(rows, columns)}</div>`;
+    })
+    .join("");
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  renderKpis(DATA.kpis);
+  renderTrafficTable();
+  renderCwvTable();
+  renderCwvWeekly();
+  renderBrowserPerfPanels();
+});
+</script>
+</body>
+</html>
