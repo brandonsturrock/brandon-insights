@@ -60,8 +60,16 @@ This registers dtctl's built-in Claude skills. Run unconditionally on `--install
 
 ### 3. Add environment context
 
-Ask the user for:
-- A **context name** for this environment (e.g. `production`, `my-env`) — used to label the context in dtctl
+Check if any contexts already exist:
+
+```bash
+dtctl config get-contexts
+```
+
+If contexts exist, skip this step — setup is complete.
+
+If no contexts exist, ask the user for:
+- A **context name** for this environment (e.g. `production`, `my-env`)
 - Their **Dynatrace environment URL** (e.g. `https://abc12345.live.dynatrace.com`)
 
 Then run:
