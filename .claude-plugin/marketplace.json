@@ -8,7 +8,8 @@
       "name": "tools",
       "source": {
         "source" : "github",
-        "repo" : "https://github.com/brandonsturrock/brandon-insights"
+        "repo" : "brandonsturrock/brandon-insights",
+        "protocol": "https"
       },
       "description": "Workflows for Dynatrace Business Insights"
     }
