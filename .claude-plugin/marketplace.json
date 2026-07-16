@@ -7,8 +7,9 @@
     {
       "name": "tools",
       "source": {
-        "source" : "url",
-        "url" : "https://www.github.com/brandonsturrock/brandon-insights.git"
+        "source": "git-subdir",
+        "url": "https://github.com/brandonsturrock/brandon-insights.git",
+        "path": "plugins/tools"
       },
       "description": "Workflows for Dynatrace Business Insights"
     }
