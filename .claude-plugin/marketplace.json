@@ -6,7 +6,10 @@
   "plugins": [
     {
       "name": "tools",
-      "source": "./plugins/full-page-analysis",
+      "source": {
+        "source" : "github",
+        "repo" : "brandonsturrock/brandon-insights"
+      },
       "description": "Workflows for Dynatrace Business Insights"
     }
   ]
