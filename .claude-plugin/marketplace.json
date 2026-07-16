@@ -5,9 +5,9 @@
   },
   "plugins": [
     {
-      "name": "full-page-analysis",
+      "name": "tools",
       "source": "./plugins/full-page-analysis",
-      "description": "A skill for waterfall analysis of a page"
+      "description": "Workflows for Dynatrace Business Insights"
     }
   ]
 }
