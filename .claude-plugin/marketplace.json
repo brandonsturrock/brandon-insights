@@ -1,0 +1,13 @@
+{
+  "name": "brandon-insights",
+  "owner": {
+    "name": "brandon.sturrock@dynatrace.com"
+  },
+  "plugins": [
+    {
+      "name": "full-page-analysis",
+      "source": "./plugins/full-page-analysis",
+      "description": "A skill for waterfall analysis of a page"
+    }
+  ]
+}

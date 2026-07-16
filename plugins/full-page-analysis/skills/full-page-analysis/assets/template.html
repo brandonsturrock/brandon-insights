@@ -1,0 +1,1359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Waterfall — __PAGE_TITLE__</title>
+<style>
+  :root {
+    --bg-page: #14161A;
+    --bg-surface: #1B1E24;
+    --bg-container: #20232A;
+    --bg-container-subdued: #1D2027;
+    --bg-container-emphasized: #262A32;
+    --bg-container-primary: #1E2A3D;
+    --border-default: #383C46;
+    --border-subdued: #2A2D35;
+    --text-default: #E5E7EB;
+    --text-subdued: #9BA1AC;
+    --text-disabled: #6B7280;
+    --good: #22C55E;
+    --warning: #F59E0B;
+    --critical: #EF4444;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg-page);
+    color: var(--text-default);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    padding: 24px;
+  }
+  .page-wrap { max-width: 1400px; margin: 0 auto; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .subtitle { color: var(--text-subdued); font-size: 12px; margin-bottom: 20px; }
+  .small { font-size: 11px; }
+  .subdued { color: var(--text-subdued); }
+
+  /* ── Metrics panel ─────────────────────────────────────────── */
+  .metrics-row { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .metric-tile {
+    background: var(--bg-container);
+    border: 1px solid var(--border-default);
+    border-radius: 6px;
+    padding: 12px 16px;
+    flex: 1;
+    min-width: 100px;
+  }
+  .metric-tile .label { color: var(--text-subdued); font-size: 11px; display: block; margin-bottom: 4px; }
+  .metric-tile .value { font-size: 20px; font-weight: 600; margin: 0; font-variant-numeric: tabular-nums; }
+  .metric-tile .sub { color: var(--text-subdued); font-size: 11px; display: block; margin-top: 2px; }
+
+  .ttfb-breakdown { margin-top: 8px; margin-bottom: 16px; }
+  .ttfb-bar { display: flex; height: 16px; border-radius: 3px; overflow: hidden; gap: 1px; }
+  .ttfb-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .ttfb-legend-item { display: flex; align-items: center; gap: 4px; }
+  .swatch { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+
+  .context-box {
+    margin-top: 16px;
+    margin-bottom: 20px;
+    padding: 10px 14px;
+    background: var(--bg-container);
+    border: 1px solid var(--border-default);
+    border-radius: 6px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 24px;
+  }
+  .context-item { display: flex; gap: 6px; }
+
+  .findings-title { color: var(--text-subdued); font-size: 11px; margin-bottom: 8px; display: block; }
+  .findings-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+  .finding-tile {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--bg-container);
+    border: 1px solid var(--border-default);
+    border-radius: 6px;
+    padding: 8px 12px;
+    flex: 1 1 180px;
+    min-width: 160px;
+  }
+  .finding-tile .fv { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .finding-tile .fv.warn { color: var(--warning); }
+
+  /* ── Controls ──────────────────────────────────────────────── */
+  .controls-row { display: flex; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; align-items: flex-start; }
+  .control-group { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .control-buttons { display: flex; gap: 6px; }
+  .control-sep { width: 1px; align-self: stretch; background: var(--border-default); }
+  .btn {
+    appearance: none;
+    background: var(--bg-container);
+    border: 1px solid var(--border-default);
+    color: var(--text-default);
+    border-radius: 4px;
+    padding: 5px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    line-height: 1.2;
+  }
+  .btn:hover:not(:disabled) { background: var(--bg-container-emphasized); }
+  .btn.active { background: #2563EB; border-color: #2563EB; color: white; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ── Waterfall ─────────────────────────────────────────────── */
+  .waterfall { position: relative; width: 100%; border: 1px solid var(--border-default); border-radius: 6px; overflow: hidden; }
+  .wf-header {
+    display: flex;
+    height: 64px;
+    border-bottom: 2px solid var(--border-default);
+    background: var(--bg-surface);
+    position: relative;
+  }
+  .col-label { width: 300px; flex-shrink: 0; box-sizing: border-box; display: flex; align-items: flex-end; padding-left: 8px; padding-bottom: 6px; }
+  .col-type  { width: 40px; flex-shrink: 0; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 6px; }
+  .col-dur   { width: 80px; flex-shrink: 0; box-sizing: border-box; text-align: right; padding-right: 16px; padding-bottom: 6px; align-self: flex-end; }
+  .col-timeline-hd { flex: 1; position: relative; align-self: stretch; z-index: 10; }
+
+  .pill {
+    position: absolute;
+    transform: translateX(-50%);
+    background: white;
+    border: 1px solid white;
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 10px;
+    letter-spacing: 0.07em;
+    white-space: nowrap;
+    line-height: 14px;
+    text-shadow: 0 0 6px rgba(0,0,0,0.25);
+    cursor: crosshair;
+    user-select: none;
+  }
+  .sticky-pills {
+    position: fixed;
+    top: 4px;
+    left: 0;
+    right: 0;
+    height: 0;
+    z-index: 100;
+    pointer-events: none;
+    display: none;
+  }
+  .sticky-pills .pill { pointer-events: auto; position: absolute; }
+
+  .tick-label { position: absolute; bottom: 6px; padding-left: 3px; font-size: 10px; color: var(--text-subdued); white-space: nowrap; }
+
+  .wf-body { position: static; }
+  .wf-overlay { position: absolute; top: 0; bottom: 0; right: 0; }
+  .origin-line, .tick-line { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--border-subdued); pointer-events: none; }
+  .phase-line-hit { position: absolute; top: 0; bottom: 0; width: 8px; cursor: crosshair; pointer-events: auto; }
+  .phase-line-hit .phase-line { position: absolute; left: 3px; top: 0; bottom: 0; width: 1px; background: rgba(255,255,255,0.6); pointer-events: none; }
+  .longtask-block { position: absolute; top: 0; bottom: 0; background: rgba(239,68,68,0.12); pointer-events: none; }
+  .ex-marker { position: absolute; top: 0; bottom: 0; cursor: crosshair; }
+  .ex-line { position: absolute; top: 0; bottom: 0; width: 1px; background: #991B1B; pointer-events: none; }
+
+  .wf-section-header {
+    display: flex; align-items: center; height: 26px;
+    background: var(--bg-container-emphasized);
+    border-top: 1px solid var(--border-default);
+    border-bottom: 1px solid var(--border-default);
+  }
+  .wf-section-header .lbl {
+    width: 420px; flex-shrink: 0; padding-left: 8px;
+    font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; font-size: 10px;
+  }
+  .wf-section-header .rule { flex: 1; height: 1px; background: var(--border-subdued); }
+
+  .wf-row { display: flex; align-items: center; height: 26px; border-bottom: 1px solid var(--border-subdued); }
+  .wf-row.even { background: var(--bg-surface); }
+  .wf-row.odd  { background: var(--bg-container-subdued); }
+  .wf-row.lcp  { box-shadow: inset 3px 0 0 var(--warning); }
+  .wf-row.pending { background-image: repeating-linear-gradient(45deg, rgba(249,168,212,0.25) 0px, rgba(249,168,212,0.25) 4px, transparent 4px, transparent 10px); }
+  .wf-row:hover { background: var(--bg-container-primary) !important; background-image: none !important; }
+
+  .cell-label {
+    width: 300px; flex-shrink: 0; box-sizing: border-box;
+    padding-left: 8px; padding-right: 4px; overflow: hidden;
+    line-height: 26px; display: flex; align-items: center; gap: 4px;
+    white-space: nowrap; text-overflow: ellipsis;
+  }
+  .cell-label .url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-subdued); }
+  .wf-row:hover .cell-label .url:not(.err) { color: var(--text-default); }
+  .cell-label .url.err { color: var(--critical) !important; }
+  .cell-type { width: 40px; flex-shrink: 0; text-align: center; font-size: 9px; text-transform: uppercase; line-height: 26px; }
+  .cell-dur  { width: 80px; flex-shrink: 0; box-sizing: border-box; text-align: right; padding-right: 16px; line-height: 26px; color: var(--text-subdued); overflow: hidden; white-space: nowrap; }
+  .cell-dur.err { color: var(--critical); }
+  .wf-row:hover .cell-dur:not(.err) { color: var(--text-default); }
+
+  .cell-timeline { flex: 1; position: relative; height: 100%; overflow: hidden; }
+  .wf-row:hover .cell-timeline { filter: brightness(1.35); }
+  .bar { position: absolute; top: 4px; bottom: 4px; min-width: 2px; cursor: crosshair; }
+  .stall-tick { position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: #8B96A5; pointer-events: none; }
+  .stall-dash { position: absolute; left: 2px; right: 0; top: 50%; height: 0; border-top: 1px solid #8B96A5; pointer-events: none; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; padding-top: 16px; align-items: center; }
+  .legend-item { display: flex; align-items: center; gap: 4px; }
+  .legend-swatch { width: 10px; height: 10px; border-radius: 2px; }
+  .legend-sep { width: 1px; height: 16px; background: var(--border-default); margin: 0 4px; }
+  .legend-line { width: 2px; height: 10px; }
+
+  .lcp-status { margin-top: 12px; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+  .lcp-url { font-family: monospace; word-break: break-all; color: var(--text-subdued); }
+
+  .warn-banner {
+    margin-bottom: 10px; padding: 7px 12px;
+    background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.5);
+    border-radius: 6px; text-align: center; color: var(--warning); font-weight: 700; font-size: 12px;
+  }
+
+  /* ── Tooltips ──────────────────────────────────────────────── */
+  .tooltip {
+    position: fixed;
+    left: -9999px;
+    top: -9999px;
+    z-index: 9999;
+    background: var(--bg-container);
+    border: 1px solid var(--border-default);
+    border-radius: 4px;
+    padding: 10px 12px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    pointer-events: none;
+    display: none;
+  }
+  #tooltip { min-width: 260px; max-width: 360px; }
+  #line-tooltip { min-width: 140px; }
+  #ex-tooltip { max-width: 360px; border-color: #7F1D1D; }
+  .tt-header { margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border-subdued); }
+  .tt-badge-row { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+  .tt-badge { font-size: 9px; font-weight: 700; border-radius: 2px; padding: 0 4px; line-height: 14px; flex-shrink: 0; }
+  .tt-title { font-size: 11px; font-weight: 600; color: var(--text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tt-meta-table { border-collapse: collapse; width: 100%; margin-top: 6px; }
+  .tt-meta-table td { font-size: 10px; padding-right: 8px; white-space: nowrap; }
+  .tt-meta-table td.v { color: var(--text-default); white-space: normal; word-break: break-all; }
+  .tt-meta-table td.k { color: var(--text-subdued); }
+  .tt-csp-badge { font-size: 9px; font-weight: 700; color: #F472B6; background: rgba(244,114,182,0.12); border: 1px solid rgba(244,114,182,0.4); border-radius: 2px; padding: 1px 5px; display: inline-block; margin-top: 4px; }
+  .tt-table { border-collapse: collapse; width: 100%; }
+  .tt-sec-hd td { padding-top: 6px; padding-bottom: 3px; font-size: 10px; font-weight: 700; color: var(--text-subdued); letter-spacing: 0.06em; text-transform: uppercase; border-bottom: 1px solid var(--border-subdued); }
+  .tt-row td { font-size: 11px; padding-bottom: 2px; }
+  .tt-row td.k { color: var(--text-subdued); padding-right: 8px; white-space: nowrap; }
+  .tt-row td.v { color: var(--text-default); text-align: right; }
+  .tt-swatch-cell { width: 10px; padding-right: 4px; vertical-align: middle; }
+  .tt-swatch { width: 8px; height: 8px; border-radius: 1px; }
+  .tt-marker-row { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+  .tt-marker-line { width: 3px; height: 14px; border-radius: 1px; flex-shrink: 0; }
+  .tt-marker-label { font-size: 11px; font-weight: 700; min-width: 36px; }
+  .tt-marker-value { font-size: 11px; color: var(--text-default); }
+</style>
+</head>
+<body>
+<div class="page-wrap">
+  <h1 id="page-title"></h1>
+  <div class="subtitle" id="page-subtitle"></div>
+
+  <div id="warn-banner-slot"></div>
+  <div id="metrics-slot"></div>
+  <div id="findings-slot"></div>
+  <div id="controls-slot"></div>
+  <div id="waterfall-slot"></div>
+  <div id="longtask-labels-slot"></div>
+  <div id="legend-slot"></div>
+  <div id="lcp-slot"></div>
+</div>
+
+<div id="tooltip" class="tooltip"></div>
+<div id="line-tooltip" class="tooltip"></div>
+<div id="ex-tooltip" class="tooltip"></div>
+
+<script id="wf-data" type="application/json">__DATA_JSON__</script>
+<script>
+"use strict";
+
+// Normalizes raw DQL records (when Python/Node wasn't available to pre-process).
+// Activated when the injected payload contains __raw: true.
+function normalizeRaw(raw) {
+  function parseIso(s) {
+    if (!s) return null;
+    try { return new Date(s.replace(/(\.\d{6})\d+/, '$1')).getTime(); } catch { return null; }
+  }
+  function nsToMs(v, status) {
+    if (!status || status === 'not_reported') return null;
+    const n = Number(v);
+    return (!isNaN(n) && n !== 0) ? n / 1e6 : null;
+  }
+  const s = raw.summary;
+  const timeOriginMs = parseIso(s['performance.time_origin']) || parseIso(s['client_start_time']);
+  const ltOccs = (s['long_task.all.slowest_occurrences'] || [])
+    .map(o => { const p = typeof o === 'string' ? JSON.parse(o) : o; return { startMs: p.start_time, durationMs: p.duration }; })
+    .sort((a, b) => a.startMs - b.startMs);
+  const summary = {
+    performanceTimeOriginMs: timeOriginMs,
+    clientStartTimeMs: parseIso(s['client_start_time']),
+    ttfbMs: s['ttfb.status'] !== 'not_reported' ? Number(s['ttfb.value']) : null,
+    fcpMs: nsToMs(s['web_vitals.first_contentful_paint'], s['fcp.status']),
+    lcpMs: nsToMs(s['web_vitals.largest_contentful_paint'], s['lcp.status']),
+    fpMs: nsToMs(s['web_vitals.first_paint'], s['fp.status']),
+    fcpStatus: s['fcp.status'], lcpStatus: s['lcp.status'], fpStatus: s['fp.status'], clsStatus: s['cls.status'],
+    clsScore: s['cls.status'] !== 'not_reported' ? s['web_vitals.cumulative_layout_shift'] : null,
+    inpMs: nsToMs(s['web_vitals.interaction_to_next_paint'], s['inp.status']),
+    ttfbDnsMs: Number(s['ttfb.dns_duration'] || 0),
+    ttfbConnectionMs: s['ttfb.connection_duration'], ttfbWaitingMs: s['ttfb.waiting_duration'],
+    ttfbRequestMs: s['ttfb.request_duration'], ttfbCacheMs: s['ttfb.cache_duration'],
+    pageUrl: s['page.url.full'], pageTitle: s['page.title'],
+    browserName: s['browser.name'], browserVersion: s['browser.version'],
+    deviceType: s['device.type'], osName: s['os.name'],
+    navigationType: s['navigation.type'], frontendName: s['frontend.name'],
+    longTaskCount: Number(s['long_task.all.count'] || 0),
+    longTaskAvgMs: s['long_task.all.avg_duration'],
+    longTaskOccurrences: ltOccs,
+    exceptionCount: Number(s['error.exception_count'] || 0),
+    http4xxCount: Number(s['error.http_4xx_count'] || 0),
+    http5xxCount: Number(s['error.http_5xx_count'] || 0),
+    lcpElementType: s['lcp.ui_element.tag_name'] || null,
+    lcpElementUrl: s['lcp.url'] || null,
+  };
+  const TIMING_KEYS = [
+    ['performance.worker_start','workerStartNs'],['performance.redirect_start','redirectStartNs'],
+    ['performance.redirect_end','redirectEndNs'],['performance.domain_lookup_start','domainLookupStartNs'],
+    ['performance.domain_lookup_end','domainLookupEndNs'],['performance.connect_start','connectStartNs'],
+    ['performance.connect_end','connectEndNs'],['performance.secure_connection_start','secureConnectionStartNs'],
+    ['performance.request_start','requestStartNs'],['performance.response_start','responseStartNs'],
+    ['performance.response_end','responseEndNs'],['performance.fetch_start','fetchStartNs'],
+    ['performance.start_time','startTimeNs'],
+  ];
+  const requests = raw.requests.map(r => {
+    const startMs = parseIso(r['start_time']), endMs = parseIso(r['end_time']);
+    const startNs = r['performance.start_time'] != null ? Number(r['performance.start_time']) : null;
+    const fetchRaw = r['performance.fetch_start'] != null ? Number(r['performance.fetch_start']) : null;
+    const isAbs = startNs != null && fetchRaw != null && fetchRaw > 0 && fetchRaw >= startNs - 1_000_000;
+    function norm(v) {
+      if (v == null) return null;
+      const n = Number(v); if (isNaN(n)) return null; if (n === 0) return 0;
+      if (isAbs) { const res = n - startNs; return res >= 0 ? res : null; }
+      return n;
+    }
+    const out = {
+      urlPath: r['url.path'], urlDomain: r['url.domain'], urlFull: r['url.full'],
+      urlProvider: r['url.provider'] || null, startAbsoluteMs: startMs, endAbsoluteMs: endMs,
+      durationMs: startMs && endMs ? endMs - startMs : null,
+      transferSize: r['performance.transfer_size'], encodedBodySize: r['performance.encoded_body_size'],
+      decodedBodySize: r['performance.decoded_body_size'],
+      performanceInitiatorType: r['performance.initiator_type'] || null,
+      httpStatusCode: r['http.response.status_code'], httpMethod: r['http.request.method'] || null,
+      hasW3cTimings: r['characteristics.has_w3c_resource_timings'] === true || r['characteristics.has_w3c_navigation_timings'] === true,
+      renderBlockingStatus: r['performance.render_blocking_status'] || null,
+      deliveryType: r['performance.delivery_type'] || null, protocol: r['performance.next_hop_protocol'] || null,
+      incompleteReason: r['performance.incomplete_reason'] || null,
+      hasFailed: r['characteristics.has_failed_request'] === true,
+      hasCspViolation: r['characteristics.has_csp_violation'] === true,
+      hasPending: r['characteristics.has_pending_request'] === true,
+    };
+    for (const [field, key] of TIMING_KEYS) out[key] = norm(r[field]);
+    return out;
+  });
+  const exceptions = (raw.exceptions || []).map(e => ({
+    startAbsoluteMs: parseIso(e['start_time']),
+    displayName: e['error.display_name'] || 'Exception',
+  }));
+  return { summary, requests, exceptions };
+}
+
+const _RAW = JSON.parse(document.getElementById("wf-data").textContent);
+const DATA = _RAW.__raw ? normalizeRaw(_RAW) : _RAW;
+const { summary, requests, exceptions } = DATA;
+
+// ─── Formatting helpers ──────────────────────────────────────────────
+const formatMs = (ms) => {
+  if (ms >= 1000) return (ms / 1000).toFixed(2) + " s";
+  if (ms < 1) return "< 1ms";
+  return parseFloat(ms.toFixed(1)) + " ms";
+};
+const formatBytes = (b) => {
+  if (b >= 1_000_000) return (b / 1_000_000).toFixed(2) + " MB";
+  if (b >= 1_000) return (b / 1_000).toFixed(1) + " KB";
+  return b + " B";
+};
+const escHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+// ─── Resource type / color resolution ────────────────────────────────
+const STALL_COLOR = "#8B96A5";
+const RESOURCE_COLORS = {
+  document:       { light: "#93C5FD", dark: "#1F6FD1" },
+  navigation:     { light: "#93C5FD", dark: "#1F6FD1" },
+  stylesheet:     { light: "#B07BFF", dark: "#7D4CC7" },
+  script:         { light: "#FFE15A", dark: "#C9A300" },
+  font:           { light: "#42D9E8", dark: "#1399A5" },
+  image:          { light: "#7BE06A", dark: "#43A83A" },
+  fetch:          { light: "#FFB15A", dark: "#D97800" },
+  xmlhttprequest: { light: "#FFB15A", dark: "#D97800" },
+  xhr:            { light: "#FFB15A", dark: "#D97800" },
+  beacon:         { light: "#FF75C8", dark: "#C44291" },
+  media:          { light: "#B8BDC6", dark: "#7A818C" },
+  other:          { light: "#B8BDC6", dark: "#7A818C" },
+};
+const EXT_TYPE_MAP = {
+  js: "script", mjs: "script", cjs: "script",
+  css: "stylesheet",
+  html: "document", htm: "document",
+  png: "image", jpg: "image", jpeg: "image", gif: "image",
+  webp: "image", avif: "image", svg: "image", ico: "image",
+  woff: "font", woff2: "font", ttf: "font", otf: "font",
+  mp4: "media", webm: "media", mp3: "media",
+  json: "fetch", xml: "fetch",
+};
+const typeFromExtension = (path) => {
+  if (!path) return null;
+  const clean = path.split("?")[0];
+  const segs = clean.split(".");
+  for (let i = segs.length - 1; i >= 1 && i >= segs.length - 3; i--) {
+    const mapped = EXT_TYPE_MAP[segs[i].toLowerCase()];
+    if (mapped) return mapped;
+  }
+  const tail = (clean.split("/").pop() || "").match(/([a-z0-9]+)$/i);
+  if (tail) return EXT_TYPE_MAP[tail[1].toLowerCase()] || null;
+  return null;
+};
+const resolveType = (req) => {
+  const fromExt = typeFromExtension(req.urlPath) || typeFromExtension(req.urlFull || "");
+  if (fromExt) return fromExt;
+  const raw = req.performanceInitiatorType;
+  return raw ? raw.toLowerCase() : "other";
+};
+const resourceColors = (req) => RESOURCE_COLORS[resolveType(req)] || RESOURCE_COLORS.other;
+const RESOURCE_LABELS = {
+  document: "Doc", navigation: "Nav", script: "JS", stylesheet: "CSS",
+  image: "Img", fetch: "XHR", xmlhttprequest: "XHR", xhr: "XHR",
+  font: "Font", media: "Media", beacon: "Beacon",
+};
+const resourceLabel = (req) => {
+  const t = resolveType(req);
+  return RESOURCE_LABELS[t] || (t.slice(0, 4) || "Other");
+};
+const isCacheLike = (r) => r.incompleteReason === "local_cache" ||
+  (r.transferSize !== null && r.transferSize === 0) ||
+  (r.deliveryType != null && r.deliveryType.toLowerCase().includes("cache"));
+
+// ─── Phase markers ────────────────────────────────────────────────────
+const ttfbPositionMs = summary.ttfbMs ?? null;
+const buildPhaseMarkers = () => ([
+  { key: "ttfb", label: "TTFB", color: "#1D4ED8", valueMs: ttfbPositionMs },
+  { key: "fp",   label: "FP",   color: "#0E7490", valueMs: summary.fpMs },
+  { key: "fcp",  label: "FCP",  color: "#047857", valueMs: summary.fcpMs },
+  { key: "lcp",  label: "LCP",  color: "#B45309", valueMs: summary.lcpMs },
+]).filter((m) => m.valueMs !== null && m.valueMs > 0);
+
+const MERGE_THRESHOLD_PCT = 0.025;
+const groupPhaseMarkers = (markers, maxMs) => {
+  const sorted = [...markers].sort((a, b) => a.valueMs - b.valueMs);
+  const threshold = maxMs * MERGE_THRESHOLD_PCT;
+  const groups = [];
+  for (const m of sorted) {
+    const last = groups[groups.length - 1];
+    if (last && m.valueMs - last.valueMs < threshold) {
+      last.markers.push(m);
+    } else {
+      groups.push({ valueMs: m.valueMs, color: m.color, markers: [m] });
+    }
+  }
+  return groups;
+};
+
+const buildTicks = (maxMs) => {
+  const targets = [100, 200, 250, 500, 750, 1000, 1250, 1500, 2000, 2500, 3000, 5000, 7500, 10000, 15000, 20000, 30000];
+  const step = targets.find((t) => maxMs / t <= 10) ?? Math.ceil(maxMs / 8 / 500) * 500;
+  const ticks = [];
+  for (let t = step; t < maxMs; t += step) ticks.push(t);
+  return ticks;
+};
+
+const lcpMatchesRequest = (lcpUrl, req) => {
+  if (!lcpUrl) return false;
+  if (req.urlFull && req.urlFull === lcpUrl) return true;
+  if (req.urlPath && req.urlPath.length > 3 && lcpUrl.includes(req.urlPath)) return true;
+  return false;
+};
+
+const buildWaterfallItems = (reqs, mode) => {
+  if (mode === "chronological") {
+    return reqs.map((req, i) => ({ kind: "row", req, origIdx: i, visualRowIdx: i }));
+  }
+  const sections = [
+    { label: "Documents",   entries: [] },
+    { label: "XHR / Fetch", entries: [] },
+    { label: "Resources",   entries: [] },
+  ];
+  reqs.forEach((req, origIdx) => {
+    const t = resolveType(req);
+    if (t === "navigation" || t === "document") sections[0].entries.push({ req, origIdx });
+    else if (t === "fetch" || t === "xmlhttprequest" || t === "xhr") sections[1].entries.push({ req, origIdx });
+    else sections[2].entries.push({ req, origIdx });
+  });
+  const items = [];
+  let visualRowIdx = 0;
+  for (const { label, entries } of sections) {
+    if (entries.length === 0) continue;
+    items.push({ kind: "header", label });
+    for (const { req, origIdx } of entries) items.push({ kind: "row", req, origIdx, visualRowIdx: visualRowIdx++ });
+  }
+  return items;
+};
+
+// ─── Layout constants ──────────────────────────────────────────────────
+const LABEL_WIDTH = 300, TYPE_WIDTH = 40, DUR_WIDTH = 80, ROW_H = 26, BAR_INSET = 4;
+const LABEL_ROW_0 = 4, PILL_HEIGHT = 16, TICK_BOTTOM = 6;
+const LEFT_OFFSET = LABEL_WIDTH + TYPE_WIDTH + DUR_WIDTH;
+
+const el = (tag, cls, html) => {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (html !== undefined) e.innerHTML = html;
+  return e;
+};
+
+// ─── Static page header ────────────────────────────────────────────────
+document.getElementById("page-title").textContent = summary.pageTitle || summary.pageUrl || "Page Waterfall";
+document.getElementById("page-subtitle").textContent =
+  `${summary.pageUrl || ""}  ·  ${summary.browserName} ${summary.browserVersion}  ·  ${summary.deviceType}  ·  ${new Date(summary.clientStartTimeMs).toLocaleString()}`;
+
+const navRequest = requests.find((r) => r.performanceInitiatorType === "navigation" || resolveType(r) === "navigation" || resolveType(r) === "document");
+if (navRequest && navRequest.incompleteReason && !isCacheLike(navRequest)) {
+  document.getElementById("warn-banner-slot").appendChild(el("div", "warn-banner", "Invalid Timings"));
+}
+
+// ─── Metrics panel (static) ─────────────────────────────────────────────
+const clsRating = (score) => score <= 0.1 ? "good" : score <= 0.25 ? "needs-improvement" : "poor";
+const msRating = (ms, [good, ni]) => ms <= good ? "good" : ms <= ni ? "needs-improvement" : "poor";
+const RATING_COLORS = { good: "var(--good)", "needs-improvement": "var(--warning)", poor: "var(--critical)", none: "var(--text-default)" };
+
+(function renderMetricsPanel() {
+  const slot = document.getElementById("metrics-slot");
+  const navMs = (ns) => (ns != null && ns > 0 ? ns / 1e6 : null);
+  const dclMs = navMs(navRequest?.domContentLoadedEventStartNs ?? null);
+  const domCompMs = navMs(navRequest?.domCompleteNs ?? null);
+  const loadEndMsAbs = navMs(navRequest?.loadEventEndNs ?? null);
+
+  const vitals = [
+    { label: "TTFB", value: summary.ttfbMs != null ? formatMs(summary.ttfbMs) : null,
+      color: summary.ttfbMs != null ? RATING_COLORS[msRating(summary.ttfbMs, [800, 1800])] : RATING_COLORS.none },
+    { label: "FP", value: summary.fpMs != null ? formatMs(summary.fpMs) : null, status: summary.fpStatus,
+      color: summary.fpMs != null ? RATING_COLORS[msRating(summary.fpMs, [1800, 3000])] : RATING_COLORS.none },
+    { label: "FCP", value: summary.fcpMs != null ? formatMs(summary.fcpMs) : null, status: summary.fcpStatus,
+      color: summary.fcpMs != null ? RATING_COLORS[msRating(summary.fcpMs, [1800, 3000])] : RATING_COLORS.none },
+    { label: "LCP", value: summary.lcpMs != null ? formatMs(summary.lcpMs) : null, status: summary.lcpStatus,
+      color: summary.lcpMs != null ? RATING_COLORS[msRating(summary.lcpMs, [2500, 4000])] : RATING_COLORS.none },
+    { label: "CLS", value: summary.clsScore != null ? summary.clsScore.toFixed(3) : null, status: summary.clsStatus,
+      color: summary.clsScore != null ? RATING_COLORS[clsRating(summary.clsScore)] : RATING_COLORS.none },
+    { label: "INP", value: summary.inpMs != null ? formatMs(summary.inpMs) : null,
+      color: summary.inpMs != null ? RATING_COLORS[msRating(summary.inpMs, [200, 500])] : RATING_COLORS.none },
+    { label: "DCL", value: dclMs != null ? formatMs(dclMs) : null, color: RATING_COLORS.none },
+    { label: "DOM Complete", value: domCompMs != null ? formatMs(domCompMs) : null, color: RATING_COLORS.none },
+    { label: "Load Event End", value: loadEndMsAbs != null ? formatMs(loadEndMsAbs) : null, color: RATING_COLORS.none },
+  ];
+
+  const half = Math.ceil(vitals.length / 2);
+  for (const row of [vitals.slice(0, half), vitals.slice(half)]) {
+    const rowEl = el("div", "metrics-row");
+    for (const v of row) {
+      const backgrounded = v.status === "backgrounded";
+      const tile = el("div", "metric-tile");
+      tile.appendChild(el("span", "label", v.label));
+      const val = el("div", "value", v.value ?? "—");
+      val.style.color = backgrounded ? "var(--text-disabled)" : v.color;
+      tile.appendChild(val);
+      if (backgrounded) tile.appendChild(el("span", "sub", "backgrounded"));
+      rowEl.appendChild(tile);
+    }
+    slot.appendChild(rowEl);
+  }
+
+  if (summary.ttfbMs) {
+    const segments = [
+      { label: "DNS", ms: summary.ttfbDnsMs, color: "#6366F1" },
+      { label: "Connection", ms: summary.ttfbConnectionMs, color: "#8B5CF6" },
+      { label: "Cache", ms: summary.ttfbCacheMs, color: "#A78BFA" },
+      { label: "Waiting", ms: summary.ttfbWaitingMs, color: "#C4B5FD" },
+      { label: "Request", ms: summary.ttfbRequestMs, color: "#DDD6FE" },
+    ].filter((s) => s.ms !== null && s.ms > 0);
+    const segTotal = segments.reduce((a, s) => a + s.ms, 0);
+    const wrap = el("div", "ttfb-breakdown");
+    wrap.appendChild(el("span", "subdued small", `TTFB breakdown — ${formatMs(summary.ttfbMs)}`));
+    const bar = el("div", "ttfb-bar");
+    for (const s of segments) {
+      const seg = el("div");
+      seg.style.flex = String(s.ms / segTotal);
+      seg.style.background = s.color;
+      seg.style.minWidth = "2px";
+      seg.title = `${s.label}: ${formatMs(s.ms)}`;
+      bar.appendChild(seg);
+    }
+    wrap.appendChild(bar);
+    const legend = el("div", "ttfb-legend");
+    for (const s of segments) {
+      const item = el("div", "ttfb-legend-item");
+      const sw = el("div", "swatch"); sw.style.background = s.color;
+      item.appendChild(sw);
+      item.appendChild(el("span", "subdued small", `${s.label} ${formatMs(s.ms)}`));
+      legend.appendChild(item);
+    }
+    wrap.appendChild(legend);
+    slot.appendChild(wrap);
+  }
+
+  const ctx = el("div", "context-box");
+  const items = [
+    ["Browser", `${summary.browserName} ${summary.browserVersion}`],
+    ["Device", summary.deviceType],
+    ["OS", summary.osName],
+    ["Navigation", summary.navigationType],
+    ["Requests", String(requests.length)],
+  ];
+  if (summary.longTaskCount > 0) items.push(["Long tasks", `${summary.longTaskCount} × avg ${formatMs(summary.longTaskAvgMs ?? 0)}`]);
+  if (summary.exceptionCount > 0) items.push(["Exceptions", String(summary.exceptionCount)]);
+  if (summary.http4xxCount > 0) items.push(["4xx errors", String(summary.http4xxCount)]);
+  if (summary.http5xxCount > 0) items.push(["5xx errors", String(summary.http5xxCount)]);
+  for (const [label, value] of items) {
+    const item = el("div", "context-item");
+    item.appendChild(el("span", "subdued small", label + ":"));
+    item.appendChild(el("span", "small", value));
+    ctx.appendChild(item);
+  }
+  slot.appendChild(ctx);
+})();
+
+// ─── Findings bar (static) ───────────────────────────────────────────────
+(function renderFindings() {
+  const slot = document.getElementById("findings-slot");
+  const firstParty = requests.filter((r) => !r.urlProvider);
+  const thirdParty = requests.filter((r) => !!r.urlProvider);
+  const thirdPartyDomains = new Set(thirdParty.map((r) => r.urlDomain)).size;
+  const totalTransfer = requests.reduce((sum, r) => sum + (r.transferSize ?? 0), 0);
+  const largResources = requests.filter((r) => (r.transferSize ?? 0) > 100_000).length;
+  const renderBlocking = requests.filter((r) => r.renderBlockingStatus === "blocking").length;
+  const textInitiatorTypes = new Set(["script", "css", "fetch", "xmlhttprequest", "other"]);
+  const uncompressedText = requests.filter((r) =>
+    r.encodedBodySize != null && r.decodedBodySize != null && r.encodedBodySize > 0 &&
+    r.encodedBodySize === r.decodedBodySize && r.performanceInitiatorType != null &&
+    textInitiatorTypes.has(r.performanceInitiatorType)
+  ).length;
+  const slowFirstParty = firstParty.filter((r) => r.durationMs > 500).length;
+  const failedCount = requests.filter((r) => r.hasFailed && !r.hasCspViolation).length;
+  const cspCount = requests.filter((r) => r.hasCspViolation).length;
+  const pendingCount = requests.filter((r) => r.hasPending).length;
+
+  const tiles = [
+    { label: "Requests", value: requests.length },
+    { label: "1st party requests", value: firstParty.length },
+    { label: "3rd party requests", value: thirdParty.length },
+    { label: "3rd party domains", value: thirdPartyDomains },
+    { label: "Transfer size", value: formatBytes(totalTransfer) },
+    { label: "Resources > 100 kB", value: largResources, warn: largResources > 0 },
+    { label: "Render-blocking", value: renderBlocking, warn: renderBlocking > 0 },
+    { label: "Uncompressed text", value: uncompressedText, warn: uncompressedText > 0 },
+    { label: "Slow 1st party (>500 ms)", value: slowFirstParty, warn: slowFirstParty > 0 },
+  ];
+  if (summary.longTaskCount > 0) tiles.push({ label: "Long tasks", value: summary.longTaskCount, warn: true });
+  if (failedCount > 0) tiles.push({ label: "Failed requests", value: failedCount, warn: true });
+  if (cspCount > 0) tiles.push({ label: "CSP violations", value: cspCount, warn: true });
+  if (pendingCount > 0) tiles.push({ label: "Pending requests", value: pendingCount, warn: true });
+  if (exceptions.length > 0) tiles.push({ label: "Exceptions", value: exceptions.length, warn: true });
+
+  slot.appendChild(el("span", "findings-title", "Findings"));
+  const row = el("div", "findings-row");
+  for (const t of tiles) {
+    const tile = el("div", "finding-tile");
+    tile.appendChild(el("span", "fv" + (t.warn ? " warn" : ""), String(t.value)));
+    tile.appendChild(el("span", "subdued small", t.label));
+    row.appendChild(tile);
+  }
+  slot.appendChild(row);
+})();
+
+// ─── Tooltip helpers ──────────────────────────────────────────────────
+const ttEl = document.getElementById("tooltip");
+const lineTtEl = document.getElementById("line-tooltip");
+const exTtEl = document.getElementById("ex-tooltip");
+
+function positionTooltip(node, x, y) {
+  node.style.display = "block";
+  // Measure off-screen-safe first
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const rect = node.getBoundingClientRect();
+  const width = rect.width, height = rect.height;
+  node.style.left = (x >= vw / 2 ? x - width - 12 : x + 12) + "px";
+  node.style.top  = (y >= vh / 2 ? y - height - 8 : y + 8) + "px";
+}
+function hideTooltip(node) { node.style.display = "none"; node.style.left = "-9999px"; node.style.top = "-9999px"; }
+
+function buildResourceTooltipHtml(req, relativeStartMs) {
+  const { light: lightColor, dark: color } = resourceColors(req);
+  const isNavDoc = resolveType(req) === "navigation" || resolveType(req) === "document";
+  const fetchStart = req.fetchStartNs ?? 0;
+
+  const stallEndNs = (() => {
+    if (req.domainLookupStartNs != null && req.domainLookupStartNs > fetchStart) return req.domainLookupStartNs;
+    if (req.connectStartNs != null && req.connectStartNs > fetchStart) return req.connectStartNs;
+    return req.requestStartNs ?? fetchStart;
+  })();
+  const trueStallMs = (stallEndNs - fetchStart) > 500 ? (stallEndNs - fetchStart) / 1e6 : null;
+
+  const workerMs = req.workerStartNs != null && req.workerStartNs > 0 && req.fetchStartNs != null
+    ? (req.fetchStartNs - req.workerStartNs) / 1e6 : null;
+  const redirectMs = req.redirectStartNs != null && req.redirectEndNs != null && req.redirectEndNs > req.redirectStartNs
+    ? (req.redirectEndNs - req.redirectStartNs) / 1e6 : null;
+  const dnsMs = req.domainLookupStartNs != null && req.domainLookupEndNs != null
+    ? (req.domainLookupEndNs - req.domainLookupStartNs) / 1e6 : null;
+  const hasSsl = req.secureConnectionStartNs != null && req.secureConnectionStartNs > 0;
+  const tcpMs = req.connectStartNs != null && req.connectEndNs != null
+    ? (hasSsl && req.secureConnectionStartNs != null ? (req.secureConnectionStartNs - req.connectStartNs) : (req.connectEndNs - req.connectStartNs)) / 1e6
+    : null;
+  const sslMs = hasSsl && req.connectEndNs != null && req.secureConnectionStartNs != null
+    ? (req.connectEndNs - req.secureConnectionStartNs) / 1e6 : null;
+  const requestMs = req.requestStartNs != null && req.responseStartNs != null
+    ? (req.responseStartNs - req.requestStartNs) / 1e6 : null;
+  const responseMs = req.responseStartNs != null && req.responseEndNs != null
+    ? (req.responseEndNs - req.responseStartNs) / 1e6 : null;
+
+  const navBlockingMs = isNavDoc && req.connectEndNs != null && req.requestStartNs != null
+    ? Math.max(0, (req.requestStartNs - req.connectEndNs) / 1e6) : null;
+  const navAppCacheMs = isNavDoc && req.domainLookupStartNs != null && req.fetchStartNs != null
+    ? Math.max(0, (req.domainLookupStartNs - req.fetchStartNs) / 1e6) : null;
+  const navProcessMs = isNavDoc && req.domCompleteNs != null && req.responseEndNs != null
+    ? Math.max(0, (req.domCompleteNs - req.responseEndNs) / 1e6) : null;
+  const navOnDclMs = isNavDoc && req.domContentLoadedEventEndNs != null && req.domContentLoadedEventStartNs != null
+    ? Math.max(0, (req.domContentLoadedEventEndNs - req.domContentLoadedEventStartNs) / 1e6) : null;
+  const navOnLoadMs = isNavDoc && req.loadEventEndNs != null && req.loadEventStartNs != null
+    ? Math.max(0, (req.loadEventEndNs - req.loadEventStartNs) / 1e6) : null;
+
+  const isCompressed = req.encodedBodySize != null && req.decodedBodySize != null && req.decodedBodySize > req.encodedBodySize + 100;
+  const cached = isCacheLike(req);
+
+  const sectionHd = (label) => `<tr class="tt-sec-hd"><td colspan="3">${escHtml(label)}</td></tr>`;
+  const row = (label, value, swatch) => {
+    if (value == null) return "";
+    return `<tr class="tt-row"><td class="tt-swatch-cell">${swatch ? `<div class="tt-swatch" style="background:${swatch}"></div>` : ""}</td><td class="k">${escHtml(label)}</td><td class="v">${escHtml(value)}</td></tr>`;
+  };
+
+  let html = `<div class="tt-header">
+    <div class="tt-badge-row">
+      <span class="tt-badge" style="color:${color};background:${color}22;border:1px solid ${color}66">${escHtml(resourceLabel(req))}</span>
+      <span class="tt-title">${escHtml(req.urlPath || "/")}</span>
+    </div>
+    <table class="tt-meta-table"><tbody>`;
+  if (req.urlDomain) html += `<tr><td class="k">Domain</td><td class="v">${escHtml(req.urlDomain)}</td></tr>`;
+  if (req.httpMethod) html += `<tr><td class="k">Method</td><td class="v">${escHtml(req.httpMethod)}</td></tr>`;
+  if (req.protocol) html += `<tr><td class="k">Protocol</td><td class="v">${escHtml(req.protocol)}</td></tr>`;
+  if (req.httpStatusCode != null) html += `<tr><td class="k">Status</td><td class="v" style="color:${req.hasFailed ? "#EF4444" : ""}">${req.httpStatusCode}</td></tr>`;
+  if (req.urlProvider) html += `<tr><td class="k">Provider</td><td class="v">${escHtml(req.urlProvider)}</td></tr>`;
+  html += `</tbody></table>`;
+  if (req.hasCspViolation) html += `<div class="tt-csp-badge">CSP VIOLATION</div>`;
+  html += `</div>`;
+
+  html += `<table class="tt-table"><tbody>`;
+  html += sectionHd("Timing");
+  html += row("Load time", formatMs(req.durationMs));
+  html += row("Started at", formatMs(relativeStartMs));
+  if (req.renderBlockingStatus === "blocking") html += row("Render blocking", "yes");
+
+  if (isNavDoc && req.hasW3cTimings && req.requestStartNs !== null) {
+    html += `<tr><td colspan="3" style="padding-top:2px"></td></tr>`;
+    html += sectionHd("Phases");
+    if (navBlockingMs != null) html += row("Blocking", formatMs(navBlockingMs), STALL_COLOR);
+    if (navAppCacheMs != null) html += row("Application cache", formatMs(navAppCacheMs), "#9CA3AF");
+    if (dnsMs != null) html += row("DNS lookup", formatMs(dnsMs), "#06B6D4");
+    if (tcpMs != null) html += row("TCP connect", formatMs(tcpMs), "#F59E0B");
+    if (sslMs != null) html += row("TLS", formatMs(sslMs), "#8B5CF6");
+    if (requestMs != null) html += row("Request", formatMs(requestMs), lightColor);
+    if (responseMs != null) html += row("Response", formatMs(responseMs), color);
+    if (navProcessMs != null) html += row("Processing", formatMs(navProcessMs), "#7C3AED");
+    if (navOnDclMs != null) html += row("onDCL", formatMs(navOnDclMs), "#7C3AED");
+    if (navOnLoadMs != null) html += row("onLoad", formatMs(navOnLoadMs), "#34D399");
+  }
+
+  if (!isNavDoc && req.hasW3cTimings && req.requestStartNs !== null) {
+    html += `<tr><td colspan="3" style="padding-top:2px"></td></tr>`;
+    html += sectionHd("Phases");
+    if (workerMs != null && workerMs > 0) html += row("Service worker", formatMs(workerMs), "#7C3AED");
+    if (redirectMs != null && redirectMs > 0) html += row("Redirect", formatMs(redirectMs), "#9CA3AF");
+    if (trueStallMs != null && trueStallMs > 0) html += row("Stalled", formatMs(trueStallMs), STALL_COLOR);
+    if (dnsMs != null && dnsMs > 0) html += row("DNS", formatMs(dnsMs), "#06B6D4");
+    if (tcpMs != null && tcpMs > 0) html += row("TCP", formatMs(tcpMs), "#F59E0B");
+    if (sslMs != null && sslMs > 0) html += row("TLS", formatMs(sslMs), "#8B5CF6");
+    if (requestMs != null && requestMs > 0) html += row("Request", formatMs(requestMs), lightColor);
+    if (responseMs != null && responseMs > 0) html += row("Response", formatMs(responseMs), color);
+  }
+
+  if (isNavDoc && (!req.hasW3cTimings || req.requestStartNs === null) && summary.ttfbMs != null) {
+    html += `<tr><td colspan="3" style="padding-top:2px"></td></tr>`;
+    html += sectionHd("Phases");
+    if (summary.ttfbDnsMs != null && summary.ttfbDnsMs > 0) html += row("DNS", formatMs(summary.ttfbDnsMs), "#06B6D4");
+    if (summary.ttfbConnectionMs != null && summary.ttfbConnectionMs > 0) html += row("TCP/TLS", formatMs(summary.ttfbConnectionMs), "#F59E0B");
+    if (summary.ttfbCacheMs != null && summary.ttfbCacheMs > 0) html += row("Cache", formatMs(summary.ttfbCacheMs), "#9CA3AF");
+    if (summary.ttfbRequestMs != null && summary.ttfbRequestMs > 0) html += row("Request", formatMs(summary.ttfbRequestMs), lightColor);
+    if (summary.ttfbWaitingMs != null && summary.ttfbWaitingMs > 0) html += row("Waiting", formatMs(summary.ttfbWaitingMs), lightColor);
+    const downloadMs = req.durationMs - summary.ttfbMs;
+    if (downloadMs > 0) html += row("Response", formatMs(downloadMs), color);
+  }
+
+  html += `<tr><td colspan="3" style="padding-top:2px"></td></tr>`;
+  html += sectionHd("Transfer");
+  html += `<tr class="tt-row"><td class="tt-swatch-cell"></td><td class="k">Cached</td><td class="v" style="color:${cached ? "#22C55E" : "#EF4444"}">${cached ? (req.incompleteReason === "local_cache" ? "local cache" : "yes") : "no"}</td></tr>`;
+  if (isCompressed && req.encodedBodySize != null && req.decodedBodySize != null) {
+    html += row("Compression", `${Math.round((1 - req.encodedBodySize / req.decodedBodySize) * 100)}%`);
+  }
+  if (req.transferSize != null) html += row("Transfer", formatBytes(req.transferSize));
+  if (req.encodedBodySize != null) html += row("Encoded", formatBytes(req.encodedBodySize));
+  if (req.decodedBodySize != null) html += row("Decoded", formatBytes(req.decodedBodySize));
+  html += `</tbody></table>`;
+  return html;
+}
+
+function attachBarHover(barNode, req, relativeStartMs) {
+  barNode.addEventListener("mouseenter", (e) => {
+    hideTooltip(lineTtEl); hideTooltip(exTtEl);
+    ttEl.innerHTML = buildResourceTooltipHtml(req, relativeStartMs);
+    positionTooltip(ttEl, e.clientX, e.clientY);
+  });
+  barNode.addEventListener("mousemove", (e) => positionTooltip(ttEl, e.clientX, e.clientY));
+  barNode.addEventListener("mouseleave", () => hideTooltip(ttEl));
+}
+
+function attachLineHover(node, group) {
+  node.addEventListener("mouseenter", (e) => {
+    e.stopPropagation();
+    hideTooltip(ttEl);
+    lineTtEl.innerHTML = group.markers.map((m) =>
+      `<div class="tt-marker-row"><div class="tt-marker-line" style="background:${m.color}"></div><span class="tt-marker-label" style="color:${m.color}">${escHtml(m.label)}</span><span class="tt-marker-value">${formatMs(m.valueMs)}</span></div>`
+    ).join("");
+    positionTooltip(lineTtEl, e.clientX, e.clientY);
+  });
+  node.addEventListener("mousemove", (e) => { e.stopPropagation(); positionTooltip(lineTtEl, e.clientX, e.clientY); });
+  node.addEventListener("mouseleave", () => hideTooltip(lineTtEl));
+}
+
+function attachExceptionHover(node, displayName) {
+  node.addEventListener("mouseenter", (e) => {
+    hideTooltip(lineTtEl); hideTooltip(ttEl);
+    exTtEl.innerHTML = `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+      <svg width="12" height="12" viewBox="0 0 12 12" style="flex-shrink:0">
+        <circle cx="6" cy="6" r="5.5" fill="#7F1D1D" stroke="#991B1B" stroke-width="1"/>
+        <line x1="3.5" y1="3.5" x2="8.5" y2="8.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+        <line x1="8.5" y1="3.5" x2="3.5" y2="8.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      <span style="color:#FCA5A5;font-weight:700;font-size:11px">Exception</span>
+    </div>
+    <div style="color:var(--text-default);word-break:break-word;font-size:11px">${escHtml(displayName)}</div>`;
+    positionTooltip(exTtEl, e.clientX, e.clientY);
+  });
+  node.addEventListener("mousemove", (e) => positionTooltip(exTtEl, e.clientX, e.clientY));
+  node.addEventListener("mouseleave", () => hideTooltip(exTtEl));
+}
+
+document.addEventListener("mouseleave", () => { hideTooltip(ttEl); hideTooltip(lineTtEl); hideTooltip(exTtEl); });
+
+// ─── Interactive state ──────────────────────────────────────────────────
+const state = {
+  groupBy: "chronological",   // "chronological" | "type"
+  timeFilter: "lee",          // "lee" | "all" | "lcp"
+  showLongTasks: true,
+  hiddenMetrics: new Set(),
+};
+
+let stickyPillsData = null; // { phaseGroups, maxMs, timelineLeft, timelineWidth }
+
+function renderControls() {
+  const slot = document.getElementById("controls-slot");
+  slot.innerHTML = "";
+  const row = el("div", "controls-row");
+
+  // Order
+  const orderGroup = el("div", "control-group");
+  orderGroup.appendChild(el("span", "subdued small", "Order"));
+  const orderBtns = el("div", "control-buttons");
+  const chronoBtn = el("button", "btn" + (state.groupBy === "chronological" ? " active" : ""), "Chronological");
+  chronoBtn.onclick = () => { state.groupBy = "chronological"; renderAll(); };
+  const typeBtn = el("button", "btn" + (state.groupBy === "type" ? " active" : ""), "Group by Type");
+  typeBtn.onclick = () => { state.groupBy = "type"; renderAll(); };
+  orderBtns.appendChild(chronoBtn); orderBtns.appendChild(typeBtn);
+  orderGroup.appendChild(orderBtns);
+  row.appendChild(orderGroup);
+  row.appendChild(el("div", "control-sep"));
+
+  // Show (time filter)
+  const showGroup = el("div", "control-group");
+  showGroup.appendChild(el("span", "subdued small", "Show"));
+  const showBtns = el("div", "control-buttons");
+
+  const navRequestForFilter = navRequest;
+  const loadEventEndMsCalc = navRequestForFilter?.loadEventEndNs != null && navRequestForFilter.loadEventEndNs > 0 ? navRequestForFilter.loadEventEndNs / 1e6 : null;
+
+  const defaultBtn = el("button", "btn" + (state.timeFilter === "lee" ? " active" : ""), "Default");
+  defaultBtn.title = loadEventEndMsCalc != null ? `Resources started before Load Event End (${Math.round(loadEventEndMsCalc)} ms)` : "Load Event End not available";
+  defaultBtn.onclick = () => { state.timeFilter = "lee"; renderAll(); };
+  showBtns.appendChild(defaultBtn);
+
+  const expandedBtn = el("button", "btn" + (state.timeFilter === "all" ? " active" : ""), "Expanded");
+  expandedBtn.onclick = () => { state.timeFilter = "all"; renderAll(); };
+  showBtns.appendChild(expandedBtn);
+
+  const lcpShorterThanDefault = summary.lcpMs != null && loadEventEndMsCalc != null && summary.lcpMs < loadEventEndMsCalc;
+  const lcpDisabled = summary.lcpMs == null || lcpShorterThanDefault;
+  const lcpTitle = summary.lcpMs == null ? "LCP not reported for this page load"
+    : lcpShorterThanDefault ? `LCP (${Math.round(summary.lcpMs)} ms) is shorter than default view — no additional resources`
+    : `Resources started before LCP (${Math.round(summary.lcpMs)} ms)`;
+  const lcpBtn = el("button", "btn" + (state.timeFilter === "lcp" ? " active" : ""), "LCP");
+  lcpBtn.title = lcpTitle;
+  lcpBtn.disabled = lcpDisabled;
+  lcpBtn.onclick = () => { if (!lcpDisabled) { state.timeFilter = "lcp"; renderAll(); } };
+  showBtns.appendChild(lcpBtn);
+
+  showGroup.appendChild(showBtns);
+  row.appendChild(showGroup);
+
+  const allMarkers = buildPhaseMarkers();
+  if (allMarkers.length > 0 || (summary.longTaskOccurrences || []).length > 0) {
+    row.appendChild(el("div", "control-sep"));
+    const overlayGroup = el("div", "control-group");
+    overlayGroup.appendChild(el("span", "subdued small", "Overlays"));
+    const overlayBtns = el("div", "control-buttons");
+    if ((summary.longTaskOccurrences || []).length > 0) {
+      const ltBtn = el("button", "btn" + (state.showLongTasks ? " active" : ""), "Long Tasks");
+      ltBtn.onclick = () => { state.showLongTasks = !state.showLongTasks; renderAll(); };
+      overlayBtns.appendChild(ltBtn);
+    }
+    for (const m of allMarkers) {
+      const active = !state.hiddenMetrics.has(m.key);
+      const mBtn = el("button", "btn" + (active ? " active" : ""), m.label);
+      mBtn.onclick = () => {
+        if (state.hiddenMetrics.has(m.key)) state.hiddenMetrics.delete(m.key); else state.hiddenMetrics.add(m.key);
+        renderAll();
+      };
+      overlayBtns.appendChild(mBtn);
+    }
+    overlayGroup.appendChild(overlayBtns);
+    row.appendChild(overlayGroup);
+  }
+
+  slot.appendChild(row);
+}
+
+function renderWaterfall() {
+  const slot = document.getElementById("waterfall-slot");
+  slot.innerHTML = "";
+  const ltLabelSlot = document.getElementById("longtask-labels-slot");
+  ltLabelSlot.innerHTML = "";
+  const legendSlot = document.getElementById("legend-slot");
+  legendSlot.innerHTML = "";
+  const lcpSlot = document.getElementById("lcp-slot");
+  lcpSlot.innerHTML = "";
+
+  const resourceOriginMs = navRequest?.startAbsoluteMs ?? summary.performanceTimeOriginMs;
+  const loadEventEndMs = navRequest?.loadEventEndNs != null && navRequest.loadEventEndNs > 0 ? navRequest.loadEventEndNs / 1e6 : null;
+
+  const expandedCutoffMs = (() => {
+    const MAX = 60_000;
+    for (let i = 0; i < requests.length - 1; i++) {
+      if (requests[i + 1].startAbsoluteMs - requests[i].endAbsoluteMs >= 10_000) {
+        return Math.min(MAX, requests[i].endAbsoluteMs - resourceOriginMs);
+      }
+    }
+    const lastEnd = requests.length > 0 ? requests[requests.length - 1].endAbsoluteMs - resourceOriginMs : MAX;
+    return Math.min(MAX, lastEnd);
+  })();
+
+  const cutoffMs = state.timeFilter === "lee" ? loadEventEndMs : state.timeFilter === "all" ? expandedCutoffMs : (summary.lcpMs ?? null);
+  const filteredRequests = cutoffMs == null ? requests : requests.filter((r) => (r.startAbsoluteMs - resourceOriginMs) <= cutoffMs);
+
+  const maxMs = Math.max(
+    ...filteredRequests.map((r) => r.endAbsoluteMs - resourceOriginMs),
+    ttfbPositionMs ?? 0,
+    state.timeFilter === "lee" ? (loadEventEndMs ?? 0) : 0,
+    state.timeFilter === "all" ? expandedCutoffMs : 0,
+    state.timeFilter === "lcp" ? (summary.lcpMs ?? 0) : 0,
+    500
+  ) * 1.02;
+
+  const toPct = (ms) => (ms / maxMs) * 100;
+
+  const allMarkers = buildPhaseMarkers().filter((m) => m.valueMs <= maxMs);
+  const visibleMarkers = allMarkers.filter((m) => !state.hiddenMetrics.has(m.key));
+  const phaseGroups = groupPhaseMarkers(visibleMarkers, maxMs);
+  const ticks = buildTicks(maxMs);
+
+  const visibleExceptions = exceptions
+    .map((e) => ({ ...e, relativeMs: e.startAbsoluteMs - resourceOriginMs }))
+    .filter((e) => e.relativeMs >= 0 && e.relativeMs <= maxMs);
+
+  const lcpUrl = summary.lcpElementUrl ?? null;
+  const waterfallItems = buildWaterfallItems(filteredRequests, state.groupBy);
+
+  const wf = el("div", "waterfall");
+
+  // Header
+  const header = el("div", "wf-header");
+  header.appendChild(el("div", "col-label", `<span class="subdued small">Resource</span>`));
+  header.appendChild(el("div", "col-type", `<span class="subdued small">Type</span>`));
+  header.appendChild(el("div", "col-dur", `<span class="subdued small">Duration</span>`));
+  const colTimeline = el("div", "col-timeline-hd");
+  for (const group of phaseGroups) {
+    const pill = el("div", "pill");
+    pill.style.left = toPct(group.valueMs) + "%";
+    pill.style.top = LABEL_ROW_0 + "px";
+    pill.innerHTML = group.markers.map((m, i) =>
+      (i > 0 ? `<span class="subdued">·</span> ` : "") + `<span style="color:${m.color}">${escHtml(m.label)}</span>`
+    ).join(" ");
+    attachLineHover(pill, group);
+    colTimeline.appendChild(pill);
+  }
+  const zeroLabel = el("div", "tick-label", "0 ms");
+  zeroLabel.style.left = "1px";
+  colTimeline.appendChild(zeroLabel);
+  for (const t of ticks) {
+    const lbl = el("div", "tick-label", formatMs(t));
+    lbl.style.left = toPct(t) + "%";
+    colTimeline.appendChild(lbl);
+  }
+  header.appendChild(colTimeline);
+  wf.appendChild(header);
+
+  const body = el("div", "wf-body");
+
+  const gridOverlay = el("div", "wf-overlay");
+  gridOverlay.style.left = LEFT_OFFSET + "px";
+  gridOverlay.style.top = "0";
+  gridOverlay.style.pointerEvents = "none";
+  const origin = el("div", "origin-line"); origin.style.left = "0";
+  gridOverlay.appendChild(origin);
+  for (const t of ticks) {
+    const line = el("div", "tick-line");
+    line.style.left = toPct(t) + "%";
+    gridOverlay.appendChild(line);
+  }
+  body.appendChild(gridOverlay);
+
+  const longTasks = (summary.longTaskOccurrences || []).filter((lt) => lt.startMs < maxMs && lt.startMs + lt.durationMs > 0);
+  if (state.showLongTasks && longTasks.length > 0) {
+    const ltOverlay = el("div", "wf-overlay");
+    ltOverlay.style.left = LEFT_OFFSET + "px";
+    ltOverlay.style.top = "64px";
+    ltOverlay.style.pointerEvents = "none";
+    for (const lt of longTasks) {
+      const leftPct = (lt.startMs / maxMs) * 100;
+      const widthPct = Math.min((lt.startMs + lt.durationMs) / maxMs * 100, 100) - leftPct;
+      const block = el("div", "longtask-block");
+      block.style.left = leftPct + "%";
+      block.style.width = widthPct + "%";
+      ltOverlay.appendChild(block);
+    }
+    body.appendChild(ltOverlay);
+  }
+
+  const lineOverlay = el("div", "wf-overlay");
+  lineOverlay.style.left = LEFT_OFFSET + "px";
+  lineOverlay.style.top = "0";
+  lineOverlay.style.zIndex = "9";
+  lineOverlay.style.pointerEvents = "none";
+  for (const group of phaseGroups) {
+    const hit = el("div", "phase-line-hit");
+    hit.style.left = `calc(${toPct(group.valueMs)}% - 4px)`;
+    hit.style.top = (LABEL_ROW_0 + PILL_HEIGHT) + "px";
+    hit.style.pointerEvents = "auto";
+    hit.appendChild(el("div", "phase-line"));
+    attachLineHover(hit, group);
+    lineOverlay.appendChild(hit);
+  }
+  body.appendChild(lineOverlay);
+
+  if (visibleExceptions.length > 0) {
+    const exOverlay = el("div", "wf-overlay");
+    exOverlay.style.left = LEFT_OFFSET + "px";
+    exOverlay.style.top = "0";
+    exOverlay.style.zIndex = "8";
+    exOverlay.style.pointerEvents = "none";
+    for (const ex of visibleExceptions) {
+      const leftPct = (ex.relativeMs / maxMs) * 100;
+      const MARKER_R = 7;
+      const wrap = el("div", "ex-marker");
+      wrap.style.left = leftPct + "%";
+      wrap.style.transform = "translateX(-50%)";
+      wrap.style.width = (MARKER_R * 2) + "px";
+      wrap.style.pointerEvents = "auto";
+      const line = el("div", "ex-line");
+      line.style.left = MARKER_R + "px";
+      line.style.top = (LABEL_ROW_0 + MARKER_R * 2) + "px";
+      wrap.appendChild(line);
+      const svgNs = "http://www.w3.org/2000/svg";
+      const svg = document.createElementNS(svgNs, "svg");
+      svg.setAttribute("width", MARKER_R * 2);
+      svg.setAttribute("height", MARKER_R * 2);
+      svg.setAttribute("viewBox", `0 0 ${MARKER_R * 2} ${MARKER_R * 2}`);
+      svg.style.position = "absolute";
+      svg.style.top = LABEL_ROW_0 + "px";
+      svg.style.left = "0";
+      const circle = document.createElementNS(svgNs, "circle");
+      circle.setAttribute("cx", MARKER_R); circle.setAttribute("cy", MARKER_R); circle.setAttribute("r", MARKER_R - 0.5);
+      circle.setAttribute("fill", "#7F1D1D"); circle.setAttribute("stroke", "#EF4444"); circle.setAttribute("stroke-width", "1");
+      svg.appendChild(circle);
+      for (const [x1, y1, x2, y2] of [[4,4,MARKER_R*2-4,MARKER_R*2-4],[MARKER_R*2-4,4,4,MARKER_R*2-4]]) {
+        const l2 = document.createElementNS(svgNs, "line");
+        l2.setAttribute("x1", x1); l2.setAttribute("y1", y1); l2.setAttribute("x2", x2); l2.setAttribute("y2", y2);
+        l2.setAttribute("stroke", "white"); l2.setAttribute("stroke-width", "1.5"); l2.setAttribute("stroke-linecap", "round");
+        svg.appendChild(l2);
+      }
+      wrap.appendChild(svg);
+      attachExceptionHover(wrap, ex.displayName);
+      exOverlay.appendChild(wrap);
+    }
+    body.appendChild(exOverlay);
+  }
+
+  for (const item of waterfallItems) {
+    if (item.kind === "header") {
+      const secHeader = el("div", "wf-section-header");
+      secHeader.appendChild(el("div", "lbl", escHtml(item.label)));
+      secHeader.appendChild(el("div", "rule"));
+      body.appendChild(secHeader);
+      continue;
+    }
+
+    const { req, origIdx } = item;
+    const relativeStartMs = req.startAbsoluteMs - resourceOriginMs;
+    const relativeEndMs = req.endAbsoluteMs - resourceOriginMs;
+    const startPct = (relativeStartMs / maxMs) * 100;
+    const widthPct = Math.max((relativeEndMs - relativeStartMs) / maxMs * 100, 0.15);
+    const { light: barLight, dark: color } = resourceColors(req);
+    const isEven = item.visualRowIdx % 2 === 0;
+    const url = req.urlPath || "/";
+    const isLcp = lcpUrl !== null && lcpMatchesRequest(lcpUrl, req);
+    const isErrored = req.hasFailed || req.hasCspViolation;
+    const failedBarColor = "#EF4444";
+    const barColor = isErrored ? failedBarColor : color;
+    const barLightColor = isErrored ? failedBarColor : barLight;
+    const type = resolveType(req);
+
+    const row = el("div", `wf-row ${isEven ? "even" : "odd"}${isLcp ? " lcp" : ""}${req.hasPending ? " pending" : ""}`);
+
+    const labelCell = el("div", "cell-label");
+    labelCell.title = `${req.urlDomain}${url}`;
+    if (req.incompleteReason && !isCacheLike(req)) {
+      const warnIcon = el("span", "small", "⚠");
+      warnIcon.style.color = "var(--warning)";
+      warnIcon.title = "Invalid timings";
+      labelCell.appendChild(warnIcon);
+    }
+    labelCell.appendChild(el("span", "url" + (isErrored ? " err" : ""), escHtml(url)));
+    row.appendChild(labelCell);
+
+    const typeCell = el("div", "cell-type", escHtml(resourceLabel(req)));
+    typeCell.style.color = isErrored ? failedBarColor : color;
+    row.appendChild(typeCell);
+
+    const durCell = el("div", `cell-dur${isErrored ? " err" : ""}`, formatMs(req.durationMs));
+    row.appendChild(durCell);
+
+    const timelineCell = el("div", "cell-timeline");
+
+    if (!isErrored && (type === "navigation" || type === "document") && req.responseEndNs != null) {
+      const respEndMs = relativeStartMs + req.responseEndNs / 1e6;
+      const loadStartMs = req.loadEventStartNs != null ? relativeStartMs + req.loadEventStartNs / 1e6 : null;
+      const loadEndMs2 = req.loadEventEndNs != null ? relativeStartMs + req.loadEventEndNs / 1e6 : null;
+      const processingEnd = loadStartMs ?? loadEndMs2;
+      const navPhaseColor1 = "#7C3AED", navPhaseColor2 = "#34D399";
+      if (processingEnd != null && processingEnd - respEndMs >= 1) {
+        const bar = el("div", "bar");
+        bar.style.left = (respEndMs / maxMs * 100) + "%";
+        bar.style.width = ((processingEnd - respEndMs) / maxMs * 100) + "%";
+        bar.style.background = navPhaseColor1;
+        attachBarHover(bar, req, relativeStartMs);
+        timelineCell.appendChild(bar);
+      }
+      if (loadStartMs != null && loadEndMs2 != null && loadEndMs2 - loadStartMs >= 1) {
+        const bar = el("div", "bar");
+        bar.style.left = (loadStartMs / maxMs * 100) + "%";
+        bar.style.width = ((loadEndMs2 - loadStartMs) / maxMs * 100) + "%";
+        bar.style.background = navPhaseColor2;
+        attachBarHover(bar, req, relativeStartMs);
+        timelineCell.appendChild(bar);
+      }
+    }
+
+    if (isErrored) {
+      const bar = el("div", "bar");
+      bar.style.left = startPct + "%"; bar.style.width = widthPct + "%"; bar.style.background = barColor;
+      attachBarHover(bar, req, relativeStartMs);
+      timelineCell.appendChild(bar);
+    } else if (!req.hasW3cTimings || req.requestStartNs === null) {
+      const isNav = type === "navigation" || type === "document";
+      if (isNav && summary.ttfbMs != null && summary.ttfbMs > 0 && summary.ttfbMs < req.durationMs) {
+        const ttfbPct = (summary.ttfbMs / maxMs) * 100;
+        const respWPct = ((req.durationMs - summary.ttfbMs) / maxMs) * 100;
+        const bar1 = el("div", "bar");
+        bar1.style.left = startPct + "%"; bar1.style.width = ttfbPct + "%"; bar1.style.background = barLightColor;
+        attachBarHover(bar1, req, relativeStartMs);
+        timelineCell.appendChild(bar1);
+        const bar2 = el("div", "bar");
+        bar2.style.left = (startPct + ttfbPct) + "%"; bar2.style.width = respWPct + "%"; bar2.style.background = barColor;
+        attachBarHover(bar2, req, relativeStartMs);
+        timelineCell.appendChild(bar2);
+      } else {
+        const bar = el("div", "bar");
+        bar.style.left = startPct + "%"; bar.style.width = widthPct + "%"; bar.style.background = barColor;
+        attachBarHover(bar, req, relativeStartMs);
+        timelineCell.appendChild(bar);
+      }
+    } else {
+      const fetchMs = (req.fetchStartNs ?? 0) / 1e6;
+      const reqMs = req.requestStartNs / 1e6;
+      const respMs = (req.responseStartNs ?? req.requestStartNs) / 1e6;
+      const endMs = req.responseEndNs != null && req.responseEndNs / 1e6 > 0.05 ? req.responseEndNs / 1e6 : req.durationMs;
+      const stallMs = Math.max(0, reqMs - fetchMs);
+      const pct = (ms) => ((relativeStartMs + ms) / maxMs) * 100;
+      const wpct = (ms) => (ms / maxMs) * 100;
+
+      if (stallMs >= 1) {
+        const stallBar = el("div", "bar");
+        stallBar.style.left = pct(fetchMs) + "%"; stallBar.style.width = wpct(stallMs) + "%";
+        stallBar.appendChild(el("div", "stall-tick"));
+        stallBar.appendChild(el("div", "stall-dash"));
+        attachBarHover(stallBar, req, relativeStartMs);
+        timelineCell.appendChild(stallBar);
+      }
+      if (respMs - reqMs >= 1) {
+        const bar = el("div", "bar");
+        bar.style.left = pct(reqMs) + "%"; bar.style.width = wpct(respMs - reqMs) + "%"; bar.style.background = barLightColor;
+        attachBarHover(bar, req, relativeStartMs);
+        timelineCell.appendChild(bar);
+      }
+      if (endMs - respMs >= 1) {
+        const bar = el("div", "bar");
+        bar.style.left = pct(respMs) + "%"; bar.style.width = wpct(endMs - respMs) + "%"; bar.style.background = barColor;
+        attachBarHover(bar, req, relativeStartMs);
+        timelineCell.appendChild(bar);
+      }
+      if (endMs < 0.05) {
+        const bar = el("div", "bar");
+        bar.style.left = startPct + "%"; bar.style.width = "2px"; bar.style.background = barColor;
+        attachBarHover(bar, req, relativeStartMs);
+        timelineCell.appendChild(bar);
+      }
+    }
+
+    row.appendChild(timelineCell);
+    body.appendChild(row);
+  }
+
+  wf.appendChild(body);
+  document.getElementById("waterfall-slot").appendChild(wf);
+
+  // Long task duration labels
+  if (longTasks.length > 0) {
+    const ltLabelWrap = el("div");
+    ltLabelWrap.style.position = "relative";
+    ltLabelWrap.style.height = "20px";
+    ltLabelWrap.style.marginTop = "4px";
+    if (state.showLongTasks) {
+      const inner = el("div");
+      inner.style.position = "absolute"; inner.style.left = LEFT_OFFSET + "px"; inner.style.right = "0"; inner.style.top = "0"; inner.style.bottom = "0";
+      let lastCenterPct = -100;
+      for (const lt of longTasks) {
+        const centerPct = Math.min((lt.startMs + lt.durationMs / 2) / maxMs * 100, 100);
+        if (Math.abs(centerPct - lastCenterPct) < 4) continue;
+        const lbl = el("div", "small", formatMs(lt.durationMs));
+        lbl.style.position = "absolute"; lbl.style.left = centerPct + "%"; lbl.style.transform = "translateX(-50%)";
+        lbl.style.color = "rgba(239,68,68,0.5)"; lbl.style.whiteSpace = "nowrap"; lbl.style.lineHeight = "20px";
+        inner.appendChild(lbl);
+        lastCenterPct = centerPct;
+      }
+      ltLabelWrap.appendChild(inner);
+    }
+    ltLabelSlot.appendChild(ltLabelWrap);
+  }
+
+  // Legend
+  const legend = el("div", "legend");
+  const legendLabels = { document: "Document", script: "Script", stylesheet: "Stylesheet", font: "Font", image: "Image", fetch: "XHR / Fetch", beacon: "Beacon", media: "Media", other: "Other" };
+  for (const [type2, pair] of Object.entries(RESOURCE_COLORS)) {
+    if (["xmlhttprequest", "navigation", "xhr"].includes(type2)) continue;
+    const item = el("div", "legend-item");
+    const sw = el("div", "legend-swatch"); sw.style.background = pair.dark;
+    item.appendChild(sw);
+    item.appendChild(el("span", "subdued small", legendLabels[type2] ?? type2));
+    legend.appendChild(item);
+  }
+  legend.appendChild(el("div", "legend-sep"));
+  for (const m of allMarkers) {
+    const item = el("div", "legend-item");
+    const line = el("div", "legend-line"); line.style.background = m.color;
+    item.appendChild(line);
+    item.appendChild(el("span", "subdued small", `${m.label} ${formatMs(m.valueMs)}`));
+    legend.appendChild(item);
+  }
+  legendSlot.appendChild(legend);
+
+  // LCP resource status
+  const lcpMatched = lcpUrl !== null && filteredRequests.some((r) => lcpMatchesRequest(lcpUrl, r));
+  const lcpStatus = el("div", "lcp-status");
+  const bar = el("div"); bar.style.width = "3px"; bar.style.height = "14px"; bar.style.background = "#F59E0B"; bar.style.borderRadius = "1px"; bar.style.flexShrink = "0";
+  lcpStatus.appendChild(bar);
+  lcpStatus.appendChild(el("span", "subdued small", "LCP resource:"));
+  if (lcpUrl) {
+    const statusSpan = el("span", "small", lcpMatched ? "matched" : "not found in waterfall");
+    statusSpan.style.color = lcpMatched ? "#F59E0B" : "var(--text-disabled)";
+    statusSpan.style.fontWeight = "600";
+    lcpStatus.appendChild(statusSpan);
+    lcpStatus.appendChild(el("span", "lcp-url small", lcpUrl));
+  } else {
+    const msg = summary.lcpMs != null
+      ? (summary.lcpElementType ? `no URL — element type is "${summary.lcpElementType}" (likely a text node)` : "lcp.element.url not populated in page summary")
+      : "no LCP recorded for this page instance";
+    const s = el("span", "small", msg);
+    s.style.color = "var(--text-disabled)";
+    lcpStatus.appendChild(s);
+  }
+  lcpSlot.appendChild(lcpStatus);
+
+  // Sticky pills setup
+  stickyPillsData = { phaseGroups, maxMs, wfEl: wf };
+  updateStickyPills();
+}
+
+function updateStickyPills() {
+  const sticky = document.getElementById("sticky-pills");
+  if (!stickyPillsData || !sticky) return;
+  const { phaseGroups, maxMs, wfEl } = stickyPillsData;
+  const rect = wfEl.getBoundingClientRect();
+  const timelineLeft = rect.left + LEFT_OFFSET;
+  const timelineWidth = rect.width - LEFT_OFFSET;
+  const shouldShow = rect.top < 0 && rect.bottom > 0;
+  if (!shouldShow) { sticky.style.display = "none"; return; }
+  sticky.style.display = "block";
+  sticky.innerHTML = "";
+  for (const group of phaseGroups) {
+    const left = timelineLeft + (group.valueMs / maxMs) * timelineWidth;
+    const pill = el("div", "pill");
+    pill.style.left = left + "px";
+    pill.style.top = "0";
+    pill.innerHTML = group.markers.map((m, i) =>
+      (i > 0 ? `<span class="subdued">·</span> ` : "") + `<span style="color:${m.color}">${escHtml(m.label)}</span>`
+    ).join(" ");
+    attachLineHover(pill, group);
+    sticky.appendChild(pill);
+  }
+}
+
+function renderAll() {
+  renderControls();
+  renderWaterfall();
+}
+
+// Sticky pills container (fixed overlay, lives outside normal flow)
+const stickyContainer = el("div", "sticky-pills");
+stickyContainer.id = "sticky-pills";
+document.body.appendChild(stickyContainer);
+window.addEventListener("scroll", updateStickyPills, { passive: true });
+window.addEventListener("resize", updateStickyPills);
+
+renderAll();
+</script>
+</body>
+</html>
