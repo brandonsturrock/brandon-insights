@@ -855,8 +855,8 @@ document.addEventListener("mouseleave", () => { hideTooltip(ttEl); hideTooltip(l
 // ─── Interactive state ──────────────────────────────────────────────────
 const state = {
   groupBy: "chronological",   // "chronological" | "type"
-  timeFilter: "lee",          // "lee" | "all" | "lcp"
   showLongTasks: true,
+  showExceptions: true,
   hiddenMetrics: new Set(),
 };
 
@@ -878,41 +878,9 @@ function renderControls() {
   orderBtns.appendChild(chronoBtn); orderBtns.appendChild(typeBtn);
   orderGroup.appendChild(orderBtns);
   row.appendChild(orderGroup);
-  row.appendChild(el("div", "control-sep"));
-
-  // Show (time filter)
-  const showGroup = el("div", "control-group");
-  showGroup.appendChild(el("span", "subdued small", "Show"));
-  const showBtns = el("div", "control-buttons");
-
-  const navRequestForFilter = navRequest;
-  const loadEventEndMsCalc = navRequestForFilter?.loadEventEndNs != null && navRequestForFilter.loadEventEndNs > 0 ? navRequestForFilter.loadEventEndNs / 1e6 : null;
-
-  const defaultBtn = el("button", "btn" + (state.timeFilter === "lee" ? " active" : ""), "Default");
-  defaultBtn.title = loadEventEndMsCalc != null ? `Resources started before Load Event End (${Math.round(loadEventEndMsCalc)} ms)` : "Load Event End not available";
-  defaultBtn.onclick = () => { state.timeFilter = "lee"; renderAll(); };
-  showBtns.appendChild(defaultBtn);
-
-  const expandedBtn = el("button", "btn" + (state.timeFilter === "all" ? " active" : ""), "Expanded");
-  expandedBtn.onclick = () => { state.timeFilter = "all"; renderAll(); };
-  showBtns.appendChild(expandedBtn);
-
-  const lcpShorterThanDefault = summary.lcpMs != null && loadEventEndMsCalc != null && summary.lcpMs < loadEventEndMsCalc;
-  const lcpDisabled = summary.lcpMs == null || lcpShorterThanDefault;
-  const lcpTitle = summary.lcpMs == null ? "LCP not reported for this page load"
-    : lcpShorterThanDefault ? `LCP (${Math.round(summary.lcpMs)} ms) is shorter than default view — no additional resources`
-    : `Resources started before LCP (${Math.round(summary.lcpMs)} ms)`;
-  const lcpBtn = el("button", "btn" + (state.timeFilter === "lcp" ? " active" : ""), "LCP");
-  lcpBtn.title = lcpTitle;
-  lcpBtn.disabled = lcpDisabled;
-  lcpBtn.onclick = () => { if (!lcpDisabled) { state.timeFilter = "lcp"; renderAll(); } };
-  showBtns.appendChild(lcpBtn);
-
-  showGroup.appendChild(showBtns);
-  row.appendChild(showGroup);
 
   const allMarkers = buildPhaseMarkers();
-  if (allMarkers.length > 0 || (summary.longTaskOccurrences || []).length > 0) {
+  if (allMarkers.length > 0 || (summary.longTaskOccurrences || []).length > 0 || exceptions.length > 0) {
     row.appendChild(el("div", "control-sep"));
     const overlayGroup = el("div", "control-group");
     overlayGroup.appendChild(el("span", "subdued small", "Overlays"));
@@ -921,6 +889,11 @@ function renderControls() {
       const ltBtn = el("button", "btn" + (state.showLongTasks ? " active" : ""), "Long Tasks");
       ltBtn.onclick = () => { state.showLongTasks = !state.showLongTasks; renderAll(); };
       overlayBtns.appendChild(ltBtn);
+    }
+    if (exceptions.length > 0) {
+      const exBtn = el("button", "btn" + (state.showExceptions ? " active" : ""), "JS Errors");
+      exBtn.onclick = () => { state.showExceptions = !state.showExceptions; renderAll(); };
+      overlayBtns.appendChild(exBtn);
     }
     for (const m of allMarkers) {
       const active = !state.hiddenMetrics.has(m.key);
@@ -949,28 +922,10 @@ function renderWaterfall() {
   lcpSlot.innerHTML = "";
 
   const resourceOriginMs = navRequest?.startAbsoluteMs ?? summary.performanceTimeOriginMs;
-  const loadEventEndMs = navRequest?.loadEventEndNs != null && navRequest.loadEventEndNs > 0 ? navRequest.loadEventEndNs / 1e6 : null;
-
-  const expandedCutoffMs = (() => {
-    const MAX = 60_000;
-    for (let i = 0; i < requests.length - 1; i++) {
-      if (requests[i + 1].startAbsoluteMs - requests[i].endAbsoluteMs >= 10_000) {
-        return Math.min(MAX, requests[i].endAbsoluteMs - resourceOriginMs);
-      }
-    }
-    const lastEnd = requests.length > 0 ? requests[requests.length - 1].endAbsoluteMs - resourceOriginMs : MAX;
-    return Math.min(MAX, lastEnd);
-  })();
-
-  const cutoffMs = state.timeFilter === "lee" ? loadEventEndMs : state.timeFilter === "all" ? expandedCutoffMs : (summary.lcpMs ?? null);
-  const filteredRequests = cutoffMs == null ? requests : requests.filter((r) => (r.startAbsoluteMs - resourceOriginMs) <= cutoffMs);
 
   const maxMs = Math.max(
-    ...filteredRequests.map((r) => r.endAbsoluteMs - resourceOriginMs),
+    ...requests.map((r) => r.endAbsoluteMs - resourceOriginMs),
     ttfbPositionMs ?? 0,
-    state.timeFilter === "lee" ? (loadEventEndMs ?? 0) : 0,
-    state.timeFilter === "all" ? expandedCutoffMs : 0,
-    state.timeFilter === "lcp" ? (summary.lcpMs ?? 0) : 0,
     500
   ) * 1.02;
 
@@ -986,7 +941,7 @@ function renderWaterfall() {
     .filter((e) => e.relativeMs >= 0 && e.relativeMs <= maxMs);
 
   const lcpUrl = summary.lcpElementUrl ?? null;
-  const waterfallItems = buildWaterfallItems(filteredRequests, state.groupBy);
+  const waterfallItems = buildWaterfallItems(requests, state.groupBy);
 
   const wf = el("div", "waterfall");
 
@@ -1065,7 +1020,7 @@ function renderWaterfall() {
   }
   body.appendChild(lineOverlay);
 
-  if (visibleExceptions.length > 0) {
+  if (state.showExceptions && visibleExceptions.length > 0) {
     const exOverlay = el("div", "wf-overlay");
     exOverlay.style.left = LEFT_OFFSET + "px";
     exOverlay.style.top = "0";
@@ -1292,7 +1247,7 @@ function renderWaterfall() {
   legendSlot.appendChild(legend);
 
   // LCP resource status
-  const lcpMatched = lcpUrl !== null && filteredRequests.some((r) => lcpMatchesRequest(lcpUrl, r));
+  const lcpMatched = lcpUrl !== null && requests.some((r) => lcpMatchesRequest(lcpUrl, r));
   const lcpStatus = el("div", "lcp-status");
   const bar = el("div"); bar.style.width = "3px"; bar.style.height = "14px"; bar.style.background = "#F59E0B"; bar.style.borderRadius = "1px"; bar.style.flexShrink = "0";
   lcpStatus.appendChild(bar);

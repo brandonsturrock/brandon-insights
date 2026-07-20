@@ -1,6 +1,6 @@
 ---
 name: full-page-analysis
-version: 1.0.0
+version: 1.1.0
 description: Full page performance analysis for a Dynatrace RUM page — p75 LCP stats, TTFB breakdown, render-blocking resources, slow/heavy resources, third-party audit, long tasks, errors, prioritized recommendations, saved markdown report, and an interactive resource waterfall HTML. Combines rum-lcp-analysis and dt-waterfall into a single end-to-end flow. Use when the user wants a complete picture of a page's load performance.
 ---
 
@@ -180,7 +180,66 @@ before continuing.
 
 ---
 
-## Step 0 — Timeframe
+## Step 0 — Mode selection
+
+After the context check, use `AskUserQuestion` to ask how to proceed:
+
+- **I have an instance ID** — user provides a known `user_action.instance_id`; skip to Step 0A
+- **Find one for me** — run the normal frontend → page → representative instance flow; continue to Step 0B
+
+---
+
+## Step 0A — Instance ID path (skip if "Find one for me" chosen)
+
+Ask the user for their `user_action.instance_id`. Set `UA_INSTANCE_ID`.
+
+### Resolve instance metadata with timeframe expansion
+
+Try last 7 days first:
+
+```dql
+fetch user.events, from: now()-7d
+| filter user_action.instance_id == "UA_INSTANCE_ID"
+| filter characteristics.has_user_action == true
+| filter user_action.type == "hard_navigation"
+| fields view.instance_id, frontend.name, page.detected_name,
+         lcp.render_time, lcp.url, lcp.ui_element.tag_name,
+         browser.name, browser.version, device.type, os.name,
+         ttfb.value, timestamp
+| limit 1
+```
+
+If 0 records returned, expand to last 30 days:
+
+```dql
+fetch user.events, from: now()-30d
+| filter user_action.instance_id == "UA_INSTANCE_ID"
+| filter characteristics.has_user_action == true
+| filter user_action.type == "hard_navigation"
+| fields view.instance_id, frontend.name, page.detected_name,
+         lcp.render_time, lcp.url, lcp.ui_element.tag_name,
+         browser.name, browser.version, device.type, os.name,
+         ttfb.value, timestamp
+| limit 1
+```
+
+If still 0 records, tell the user the instance ID was not found in the last 30 days and stop.
+
+Set `TF` to whichever window returned results (`now()-7d` or `now()-30d`).
+
+Extract and set from the returned record:
+- `VIEW_INSTANCE_ID` from `view.instance_id`
+- `FRONTEND` from `frontend.name`
+- `PAGE` from `page.detected_name`
+- browser/device metadata for later use in the report
+
+Tell the user: instance found, timeframe used, frontend, page name, and instance LCP value.
+
+**Continue directly to Step 4c.** Skip Steps 0B, 1, 1b, 2, 3, 4a, 4b entirely.
+
+---
+
+## Step 0B — Timeframe (normal path only)
 
 Use **last 7 days** (`from: now()-7d`) unless the user specifies otherwise.
 Substitute `TF` for the chosen `from:` expression throughout.
