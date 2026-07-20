@@ -1,6 +1,6 @@
 ---
 name: full-page-analysis
-version: 1.1.0
+version: 1.1.1
 description: Full page performance analysis for a Dynatrace RUM page — p75 LCP stats, TTFB breakdown, render-blocking resources, slow/heavy resources, third-party audit, long tasks, errors, prioritized recommendations, saved markdown report, and an interactive resource waterfall HTML. Combines rum-lcp-analysis and dt-waterfall into a single end-to-end flow. Use when the user wants a complete picture of a page's load performance.
 ---
 
@@ -256,7 +256,9 @@ fetch user.events, from: TF
 | limit 30
 ```
 
-Show results. Use `AskUserQuestion` to let the user pick one `frontend.name`.
+Use `AskUserQuestion` to let the user pick one `frontend.name`. Pass options in
+**exactly the order the query returned them** (highest sessions first). Include
+the session count in each option label, e.g. `"My Frontend (12,450 sessions)"`.
 Set `FRONTEND`.
 
 ### 1b — Agent version check
@@ -290,7 +292,9 @@ fetch user.events, from: TF
 | limit 20
 ```
 
-Use `AskUserQuestion` to let the user pick one `page.detected_name`. Set `PAGE`.
+Use `AskUserQuestion` to let the user pick one `page.detected_name`. Pass options
+in **exactly the order the query returned them** (highest hard_navs first). Include
+the count in each option label, e.g. `"/ (3,210 hard navigations)"`. Set `PAGE`.
 
 ---
 
