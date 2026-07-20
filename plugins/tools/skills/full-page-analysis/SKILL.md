@@ -81,7 +81,33 @@ dtctl auth login --environment "ENV_URL" --context-name "CONTEXT_NAME"
 This opens the browser-based OAuth login flow. Tell the user to complete it and
 confirm when done.
 
-### 4. Run doctor
+### 4. Check Node.js
+
+```bash
+node --version 2>/dev/null
+```
+
+If Node.js is not found, install it:
+
+**Mac/Linux (Homebrew):**
+```bash
+brew install node
+```
+
+**Mac/Linux (no Homebrew):**
+```bash
+curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && apt-get install -y nodejs
+```
+
+**Windows:**
+```powershell
+winget install OpenJS.NodeJS
+```
+
+After install, verify with `node --version`. If it still fails, direct the user
+to https://nodejs.org and stop.
+
+### 5. Run doctor
 
 ```bash
 dtctl doctor
@@ -91,10 +117,10 @@ Show the output. If any check fails, surface the error and tell the user to
 resolve it before proceeding. Do not continue to Step 0 until `dtctl doctor`
 passes cleanly.
 
-### 5. Report
+### 6. Report
 
-Tell the user: `dtctl` version installed, context name, and environment URL.
-Then continue to Step 0.
+Tell the user: `dtctl` version installed, Node.js version, context name, and
+environment URL. Then continue to Step 0.
 
 ---
 
@@ -479,141 +505,49 @@ Append full Step 8 output below it. Tell the user the file path.
 
 ## Step 10 — Build interactive waterfall HTML
 
-Transform the Step 5, 6, and 7 data into this JSON shape:
+**No field mapping required.** Pass raw DQL records directly with `__raw: true` —
+the template's `normalizeRaw()` function handles all field conversion, W3C timing
+normalization, and unit translations at render time.
 
-```json
-{
-  "summary": { /* see field spec below */ },
-  "requests": [ /* see field spec below */ ],
-  "exceptions": [ { "startAbsoluteMs": 0, "displayName": "" } ]
-}
-```
+### Save query outputs to temp files
 
-### `summary` fields (timestamps Unix ms, durations ms)
-
-- `performanceTimeOriginMs`: parse `performance.time_origin` (fallback `client_start_time`) to Unix ms
-- `clientStartTimeMs`: parse `client_start_time` to Unix ms
-- `ttfbMs`: `ttfb.value` if `ttfb.status != "not_reported"`, else `null`
-- `fcpMs` / `lcpMs` / `fpMs`: nanosecond fields divided by 1e6, gated on `*.status != "not_reported"`
-- `fcpStatus`, `lcpStatus`, `fpStatus`, `clsStatus`: pass through as strings
-- `clsScore`: `web_vitals.cumulative_layout_shift` (raw number), gated on `cls.status`
-- `inpMs`: `web_vitals.interaction_to_next_paint` / 1e6, gated on `inp.status`
-- `ttfbDnsMs`, `ttfbConnectionMs`, `ttfbWaitingMs`, `ttfbRequestMs`, `ttfbCacheMs`: pass through `ttfb.*_duration` directly
-- `pageUrl`, `pageTitle`, `browserName`, `browserVersion`, `deviceType`, `osName`, `navigationType`, `frontendName`: strings
-- `longTaskCount`: `long_task.all.count` (default 0)
-- `longTaskAvgMs`: `long_task.all.avg_duration`
-- `longTaskOccurrences`: parse `long_task.all.slowest_occurrences` into `{ startMs, durationMs }`, sort by `startMs`, merge entries where next task starts within 20ms of previous end
-- `exceptionCount`, `http4xxCount`, `http5xxCount`: from `error.*` fields (default 0)
-- `lcpElementType`: `lcp.ui_element.tag_name` or `null`
-- `lcpElementUrl`: `lcp.url` or `null`
-
-### `requests[]` fields
-
-- `urlPath`, `urlDomain`, `urlFull`: from `url.path`/`url.domain`/`url.full`
-- `urlProvider`: `url.provider` or `null`
-- `startAbsoluteMs`, `endAbsoluteMs`: parse `start_time`/`end_time` to Unix ms
-- `durationMs`: `endAbsoluteMs - startAbsoluteMs`
-- `transferSize`, `encodedBodySize`, `decodedBodySize`: from `performance.*` size fields
-- `performanceInitiatorType`: `performance.initiator_type` or `null`
-- `httpStatusCode`: `http.response.status_code`
-- `httpMethod`: `http.request.method` or `null`
-- `hasW3cTimings`: `characteristics.has_w3c_resource_timings == true || characteristics.has_w3c_navigation_timings == true`
-- W3C timing fields → store as `<name>Ns` (e.g. `fetchStartNs`, `domainLookupStartNs`) after normalization (see below)
-- `renderBlockingStatus`: `performance.render_blocking_status` or `null`
-- `deliveryType`: `performance.delivery_type` or `null`
-- `protocol`: `performance.next_hop_protocol` or `null`
-- `incompleteReason`: `performance.incomplete_reason` or `null`
-- `hasFailed`: `characteristics.has_failed_request == true`
-- `hasCspViolation`: `characteristics.has_csp_violation == true`
-- `hasPending`: `characteristics.has_pending_request == true`
-
-### W3C timing normalization
-
-Dynatrace stores `performance.*` fields as ns offsets from `performance.time_origin`
-(page-relative). Convert to resource-relative ns:
-
-1. `startTimeNs = performance.start_time`, `fetchStartRaw = performance.fetch_start`
-2. `isAbsoluteW3c = startTimeNs != null && fetchStartRaw != null && fetchStartRaw > 0 && fetchStartRaw >= startTimeNs - 1_000_000`
-3. For each raw value: `null` → `null`; `0` → `0` (phase didn't occur); else if `isAbsoluteW3c` → `raw - startTimeNs` (drop negatives as `null`); else → `raw` unchanged
-
-### `exceptions[]` fields
-
-- `startAbsoluteMs`: parse `start_time` to Unix ms
-- `displayName`: `error.display_name` or `"Exception"`
-
-### Output
-
-Check for Python first, then Node.js as fallback. Run the appropriate path below.
-
-**Detect available runtime:**
-```bash
-python3 --version 2>/dev/null || python --version 2>/dev/null
-node --version 2>/dev/null
-```
-
----
-
-#### Path A — Python available
-
-Build the processed JSON payload (field spec above) and write the HTML:
+Run Steps 5, 6, and 7 queries saving output to temp files (skip if already done
+during those steps):
 
 ```bash
-python3 << 'EOF'
-# ... build summary/requests/exceptions dicts from Steps 5-7 data ...
-import json
-payload = json.dumps({"summary": summary, "requests": requests_out, "exceptions": exceptions_out}, separators=(',', ':'))
-payload = payload.replace('</script>', r'<\/script>')
-with open('/Users/PATH/TO/template.html') as f:
-    html = f.read()
-html = html.replace('__DATA_JSON__', payload).replace('__PAGE_TITLE__', 'PAGE TITLE')
-with open('OUTPUT_PATH', 'w') as f:
-    f.write(html)
-EOF
+dtctl query -f - -o json <<'DQL' > /tmp/wf_summary.json
+# paste Step 5 query here
+DQL
+
+dtctl query -f - -o json <<'DQL' > /tmp/wf_requests.json
+# paste Step 6 query here
+DQL
+
+dtctl query -f - -o json <<'DQL' > /tmp/wf_exceptions.json
+# paste Step 7 query here
+DQL
 ```
 
----
-
-#### Path B — No Python, Node.js available
-
-Save Steps 5, 6, and 7 query outputs to temp files, then inject raw records.
-The template's `normalizeRaw()` function handles all field mapping and W3C timing
-normalization at render time — no pre-processing needed.
+Replace `TEMPLATE_PATH` with the skill's `assets/template.html` absolute path,
+`PAGE_TITLE` with the page name, and `OUTPUT_PATH` with the desired output file path.
 
 ```bash
-# Save query results (do this as part of Steps 5-7 if using this path)
-dtctl query -f - -o json <<'EOF' > /tmp/wf_summary.json
-# Step 5 query
-EOF
-
-dtctl query -f - -o json <<'EOF' > /tmp/wf_requests.json
-# Step 6 query
-EOF
-
-dtctl query -f - -o json <<'EOF' > /tmp/wf_exceptions.json
-# Step 7 query
-EOF
-
-# Combine and inject
 node -e "
 const fs = require('fs');
 const summary = JSON.parse(fs.readFileSync('/tmp/wf_summary.json')).records[0] || {};
 const requests = JSON.parse(fs.readFileSync('/tmp/wf_requests.json')).records;
 const exceptions = JSON.parse(fs.readFileSync('/tmp/wf_exceptions.json')).records;
-const payload = JSON.stringify({__raw:true, summary, requests, exceptions})
+const payload = JSON.stringify({__raw: true, summary, requests, exceptions})
   .replace(/<\/script>/g, '<\\/script>');
-let html = fs.readFileSync(process.argv[1], 'utf8');
-html = html.replace('__DATA_JSON__', payload).replace('__PAGE_TITLE__', process.argv[2]);
-fs.writeFileSync(process.argv[3], html);
-" ~/.claude/skills/full-page-analysis/assets/template.html "PAGE_TITLE" "OUTPUT_PATH"
+let html = fs.readFileSync('TEMPLATE_PATH', 'utf8');
+html = html.replace('__DATA_JSON__', payload).replace('__PAGE_TITLE__', 'PAGE_TITLE');
+fs.writeFileSync('OUTPUT_PATH', html);
+console.log('Written: OUTPUT_PATH');
+"
 ```
 
----
-
-#### Neither available
-
-Tell the user: "Building the waterfall HTML requires Python 3 or Node.js. Please
-install either (`brew install python3` or `brew install node` on Mac) and re-run."
-Skip Step 10 and tell them the markdown report is still saved.
+If Node.js is not available, tell the user to run this skill with `--install`
+first to set up the required dependencies.
 
 ---
 
