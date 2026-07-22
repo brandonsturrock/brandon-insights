@@ -15,6 +15,7 @@ All skills require [`dtctl`](https://github.com/dynatrace-oss/dtctl) configured 
 
 ## Installation
 
-```bash
-dtctl skills install --source <this-repo-url>
+```
+/plugin marketplace add brandonsturrock/brandon-insights
+/plugin install tools@brandon-insights
 ```
