@@ -223,7 +223,18 @@ fetch user.events, from: now()-30d
 | limit 1
 ```
 
-If still 0 records, tell the user the instance ID was not found in the last 30 days and stop.
+If still 0 records, check whether the instance exists at all but is the wrong type:
+
+```dql
+fetch user.events, from: now()-30d
+| filter user_action.instance_id == "UA_INSTANCE_ID"
+| filter characteristics.has_user_action == true
+| fields user_action.type
+| limit 1
+```
+
+- If this returns a record: tell the user **"This instance is a `{user_action.type}` event, not a hard navigation. This skill only supports hard navigation instances."** Then return to Step 0 and ask them to choose again (Find one for me / I have an instance ID).
+- If this also returns 0 records: tell the user the instance ID was not found in the last 30 days, then return to Step 0.
 
 Set `TF` to whichever window returned results (`now()-7d` or `now()-30d`).
 
@@ -251,30 +262,19 @@ Substitute `TF` for the chosen `from:` expression throughout.
 ```dql
 fetch user.events, from: TF
 | filter isNotNull(frontend.name)
-| summarize sessions = count(), by: {frontend.name}
-| sort sessions desc
+| summarize hard_navs = countIf(user_action.type == "hard_navigation"), by: {frontend.name}
+| filter hard_navs > 0
+| sort hard_navs desc
 | limit 30
 ```
 
-Use `AskUserQuestion` to let the user pick one `frontend.name`. Pass options in
-**exactly the order the query returned them** (highest sessions first). Include
-the session count in each option label, e.g. `"My Frontend (12,450 sessions)"`.
-Set `FRONTEND`.
-
-### 1b — Agent version check
-
-```dql
-fetch user.events, from: TF
-| filter frontend.name == "FRONTEND"
-| filter isNotNull(dt.rum.agent.version)
-| summarize count(), by: {dt.rum.agent.version}
-| sort `count()` desc
-| limit 10
-```
-
-Parse each `dt.rum.agent.version` as a number. If **no version ≥ 1.339 exists**,
-warn the user: hard navigation events require agent ≥ 1.339 and may not be
-present. Ask whether to continue anyway or pick a different frontend.
+Use `AskUserQuestion` to let the user pick one `frontend.name`. Show **at most 3
+results at a time** plus a 4th option `"Show more..."`. If the user picks "Show
+more...", advance the window by 3 and ask again (e.g. results 4–6 + "Show
+more..." if more remain, or results 4–N without "Show more..." if ≤ 3 left).
+Pass options in **exactly the order the query returned them** (highest hard_navs
+first). Include the count in each option label, e.g.
+`"My Frontend (12,450 hard navigations)"`. Set `FRONTEND`.
 
 ---
 
@@ -292,9 +292,11 @@ fetch user.events, from: TF
 | limit 20
 ```
 
-Use `AskUserQuestion` to let the user pick one `page.detected_name`. Pass options
-in **exactly the order the query returned them** (highest hard_navs first). Include
-the count in each option label, e.g. `"/ (3,210 hard navigations)"`. Set `PAGE`.
+Use `AskUserQuestion` to let the user pick one `page.detected_name`. Show **at
+most 3 results at a time** plus a 4th option `"Show more..."`. If the user picks
+"Show more...", advance the window by 3 and ask again. Pass options in **exactly
+the order the query returned them** (highest hard_navs first). Include the count
+in each option label, e.g. `"/ (3,210 hard navigations)"`. Set `PAGE`.
 
 ---
 

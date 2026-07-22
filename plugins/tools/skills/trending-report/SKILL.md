@@ -176,8 +176,10 @@ fetch user.events, from: now()-6M
 EOF
 ```
 
-Present the returned `frontend.name` values with `AskUserQuestion` and let the
-user pick one. Set `FRONTEND`.
+Present the returned `frontend.name` values with `AskUserQuestion`. Show **at
+most 3 at a time** plus a 4th option `"Show more..."`. If the user picks "Show
+more...", advance the window by 3 and ask again. Highest sessions first. Set
+`FRONTEND`.
 
 ### 2. Resolve the report type
 
