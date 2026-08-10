@@ -61,6 +61,13 @@ Apply these Core Web Vitals thresholds (p75) when flagging violations:
 ## Error Rates
 ```
 
+## 4a. Sparse data handling
+
+The daily errors query (`cm-errors.json`) only returns rows for days that had
+matching events — days with zero errors produce no row at all. Treat absent
+days as zero when computing trends or ranges; do not cite "no data for days X–Y"
+as a finding unless the gap is itself anomalous.
+
 ## 5. Anti-hallucination guardrails
 
 Stricter than the original app: this is Claude's own output now, not a

@@ -65,13 +65,16 @@ and the findings-prompt both read from that directory using these exact names.
 anything else). No frontend filter — this query finds the list of frontends.
 
 ```dql
-fetch user.events, from: -1M
+fetch user.events, from: -7d
 | fields frontend.name
 | dedup frontend.name
 | sort frontend.name asc
 ```
 
 **Output columns:** `frontend.name` (string). No units/conversions.
+
+**Note:** 7 days is sufficient to enumerate active frontends and scans ~8× less
+data than `-1M`. The original `-1M` window reliably hit the 500 GB scan limit.
 
 ---
 

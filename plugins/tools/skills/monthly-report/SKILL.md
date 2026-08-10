@@ -181,12 +181,12 @@ more...", advance the window by 3 and ask again. Highest sessions first. Set
 
 ### 2. Run the queries
 
-For each query needed for the current-month report (queries 0 and 6–15 in
-`references/queries.md`), write the query body to a temp `.dql` file, then
-run:
+Write all query bodies to temp `.dql` files, then **fire all 11 queries in
+parallel** (they are fully independent):
 
 ```bash
-dtctl query -f <query>.dql --set frontend="NAME" [--context NAME] -o json --agent --spill=never > <data-dir>/<canonical-filename>.json
+dtctl query -f <query>.dql --set frontend="NAME" [--context NAME] -o json --agent --spill=never \
+  | grep -m1 '^{' > <data-dir>/<canonical-filename>.json
 ```
 
 - Use a scratch/output directory convention consistent with dtctl's own
@@ -198,6 +198,13 @@ dtctl query -f <query>.dql --set frontend="NAME" [--context NAME] -o json --agen
   all small pre-aggregated result sets. If `dtctl` ever spills anyway,
   branch on `result.kind` per the dtctl skill and `dtctl inspect` the file
   instead of re-querying.
+- **Warning line stripping:** `dtctl` may print one or more `Warning: ...`
+  lines to stdout before the JSON envelope (e.g. scan-limit warnings, field
+  override notices). Pipe through `grep -m1 '^{'` to extract only the JSON
+  line. Without this, downstream JSON parsers will fail on the leading text.
+- **Parallelism:** background all 11 `dtctl query` invocations with `&`, then
+  `wait` for them all before proceeding. This cuts wall time roughly in half
+  compared to sequential execution.
 
 ### 3. Generate findings
 
