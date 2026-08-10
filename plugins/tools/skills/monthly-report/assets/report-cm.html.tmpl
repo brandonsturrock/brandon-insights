@@ -5,17 +5,23 @@
 <title>{{REPORT_TITLE}}</title>
 <!--
   CONTRACT for scripts/build-report.mjs (owned by another workstream).
-  This file is the 4-PAGE "Current Month" report layout (Traffic / Core Web Vitals / Top Pages / Errors).
-  Its sibling report-trending.html.tmpl is the 3-page "Trending" layout — pick ONE per render, they are
-  two separate template files (not one file with a REPORT_TYPE switch).
+  This file is the 5-PAGE "Current Month" report layout:
+    Page 1: Executive Summary (KPI row + 2×2 findings grid)
+    Page 2: Traffic (daily sessions chart + device compare table)
+    Page 3: Core Web Vitals (tier bars + distribution histograms + daily trend charts)
+    Page 4: Top Pages (page performance scorecard table)
+    Page 5: Errors (JS/request rate charts + error count chart + exception/request-error tables)
+
+  Its sibling report-trending.html.tmpl is the 3-page "Trending" layout — pick ONE per render,
+  they are two separate template files (not one file with a REPORT_TYPE switch).
 
   PLACEHOLDERS (plain string replace, each appears exactly once):
     {{REPORT_TITLE}}         - <title> text, e.g. "acme-shop — March 2026 Review"
     {{FRONTEND_NAME}}         - shown top-right of every page header
     {{ENVIRONMENT_NAME}}      - shown under frontend name; pass "" to omit (CSS :empty hides it)
-    {{DATE_RANGE_LABEL}}      - shown top-center (replaces "TRENDING" with the month name) and header, e.g. "March 2026"
+    {{DATE_RANGE_LABEL}}      - shown top-center and header, e.g. "March 2026"
     {{GENERATED_AT}}          - footer-adjacent timestamp string
-    {{FINDINGS_TRAFFIC_HTML}} - pre-rendered HTML (glue script markdown -> HTML) for "## Traffic" notes. "" hides panel.
+    {{FINDINGS_TRAFFIC_HTML}} - pre-rendered HTML (glue script markdown -> HTML) for "## Traffic" notes.
     {{FINDINGS_CWV_HTML}}     - same, for "## Core Web Vitals" notes.
     {{FINDINGS_PAGES_HTML}}   - same, for "## Pages" (Top Pages) notes.
     {{FINDINGS_ERRORS_HTML}}  - same, for "## Error" notes.
@@ -25,49 +31,49 @@
     DATA = {
       kpis: [ { label, value, change, color, lowerIsBetter }, ... ],   // same shape as trending template
 
-      cmDailyDevice: {                              // stacked bar chart, page 1
+      cmDailyDevice: {                              // stacked bar chart, page 2
         labels: ["1", "2", ... "31"],                // day-of-month labels
         desktop: [120, 130, ...], mobile: [80, 95, ...],
       },
-      deviceCompareRows: [                           // table, page 1 (one row per device type)
+      deviceCompareRows: [                           // table, page 2 (one row per device type)
         { deviceType: "Desktop", sessions: 40200, pageLoads: 38900, lcpP75: 2200, inpP75: 180, clsP75: 0.04 },
         { deviceType: "Mobile",  sessions: 31000, pageLoads: 29800, lcpP75: 3100, inpP75: 260, clsP75: 0.09 },
       ],
 
-      cmCwvTier: {                                    // horizontal 100%-stacked bar, page 2 (units: % 0-100)
+      cmCwvTier: {                                    // horizontal 100%-stacked bar, page 3 (units: % 0-100)
         lcp: { good: 72, ni: 18, poor: 10 },
         inp: { good: 81, ni: 12, poor: 7 },
         cls: { good: 90, ni: 7,  poor: 3 },
       },
-      cmCwvDistribution: {                             // 3 small histograms, 11 buckets each, page 2
+      cmCwvDistribution: {                             // 3 small histograms, 11 buckets each, page 3
         lcp: { buckets: ["0-1s","1-2s",...,"10s+"], counts: [.. 11 numbers ..], p75: 2200 },
         inp: { buckets: [...11 labels...],           counts: [...11...],        p75: 180 },
         cls: { buckets: ["0-0.1",...,"1.0+"],        counts: [...11...],        p75: 0.04 },
       },                                                // p75 is shown as a text label (see note below), not a
                                                          // rendered vertical ref-line, to avoid the annotation plugin
-      cmDailyCwv: {                                     // 3 line charts (device-split + threshold lines), page 2
+      cmDailyCwv: {                                     // 3 line charts (device-split + threshold lines), page 3
         labels: ["1", "2", ... "31"],
         lcp: { desktop: [...], mobile: [...] },
         inp: { desktop: [...], mobile: [...] },
         cls: { desktop: [...], mobile: [...] },
       },
 
-      topPagesRows: [                                  // table, page 3 (PagePerfRow shape, top 10 by visits)
+      topPagesRows: [                                  // table, page 4 (PagePerfRow shape, top 10 by visits)
         { name: "/checkout", count: 9200, lcp: 2100, inp: 150, cls: 0.03, exceptions: 4, requestErrors: 2 },
       ],
 
-      cmErrorRates: {                                   // 2 line charts (percent), page 4
+      cmErrorRates: {                                   // 2 line charts (percent), page 5
         labels: ["1", "2", ... "31"],
         jsErrorRate: [0.4, 0.6, ...], reqErrorRate: [1.1, 0.9, ...],
       },
-      cmErrorCounts: {                                   // stacked bar chart, page 4
+      cmErrorCounts: {                                   // stacked bar chart, page 5
         labels: ["1", "2", ... "31"],
         byType: { "JS Error": [3,5,...], "Timeout": [1,0,...] },   // any number of series, keyed by error type
       },
-      topExceptionRows: [                                // table, page 4 (top 5 rendered)
+      topExceptionRows: [                                // table, page 5 (top 5 rendered)
         { count: 120, type: "TypeError", message: "Cannot read properties of undefined", source: "app.bundle.js" },
       ],
-      topRequestErrorRows: [                             // table, page 4 (top 5 rendered)
+      topRequestErrorRows: [                             // table, page 5 (top 5 rendered)
         { count: 80, method: "GET", status: 500, host: "api.acme.com", path: "/v1/cart" },
       ],
     }
@@ -153,22 +159,28 @@
   .chart-body { position: relative; flex: 1; min-height: 0; min-width: 0; }
   .chart-body canvas { width: 100% !important; height: 100% !important; }
 
-  .findings {
-    flex: 0 0 auto; background: #1c1e2e; border: 1px solid rgba(20,150,255,0.16); border-radius: 10px;
-    padding: 10px 16px 12px; position: relative; overflow: hidden;
+  /* exec summary findings grid */
+  .exec-grid { flex: 1; display: flex; gap: 12px; min-height: 0; }
+  .exec-col { flex: 1; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+  .exec-card {
+    flex: 1; background: #1c1e2e; border: 1px solid rgba(20,150,255,0.16); border-radius: 10px;
+    padding: 12px 14px 10px; position: relative; display: flex; flex-direction: column; min-height: 0; overflow: hidden;
   }
-  .findings::before {
+  .exec-card::before {
     content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 10px 10px 0 0;
-    background: linear-gradient(90deg, rgba(20,150,255,0.5) 0%, transparent 60%);
+    background: linear-gradient(90deg, var(--exec-accent, rgba(20,150,255,0.5)) 0%, transparent 60%);
   }
-  .findings .findings-label { font-size: 11px; font-weight: 700; color: #b1b2d2; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px; }
-  .findings-body { font-size: 12px; line-height: 1.55; color: #e8edf5; }
-  .findings-body h2 { font-size: 12px; margin: 0 0 4px; color: #1496ff; text-transform: uppercase; letter-spacing: 0.06em; }
-  .findings-body ul { margin: 0 0 4px; padding-left: 18px; }
-  .findings-body p { margin: 0 0 4px; }
-  .findings.is-empty { display: none; }
+  .exec-section-label {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em;
+    color: var(--exec-accent-text, #1496ff); margin-bottom: 6px; flex: 0 0 auto;
+  }
+  .exec-body { flex: 1; overflow: hidden; font-size: 12px; line-height: 1.55; color: #e8edf5; }
+  .exec-body ul { margin: 0; padding-left: 16px; }
+  .exec-body li { margin-bottom: 3px; }
+  .exec-body p { margin: 0 0 4px; }
+  .exec-empty { font-size: 12px; color: #666e8c; font-style: italic; }
 
-  /* tables */
+  /* chart pages: table wrapper */
   .dt-table-wrap { flex: 1; min-height: 0; overflow: hidden; }
   table.dt-table { width: 100%; border-collapse: collapse; font-size: 11px; }
   table.dt-table th {
@@ -196,8 +208,51 @@
 </head>
 <body>
 
-<!-- ── Page 1: Traffic ───────────────────────────────────────────────── -->
+<!-- ── Page 1: Executive Summary ────────────────────────────────────── -->
 <section class="page" data-page="1">
+  <header class="hdr">
+    <div class="hdr-left"><span class="brand">Dynatrace · Business Insights</span></div>
+    <div class="hdr-center"><div class="kind">{{DATE_RANGE_LABEL}}</div><div class="section">Executive Summary</div></div>
+    <div class="hdr-right">
+      <div class="name">{{FRONTEND_NAME}}</div>
+      <div class="env">{{ENVIRONMENT_NAME}}</div>
+      <div class="range">{{DATE_RANGE_LABEL}}</div>
+    </div>
+  </header>
+  <div class="accent-line"></div>
+  <div class="content">
+    <div class="kpi-row" id="kpi-row"></div>
+    <div class="exec-grid">
+      <div class="exec-col">
+        <div class="exec-card" style="--exec-accent: rgba(123,97,255,0.6); --exec-accent-text: #9b7fff;">
+          <div class="exec-section-label">Traffic</div>
+          <div class="exec-body" id="exec-traffic">{{FINDINGS_TRAFFIC_HTML}}</div>
+        </div>
+        <div class="exec-card" style="--exec-accent: rgba(20,150,255,0.6); --exec-accent-text: #4db3ff;">
+          <div class="exec-section-label">Top Pages</div>
+          <div class="exec-body" id="exec-pages">{{FINDINGS_PAGES_HTML}}</div>
+        </div>
+      </div>
+      <div class="exec-col">
+        <div class="exec-card" style="--exec-accent: rgba(245,166,35,0.6); --exec-accent-text: #f5c060;">
+          <div class="exec-section-label">Core Web Vitals</div>
+          <div class="exec-body" id="exec-cwv">{{FINDINGS_CWV_HTML}}</div>
+        </div>
+        <div class="exec-card" style="--exec-accent: rgba(232,52,90,0.6); --exec-accent-text: #f06080;">
+          <div class="exec-section-label">Errors</div>
+          <div class="exec-body" id="exec-errors">{{FINDINGS_ERRORS_HTML}}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <footer class="ftr">
+    <span>CONFIDENTIAL · FOR CUSTOMER USE ONLY</span>
+    <span>Page 1 of 5 · Powered by <span class="brand-name">Dynatrace</span> · {{GENERATED_AT}}</span>
+  </footer>
+</section>
+
+<!-- ── Page 2: Traffic ───────────────────────────────────────────────── -->
+<section class="page" data-page="2">
   <header class="hdr">
     <div class="hdr-left"><span class="brand">Dynatrace · Business Insights</span></div>
     <div class="hdr-center"><div class="kind">{{DATE_RANGE_LABEL}}</div><div class="section">Traffic</div></div>
@@ -209,28 +264,23 @@
   </header>
   <div class="accent-line"></div>
   <div class="content">
-    <div class="kpi-row" id="kpi-row"></div>
-    <div class="chart-card" style="flex: 0 0 45mm;">
+    <div class="chart-card" style="flex: 1;">
       <div class="chart-title">Daily Sessions by Device</div>
       <div class="chart-body"><canvas id="chart-cmDailyDevice"></canvas></div>
     </div>
-    <div class="chart-card" style="flex: 1;">
+    <div class="chart-card" style="flex: 0 0 auto;">
       <div class="chart-title">Mobile vs Desktop</div>
       <div class="dt-table-wrap"><table class="dt-table" id="table-deviceCompare"></table></div>
-    </div>
-    <div class="findings" id="findings-traffic">
-      <div class="findings-label">Analysis</div>
-      <div class="findings-body">{{FINDINGS_TRAFFIC_HTML}}</div>
     </div>
   </div>
   <footer class="ftr">
     <span>CONFIDENTIAL · FOR CUSTOMER USE ONLY</span>
-    <span>Page 1 of 4 · Powered by <span class="brand-name">Dynatrace</span> · {{GENERATED_AT}}</span>
+    <span>Page 2 of 5 · Powered by <span class="brand-name">Dynatrace</span> · {{GENERATED_AT}}</span>
   </footer>
 </section>
 
-<!-- ── Page 2: Core Web Vitals ──────────────────────────────────────── -->
-<section class="page" data-page="2">
+<!-- ── Page 3: Core Web Vitals ──────────────────────────────────────── -->
+<section class="page" data-page="3">
   <header class="hdr">
     <div class="hdr-left"><span class="brand">Dynatrace · Business Insights</span></div>
     <div class="hdr-center"><div class="kind">{{DATE_RANGE_LABEL}}</div><div class="section">Core Web Vitals</div></div>
@@ -242,7 +292,7 @@
   </header>
   <div class="accent-line"></div>
   <div class="content">
-    <div class="row" style="flex: 0 0 40mm;">
+    <div class="row" style="flex: 0 0 50mm;">
       <div class="chart-card" style="flex: 0 0 55mm;">
         <div class="chart-title">Experience Distribution</div>
         <div id="stoplight"></div>
@@ -256,24 +306,20 @@
         </div>
       </div>
     </div>
-    <div class="row" style="flex: 0 0 45mm;">
+    <div class="row" style="flex: 1;">
       <div class="chart-card" style="flex: 1;"><div class="chart-title">LCP — Daily Trend</div><div class="chart-body"><canvas id="chart-daily-lcp"></canvas></div></div>
       <div class="chart-card" style="flex: 1;"><div class="chart-title">INP — Daily Trend</div><div class="chart-body"><canvas id="chart-daily-inp"></canvas></div></div>
       <div class="chart-card" style="flex: 1;"><div class="chart-title">CLS — Daily Trend</div><div class="chart-body"><canvas id="chart-daily-cls"></canvas></div></div>
     </div>
-    <div class="findings" id="findings-cwv" style="flex: 1;">
-      <div class="findings-label">Analysis</div>
-      <div class="findings-body">{{FINDINGS_CWV_HTML}}</div>
-    </div>
   </div>
   <footer class="ftr">
     <span>CONFIDENTIAL · FOR CUSTOMER USE ONLY</span>
-    <span>Page 2 of 4 · Powered by <span class="brand-name">Dynatrace</span> · {{GENERATED_AT}}</span>
+    <span>Page 3 of 5 · Powered by <span class="brand-name">Dynatrace</span> · {{GENERATED_AT}}</span>
   </footer>
 </section>
 
-<!-- ── Page 3: Top Pages ────────────────────────────────────────────── -->
-<section class="page" data-page="3">
+<!-- ── Page 4: Top Pages ────────────────────────────────────────────── -->
+<section class="page" data-page="4">
   <header class="hdr">
     <div class="hdr-left"><span class="brand">Dynatrace · Business Insights</span></div>
     <div class="hdr-center"><div class="kind">{{DATE_RANGE_LABEL}}</div><div class="section">Top Pages</div></div>
@@ -290,19 +336,15 @@
       <div class="chart-subtitle">Top 10 pages by visit volume — LCP, INP, CLS, and error counts (p75)</div>
       <div class="dt-table-wrap"><table class="dt-table" id="table-topPages"></table></div>
     </div>
-    <div class="findings" id="findings-pages">
-      <div class="findings-label">Analysis</div>
-      <div class="findings-body">{{FINDINGS_PAGES_HTML}}</div>
-    </div>
   </div>
   <footer class="ftr">
     <span>CONFIDENTIAL · FOR CUSTOMER USE ONLY</span>
-    <span>Page 3 of 4 · Powered by <span class="brand-name">Dynatrace</span> · {{GENERATED_AT}}</span>
+    <span>Page 4 of 5 · Powered by <span class="brand-name">Dynatrace</span> · {{GENERATED_AT}}</span>
   </footer>
 </section>
 
-<!-- ── Page 4: Errors ───────────────────────────────────────────────── -->
-<section class="page" data-page="4">
+<!-- ── Page 5: Errors ───────────────────────────────────────────────── -->
+<section class="page" data-page="5">
   <header class="hdr">
     <div class="hdr-left"><span class="brand">Dynatrace · Business Insights</span></div>
     <div class="hdr-center"><div class="kind">{{DATE_RANGE_LABEL}}</div><div class="section">Errors</div></div>
@@ -314,15 +356,15 @@
   </header>
   <div class="accent-line"></div>
   <div class="content">
-    <div class="row" style="flex: 0 0 38mm;">
+    <div class="row" style="flex: 0 0 45mm;">
       <div class="chart-card" style="flex: 1;"><div class="chart-title">JS Error Rate</div><div class="chart-body"><canvas id="chart-jsErrorRate"></canvas></div></div>
       <div class="chart-card" style="flex: 1;"><div class="chart-title">Request Error Rate</div><div class="chart-body"><canvas id="chart-reqErrorRate"></canvas></div></div>
     </div>
-    <div class="chart-card" style="flex: 0 0 42mm;">
+    <div class="chart-card" style="flex: 1;">
       <div class="chart-title">Error Count (Daily)</div>
       <div class="chart-body"><canvas id="chart-errorCounts"></canvas></div>
     </div>
-    <div class="row" style="flex: 0 0 40mm;">
+    <div class="row" style="flex: 0 0 48mm;">
       <div class="chart-card" style="flex: 1;">
         <div class="chart-title">Top Exceptions</div>
         <div class="dt-table-wrap"><table class="dt-table" id="table-topExceptions"></table></div>
@@ -332,14 +374,10 @@
         <div class="dt-table-wrap"><table class="dt-table" id="table-topRequestErrors"></table></div>
       </div>
     </div>
-    <div class="findings" id="findings-errors" style="flex: 1;">
-      <div class="findings-label">Analysis</div>
-      <div class="findings-body">{{FINDINGS_ERRORS_HTML}}</div>
-    </div>
   </div>
   <footer class="ftr">
     <span>CONFIDENTIAL · FOR CUSTOMER USE ONLY</span>
-    <span>Page 4 of 4 · Powered by <span class="brand-name">Dynatrace</span> · {{GENERATED_AT}}</span>
+    <span>Page 5 of 5 · Powered by <span class="brand-name">Dynatrace</span> · {{GENERATED_AT}}</span>
   </footer>
 </section>
 
@@ -363,8 +401,9 @@ Chart.defaults.animation = false;
 Chart.defaults.plugins.legend.labels.boxWidth = 10;
 Chart.defaults.plugins.legend.labels.font = { size: 10 };
 
-document.querySelectorAll(".findings-body").forEach(el => {
-  if (!el.textContent.trim()) el.closest(".findings").classList.add("is-empty");
+// Populate empty exec-summary cards with a fallback message
+document.querySelectorAll(".exec-body").forEach(el => {
+  if (!el.textContent.trim()) el.innerHTML = '<span class="exec-empty">No notable changes.</span>';
 });
 
 function renderKpis(kpis) {
@@ -453,7 +492,6 @@ function renderDistribution() {
     const m = d[metric];
     const el = document.getElementById("chart-dist-" + metric);
     if (!m || !el) return;
-    const card = el.closest(".chart-card") || el.closest(".chart-body").parentElement;
     new Chart(el, {
       type: "bar",
       data: { labels: m.buckets, datasets: [{ label: metric.toUpperCase(), data: m.counts, backgroundColor: SERIES_COLOR[metric], borderRadius: 2 }] },

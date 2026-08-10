@@ -352,6 +352,7 @@ function demoFindings(sections) {
 }
 
 // ── render ───────────────────────────────────────────────────────────────
+// 5-page layout: Page 1 = Executive Summary (all findings), Pages 2-5 = chart detail pages (no findings panels)
 const CM_SECTIONS = { FINDINGS_TRAFFIC_HTML: "Traffic", FINDINGS_CWV_HTML: "Core Web Vitals", FINDINGS_PAGES_HTML: "Pages", FINDINGS_ERRORS_HTML: "Error" };
 
 function renderReport(outPath) {
