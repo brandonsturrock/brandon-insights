@@ -33,5 +33,5 @@ Interactive HTML Sankey diagram of user journeys from Dynatrace RUM session data
 ## Usage
 
 ```
-/tools:sankey-html
+/tools:user-journeys
 ```

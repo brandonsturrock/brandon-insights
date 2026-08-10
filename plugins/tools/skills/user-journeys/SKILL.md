@@ -1,5 +1,5 @@
 ---
-name: sankey-html
+name: user-journeys
 description: Generate a self-contained interactive HTML Sankey diagram from Dynatrace RUM session path data. Use when the user asks to visualize user journeys, session paths, or navigation flows from Dynatrace. Requires dtctl with user.events read access.
 ---
 
