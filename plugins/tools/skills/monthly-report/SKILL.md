@@ -1,19 +1,16 @@
 ---
-name: trending-report
-description: Generate a Dynatrace RUM 6-month trending PDF for a web frontend/application — traffic trends, Core Web Vitals over time, and device/browser breakdown. Use when the user asks for a "trending report", "6-month report", "traffic trends", "CWV trends", "browser trends", "device trends", or a frontend/application's 6-month performance trend. Uses the dtctl CLI to query Grail and a local build script to assemble the PDF — no dt-app deployment needed.
+name: monthly-report
+description: Generate a Dynatrace RUM current-month review PDF for a web frontend/application — daily traffic, Core Web Vitals distribution/tiers, top pages, and top errors for the last full calendar month. Use when the user asks for a "monthly report", "current month report", "monthly RUM review", "last month performance", "monthly review PDF", or a frontend/application's current-month deep-dive. Uses the dtctl CLI to query Grail and a local build script to assemble the PDF — no dt-app deployment needed.
 ---
 
-# Dynatrace RUM Monthly Review
+# Dynatrace RUM Monthly Report
 
-Reproduces the trending section of the RUM monthly review PDF from a dt-app's
-live pipeline using `dtctl query` + Claude-authored findings instead of the
-app's React/Davis CoPilot stack.
+Reproduces the current-month page of the RUM monthly review PDF from a
+dt-app's live pipeline using `dtctl query` + Claude-authored findings instead
+of the app's React/Davis CoPilot stack.
 
-**Trending** (3 pages): 6-month traffic, Core Web Vitals, device and browser
-trends.
-
-For the current-month deep-dive (daily traffic, CWV tiers, top pages, top
-errors), use the `monthly-report` skill instead.
+**Current-Month** (4 pages): last full calendar month deep-dive — daily
+traffic, CWV distribution/tiers, top pages, top errors.
 
 **Precondition:** `dtctl` must be configured with an active context. On every
 normal run, check the current context and offer the user a chance to switch or
@@ -162,7 +159,7 @@ before continuing.
 
 ### 1. Resolve the frontend
 
-If the user already named a frontend (e.g. "trending report for checkout-web"),
+If the user already named a frontend (e.g. "monthly report for checkout-web"),
 use it directly and skip this step.
 
 Otherwise run:
@@ -184,7 +181,7 @@ more...", advance the window by 3 and ask again. Highest sessions first. Set
 
 ### 2. Run the queries
 
-For each query needed for the chosen report type (see the tab column in
+For each query needed for the current-month report (queries 0 and 6–15 in
 `references/queries.md`), write the query body to a temp `.dql` file, then
 run:
 
@@ -193,7 +190,7 @@ dtctl query -f <query>.dql --set frontend="NAME" [--context NAME] -o json --agen
 ```
 
 - Use a scratch/output directory convention consistent with dtctl's own
-  spill/output conventions (e.g. `./trending-report-output/<frontend>/<date>/`).
+  spill/output conventions (e.g. `./monthly-report-output/<frontend>/<date>/`).
 - Use the exact canonical filenames from the table at the top of
   `references/queries.md` (`metrics-monthly.json`, `cwv-monthly.json`, etc.)
   — the report-builder script and findings prompt both key off these names.
@@ -201,19 +198,18 @@ dtctl query -f <query>.dql --set frontend="NAME" [--context NAME] -o json --agen
   all small pre-aggregated result sets. If `dtctl` ever spills anyway,
   branch on `result.kind` per the dtctl skill and `dtctl inspect` the file
   instead of re-querying.
-- Run queries 0 and 1–5 from `references/queries.md`.
 
-### 4. Generate findings
+### 3. Generate findings
 
 Follow `references/findings-prompt.md` (in this skill directory) for exact
 instructions on reading the query JSON files and authoring the markdown
 findings/narrative for the report. Write the result to a findings markdown
 file in the same data directory (e.g. `<data-dir>/findings.md`).
 
-### 5. Assemble the report
+### 4. Assemble the report
 
 ```bash
-node scripts/build-report.mjs --type trending --frontend "NAME" --data <data-dir> --findings <data-dir>/findings.md --out <report.html>
+node scripts/build-report.mjs --type current-month --frontend "NAME" --data <data-dir> --findings <data-dir>/findings.md --out <report.html>
 ```
 
 This reads the canonical JSON filenames from `<data-dir>`, applies the unit
@@ -221,21 +217,7 @@ conversions documented per-query in `references/queries.md`, and renders the
 standalone HTML report (charts, tables, KPI cards) with the findings
 narrative woven in.
 
-**Browser selection (Trending report only):** the Browser Performance page
-shows one panel per browser×device combo, 2 per row (matching the live
-app's layout). Real tenants can report 10+ distinct browsers/devices —
-showing all of them doesn't fit a landscape A4 page and buries the ones
-that actually matter. `build-report.mjs` ranks browser×device combos by
-total visits summed across the whole period and keeps only the top N
-(default 4, a 2×2 grid — measured to be the largest count that keeps each
-panel's fonts/bars comfortably legible in one page). Pass `--max-browsers
-<N>` to change it, but be aware raising it packs more, smaller panels into
-the same fixed page area — verify the render still looks legible rather
-than assuming a bigger number is strictly better. Don't try to fit every
-browser the tenant has ever seen; a couple of long-tail browsers with
-negligible traffic add noise, not signal.
-
-### 6. Convert to PDF
+### 5. Convert to PDF
 
 **macOS:**
 ```bash
@@ -247,6 +229,6 @@ bash assets/render-pdf.sh <report.html> <report.pdf>
 pwsh assets/render-pdf.ps1 <report.html> <report.pdf>
 ```
 
-### 7. Report back
+### 6. Report back
 
 Tell the user the final absolute path to the generated PDF.

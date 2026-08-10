@@ -20,13 +20,15 @@ thousands separators.
 Exact filenames for query outputs are defined in `references/queries.md`
 (owned separately) — resolve by purpose below, don't guess a filename.
 
-### Trending tab inputs (6-month view)
+### Inputs
 
-- **Monthly traffic query output** → table `Month | Sessions | User Actions | Page Loads | % Desktop | % Mobile`
-- **Monthly CWV (p75) query output** → table `Month | LCP p75 | INP p75 | CLS p75`
-- **Latest-month browser breakdown query output** → filter to only the most
-  recent month present, take top 8 rows by visits, table
-  `Browser | Device | Visits | LCP p75 | INP p75 | CLS p75`
+- **Daily sessions query output** → sum sessions per day across devices,
+  table `Day | Sessions`
+- **Daily CWV (p75) query output** → table `Day | LCP p75 | INP p75 | CLS p75`
+- **Daily errors query output** → table `Day | JS Error Sessions | Request Error Sessions`
+- **Device comparison query output** → table `Device | Sessions | Page Loads | LCP p75 | INP p75 | CLS p75`
+- **Top pages query output** → table `Page | Visits | LCP p75 | INP p75 | CLS p75 | Avg Exceptions | Avg Req Errors`
+  (use `—` for any null metric — do not treat null as zero)
 
 ## 3. Persona and instructions
 
@@ -40,7 +42,7 @@ Apply these Core Web Vitals thresholds (p75) when flagging violations:
 - **INP**: good `<200ms`, poor `≥500ms`
 - **CLS**: good `<0.1`, poor `≥0.25`
 
-- Call out month-over-month changes and sustained trends.
+- Call out day-over-day changes.
 - Flag error-session spikes (JS or request errors) where the data shows them.
 - Compare mobile vs desktop performance where the device-level data supports it.
 
@@ -55,7 +57,8 @@ Apply these Core Web Vitals thresholds (p75) when flagging violations:
 ```
 ## Traffic
 ## Core Web Vitals
-## Browser & Device
+## Top Pages
+## Error Rates
 ```
 
 ## 5. Anti-hallucination guardrails
@@ -76,23 +79,21 @@ disclaimed AI feature.
 
 ## 6. Worked example
 
-Input data table (Trending, Core Web Vitals):
+Input data table (Current-Month, Core Web Vitals):
 
 ```
-Month | LCP p75 | INP p75 | CLS p75
-Feb 2026 | 2.65s | 220ms | 0.090
-Mar 2026 | 2.60s | 215ms | 0.085
-Apr 2026 | 2.55s | 205ms | 0.080
-May 2026 | 2.50s | 200ms | 0.078
-Jun 2026 | 2.48s | 195ms | 0.075
-Jul 2026 | 2.40s | 190ms | 0.070
+Day | LCP p75 | INP p75 | CLS p75
+2026-07-01 | 2.10s | 180ms | 0.050
+2026-07-02 | 2.30s | 210ms | 0.060
+2026-07-03 | 4.50s | 610ms | 0.310
+2026-07-04 | 2.20s | 190ms | 0.055
 ```
 
 Output markdown:
 
 ```
 ## Core Web Vitals
-- LCP improved steadily from 2.65s in Feb to 2.40s in Jul, now comfortably in the good range (<2500ms).
-- INP dropped from 220ms to 190ms over the period, remaining good throughout.
-- CLS declined from 0.090 to 0.070, staying well within the good threshold (<0.1).
+- LCP and INP both crossed into poor territory on 2026-07-03 (4.50s, 610ms), a sharp one-day regression.
+- CLS also spiked to 0.310 (poor) on 2026-07-03 alongside the LCP/INP jump.
+- All three metrics returned to good on 2026-07-04, back in line with 2026-07-01/02.
 ```
