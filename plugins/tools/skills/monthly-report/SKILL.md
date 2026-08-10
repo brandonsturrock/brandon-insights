@@ -189,8 +189,11 @@ dtctl query -f <query>.dql --set frontend="NAME" [--context NAME] -o json --agen
   | grep -m1 '^{' > <data-dir>/<canonical-filename>.json
 ```
 
-- Use a scratch/output directory convention consistent with dtctl's own
-  spill/output conventions (e.g. `./monthly-report-output/<frontend>/<date>/`).
+- **Output location:** always write to `~/Downloads/` — never create output
+  directories inside the project repo. Use
+  `~/Downloads/<frontend>-monthly-<YYYY-MM>/` as the data directory (query
+  JSONs and findings.md) and `~/Downloads/<frontend>-monthly-<YYYY-MM>.html`
+  / `~/Downloads/<frontend>-monthly-<YYYY-MM>.pdf` for the rendered files.
 - Use the exact canonical filenames from the table at the top of
   `references/queries.md` (`metrics-monthly.json`, `cwv-monthly.json`, etc.)
   — the report-builder script and findings prompt both key off these names.
@@ -216,10 +219,13 @@ file in the same data directory (e.g. `<data-dir>/findings.md`).
 ### 4. Assemble the report
 
 ```bash
-node scripts/build-report.mjs --type current-month --frontend "NAME" --data <data-dir> --findings <data-dir>/findings.md --out <report.html>
+node scripts/build-report.mjs --type current-month --frontend "NAME" \
+  --data ~/Downloads/<frontend>-monthly-<YYYY-MM> \
+  --findings ~/Downloads/<frontend>-monthly-<YYYY-MM>/findings.md \
+  --out ~/Downloads/<frontend>-monthly-<YYYY-MM>.html
 ```
 
-This reads the canonical JSON filenames from `<data-dir>`, applies the unit
+This reads the canonical JSON filenames from the data directory, applies the unit
 conversions documented per-query in `references/queries.md`, and renders the
 standalone HTML report (charts, tables, KPI cards) with the findings
 narrative woven in.
@@ -228,14 +234,16 @@ narrative woven in.
 
 **macOS:**
 ```bash
-bash assets/render-pdf.sh <report.html> <report.pdf>
+bash assets/render-pdf.sh ~/Downloads/<frontend>-monthly-<YYYY-MM>.html \
+  ~/Downloads/<frontend>-monthly-<YYYY-MM>.pdf
 ```
 
 **Windows** (PowerShell):
 ```powershell
-pwsh assets/render-pdf.ps1 <report.html> <report.pdf>
+pwsh assets/render-pdf.ps1 ~/Downloads/<frontend>-monthly-<YYYY-MM>.html `
+  ~/Downloads/<frontend>-monthly-<YYYY-MM>.pdf
 ```
 
 ### 6. Report back
 
-Tell the user the final absolute path to the generated PDF.
+Tell the user the absolute path to the PDF in `~/Downloads/`.

@@ -95,7 +95,7 @@ Collect before starting:
 1. **App name** — picked interactively in Step 1
 2. **Time range** — picked interactively in Step 0b (default: last 2h)
 3. **Mode** — picked interactively in Step 1b (Common User Journeys or Pick a Journey)
-4. **Output path** — default: `./session-sankey-<appname>-<date>.html`
+4. **Output path** — default: `~/Downloads/session-sankey-<appname>-<date>.html`
 5. **Max depth** — Common User Journeys only, default: 6 steps. Accept 3–10.
 
 ## Steps
@@ -478,7 +478,7 @@ Placeholders:
 - `__GENERATED_AT__` → current date/time
 - `__FUNNEL_STEPS_JSON__` → the validated funnel steps as a JSON array, e.g. `["/","/login","/home","/instruments"]`
 
-Download and inline d3 libs the same way as Step 3. Output path default: `./session-journey-<appname>-<date>.html`.
+Download and inline d3 libs the same way as Step 3. Output path default: `~/Downloads/session-journey-<appname>-<date>.html`.
 
 ```html
 <!DOCTYPE html>
