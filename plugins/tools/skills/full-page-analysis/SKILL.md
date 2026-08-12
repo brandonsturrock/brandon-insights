@@ -47,7 +47,7 @@ curl -fsSL https://raw.githubusercontent.com/dynatrace-oss/dtctl/main/install.sh
 irm https://raw.githubusercontent.com/dynatrace-oss/dtctl/main/install.ps1 | iex
 ```
 
-After install, verify with `dtctl version`. If it still fails, tell the user
+After install, verify with `dtctl version`. On Windows, if not found, open a new PowerShell session first — the installer may need a fresh session for PATH to take effect. If it still fails, tell the user
 and stop.
 
 ### 2. Install Claude skills

@@ -38,7 +38,7 @@ curl -fsSL https://raw.githubusercontent.com/dynatrace-oss/dtctl/main/install.sh
 irm https://raw.githubusercontent.com/dynatrace-oss/dtctl/main/install.ps1 | iex
 ```
 
-Verify with `dtctl version`. If it still fails, stop and tell the user.
+Verify with `dtctl version`. On Windows, if not found, open a new PowerShell session first — the installer may need a fresh session for PATH to take effect. If it still fails, stop and tell the user.
 
 ---
 
