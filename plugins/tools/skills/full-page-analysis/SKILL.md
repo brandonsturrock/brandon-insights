@@ -593,22 +593,15 @@ dtctl query -f - -o json <<'DQL' > /tmp/wf_exceptions.json
 DQL
 ```
 
-Replace `TEMPLATE_PATH` with the skill's `assets/template.html` absolute path,
-`PAGE_TITLE` with the page name, and `OUTPUT_PATH` with the desired output file path.
+Replace `SKILL_ROOT` with the absolute path to this skill's directory (the folder containing `scripts/` and `assets/`), `PAGE_TITLE` with the page name, and `OUTPUT_PATH` with the desired output file path.
 
 ```bash
-node -e "
-const fs = require('fs');
-const summary = JSON.parse(fs.readFileSync('/tmp/wf_summary.json')).records[0] || {};
-const requests = JSON.parse(fs.readFileSync('/tmp/wf_requests.json')).records;
-const exceptions = JSON.parse(fs.readFileSync('/tmp/wf_exceptions.json')).records;
-const payload = JSON.stringify({__raw: true, summary, requests, exceptions})
-  .replace(/<\/script>/g, '<\\/script>');
-let html = fs.readFileSync('TEMPLATE_PATH', 'utf8');
-html = html.replace('__DATA_JSON__', payload).replace('__PAGE_TITLE__', 'PAGE_TITLE');
-fs.writeFileSync('OUTPUT_PATH', html);
-console.log('Written: OUTPUT_PATH');
-"
+node SKILL_ROOT/scripts/build-waterfall.mjs \
+  --summary /tmp/wf_summary.json \
+  --requests /tmp/wf_requests.json \
+  --exceptions /tmp/wf_exceptions.json \
+  --page-title "PAGE_TITLE" \
+  --out OUTPUT_PATH
 ```
 
 If Node.js is not available, tell the user to run this skill with `--install`
