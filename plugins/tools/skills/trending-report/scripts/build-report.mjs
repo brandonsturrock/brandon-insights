@@ -304,8 +304,6 @@ function renderReport(outPath) {
   const findings = args.demo ? demoFindings(TRENDING_SECTIONS) : loadFindings(args.findings, TRENDING_SECTIONS);
 
   const frontend = args.demo ? "demo-frontend" : args.frontend;
-  const now = new Date();
-  const generatedAt = `Generated ${now.toISOString().slice(0, 16).replace("T", " ")} UTC`;
   const dateRangeLabel = (() => {
     const labels = data.trafficMonthly.labels;
     return labels.length ? `${labels[0]} – ${labels[labels.length - 1]}` : "";
@@ -316,7 +314,6 @@ function renderReport(outPath) {
     "{{FRONTEND_NAME}}": frontend || "",
     "{{ENVIRONMENT_NAME}}": args.environment || "",
     "{{DATE_RANGE_LABEL}}": dateRangeLabel,
-    "{{GENERATED_AT}}": generatedAt,
   };
   for (const [key, value] of Object.entries(findings)) {
     replacements[`{{${key}}}`] = value;
