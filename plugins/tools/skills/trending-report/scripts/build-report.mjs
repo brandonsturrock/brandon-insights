@@ -342,7 +342,8 @@ function renderReport(outPath) {
 
   // Inline Chart.js so the HTML is self-contained — works from any location
   // (e.g. ~/Downloads after the user saves edits via the in-browser save bar).
-  const chartJs = fs.readFileSync(path.join(SKILL_ROOT, "assets", "chart.umd.min.js"), "utf8");
+  const chartJs = fs.readFileSync(path.join(SKILL_ROOT, "assets", "chart.umd.min.js"), "utf8")
+    .replace(/\/\/# sourceMappingURL=\S+/g, "");
   html = html.replace('<script src="chart.umd.min.js"></script>', `<script>${chartJs}</script>`);
 
   // Make findings panels editable in the browser preview.
