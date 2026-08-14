@@ -212,16 +212,41 @@ dtctl query -f <query>.dql --set frontend="NAME" [--context NAME] -o json --agen
 ### 4. Generate findings
 
 Follow `references/findings-prompt.md` (in this skill directory) for exact
-instructions on reading the query JSON files and authoring the markdown
-findings/narrative for the report. Write the result to a findings markdown
-file in the same data directory (e.g. `<data-dir>/findings.md`).
+instructions on reading the query JSON files and authoring the findings
+narrative for the report. Write the result to:
 
-### 5. Assemble the report
+```
+~/Downloads/<frontend>-trending-<YYYY-MM>/findings.txt
+```
+
+### 5. Review findings
+
+Open the file for the user to review and edit:
+
+**macOS:**
+```bash
+open ~/Downloads/<frontend>-trending-<YYYY-MM>/findings.txt
+```
+
+**Windows:**
+```powershell
+Start-Process ~/Downloads/<frontend>-trending-<YYYY-MM>/findings.txt
+```
+
+Then use `AskUserQuestion` with the following options:
+
+- **Looks good — build the report** — proceed to step 6
+- **I've made edits (saved) — build the report** — re-read the file, then proceed to step 6
+- **Regenerate analysis** — rewrite the findings and repeat this step
+
+Include this reminder in the question text: "Make sure to save the file before confirming."
+
+### 6. Assemble the report
 
 ```bash
 node scripts/build-report.mjs --type trending --frontend "NAME" \
   --data ~/Downloads/<frontend>-trending-<YYYY-MM> \
-  --findings ~/Downloads/<frontend>-trending-<YYYY-MM>/findings.md \
+  --findings ~/Downloads/<frontend>-trending-<YYYY-MM>/findings.txt \
   --out ~/Downloads/<frontend>-trending-<YYYY-MM>.html &>/dev/null
 ```
 
@@ -238,7 +263,7 @@ month's visit count descending — empty slots render as blank cards. Pass
 browser the tenant has ever seen; long-tail browsers with negligible
 traffic add noise, not signal.
 
-### 6. Convert to PDF
+### 7. Convert to PDF
 
 **macOS:**
 ```bash
@@ -252,6 +277,6 @@ pwsh assets/render-pdf.ps1 ~/Downloads/<frontend>-trending-<YYYY-MM>.html `
   ~/Downloads/<frontend>-trending-<YYYY-MM>.pdf *> $null
 ```
 
-### 7. Report back
+### 8. Report back
 
 Tell the user the absolute path to the PDF in `~/Downloads/`.
