@@ -22,7 +22,7 @@ Exact filenames for query outputs are defined in `references/queries.md`
 
 ### Trending tab inputs (6-month view)
 
-- **Monthly traffic query output** → table `Month | Sessions | User Actions | Page Loads | % Desktop | % Mobile`
+- **Monthly traffic query output** → table `Month | Sessions | XHR Requests | Navigations | % Desktop | % Mobile`
 - **Monthly CWV (p75) query output** → table `Month | LCP p75 | INP p75 | CLS p75`
 - **Latest-month browser breakdown query output** → filter to only the most
   recent month present, take top 8 rows by visits, table

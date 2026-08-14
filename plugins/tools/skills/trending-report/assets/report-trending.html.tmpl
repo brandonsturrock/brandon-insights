@@ -567,8 +567,8 @@ function renderTrafficTable() {
   }));
   const columns = [
     { key: "sessions", label: "Sessions", color: SERIES_COLOR.sessions, format: compactFmt },
-    { key: "userActions", label: "User Actions", color: SERIES_COLOR.userActions, format: compactFmt },
-    { key: "pageLoads", label: "Page Loads", color: SERIES_COLOR.pageLoads, format: compactFmt },
+    { key: "userActions", label: "XHR Requests", color: SERIES_COLOR.userActions, format: compactFmt },
+    { key: "pageLoads", label: "Navigations", color: SERIES_COLOR.pageLoads, format: compactFmt },
     ...(d.pctDesktop ? [{ key: "__device", label: "Device" }] : []),
   ];
   el.innerHTML = flexBarsHtml(rows, columns, false);
@@ -650,8 +650,8 @@ function renderExecMiniStats() {
   const trafficEl = document.getElementById("exec-mini-traffic");
   if (trafficEl) trafficEl.innerHTML = period + chipsRow(
     chip("Sessions", compactFmt(tm.sessions[i]), "#a99aff") +
-    chip("User Actions", compactFmt(tm.userActions[i]), "#3dd9bc") +
-    chip("Page Loads", compactFmt(tm.pageLoads[i]), "#4db8e8")
+    chip("XHR Requests", compactFmt(tm.userActions[i]), "#3dd9bc") +
+    chip("Navigations", compactFmt(tm.pageLoads[i]), "#4db8e8")
   );
 
   const cwvEl = document.getElementById("exec-mini-cwv");

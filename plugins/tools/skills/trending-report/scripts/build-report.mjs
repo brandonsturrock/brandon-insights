@@ -157,8 +157,8 @@ function buildTrendingData(dataDir) {
   const trafficMonthly = {
     labels: metricsRows.map((r) => monthYearLabel(r.month)),
     sessions: metricsRows.map((r) => r.Sessions),
-    userActions: metricsRows.map((r) => r["User Actions"]),
-    pageLoads: metricsRows.map((r) => r["Page Loads"]),
+    userActions: metricsRows.map((r) => r["XHR Requests"]),
+    pageLoads: metricsRows.map((r) => r["Navigations"]),
     pctDesktop: metricsRows.map((r) => (r["% Desktop"] == null ? null : r["% Desktop"])),
   };
 
@@ -234,8 +234,8 @@ function buildTrendingData(dataDir) {
   const prevCwv = cwvRows[cwvRows.length - 2];
   const kpis = [
     { label: "Sessions", value: compact(last?.Sessions), change: pctChange(last?.Sessions, prev?.Sessions), color: "#7B61FF", lowerIsBetter: false },
-    { label: "User Actions", value: compact(last?.["User Actions"]), change: pctChange(last?.["User Actions"], prev?.["User Actions"]), color: "#00A98F", lowerIsBetter: false },
-    { label: "Page Loads", value: compact(last?.["Page Loads"]), change: pctChange(last?.["Page Loads"], prev?.["Page Loads"]), color: "#1D8AB7", lowerIsBetter: false },
+    { label: "XHR Requests", value: compact(last?.["XHR Requests"]), change: pctChange(last?.["XHR Requests"], prev?.["XHR Requests"]), color: "#00A98F", lowerIsBetter: false },
+    { label: "Navigations", value: compact(last?.["Navigations"]), change: pctChange(last?.["Navigations"], prev?.["Navigations"]), color: "#1D8AB7", lowerIsBetter: false },
     { label: "LCP p75", value: fmtMs(lastCwv?.["Largest Contentful Paint"]), change: pctChange(lastCwv?.["Largest Contentful Paint"], prevCwv?.["Largest Contentful Paint"]), color: "#F5A623", lowerIsBetter: true },
   ];
 
@@ -248,8 +248,8 @@ function demoTrendingData() {
   return {
     kpis: [
       { label: "Sessions", value: "482K", change: 6.4, color: "#7B61FF", lowerIsBetter: false },
-      { label: "User Actions", value: "1.3M", change: 3.1, color: "#00A98F", lowerIsBetter: false },
-      { label: "Page Loads", value: "610K", change: 4.8, color: "#1D8AB7", lowerIsBetter: false },
+      { label: "XHR Requests", value: "1.3M", change: 3.1, color: "#00A98F", lowerIsBetter: false },
+      { label: "Navigations", value: "610K", change: 4.8, color: "#1D8AB7", lowerIsBetter: false },
       { label: "LCP p75", value: "2.4s", change: -5.2, color: "#F5A623", lowerIsBetter: true },
     ],
     trafficMonthly: {
