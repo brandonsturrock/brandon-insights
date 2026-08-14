@@ -37,17 +37,17 @@ envelope (e.g. field-override warnings from timeseries queries).
 ```dql
 timeseries {
     x=countDistinct(dt.frontend.session.active.estimated_count),
-    y = count(dt.frontend.user_action.count),
+    y = count(dt.frontend.user_action.count, filter: user_action.type == "same_view"),
     z = percentile(dt.frontend.web.page.largest_contentful_paint, 75),
-    z2 = count(dt.frontend.web.page.largest_contentful_paint),
+    z2 = count(dt.frontend.user_action.count, filter: user_action.type != "same_view"),
     t=start()
   }, from: -6M, to: now()@M, interval: 1d, filter: frontend.name == "{{.frontend}}", by:device.type
 | fieldsAdd d = record(d = x[], t = t[], y=y[], z=z[], z2=z2[])
 | expand d
 | summarize
     Sessions = sum(d[d]),
-    `User Actions` = sum(d[y]),
-    `Page Loads` = sum(d[z2]),
+    `XHR Requests` = sum(d[y]),
+    `Navigations` = sum(d[z2]),
     Desktop_Sessions = sum(if(device.type == "desktop", d[d], else: 0)),
     Mobile_Sessions  = sum(if(device.type == "mobile",  d[d], else: 0)),
     Total_NonNull    = sum(if(isNotNull(device.type),   d[d], else: 0)),
@@ -61,7 +61,7 @@ timeseries {
 | sort month asc
 ```
 
-**Output columns:** `Sessions`, `User Actions`, `Page Loads`, `% Desktop`, `% Mobile`, `month`. ~6 rows.
+**Output columns:** `Sessions`, `XHR Requests`, `Navigations`, `% Desktop`, `% Mobile`, `month`. ~6 rows.
 
 ---
 
