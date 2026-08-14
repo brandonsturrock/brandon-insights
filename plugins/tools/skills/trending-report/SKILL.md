@@ -21,6 +21,16 @@ add one before proceeding (see **Context check** below).
 
 ---
 
+## --no-preview flag
+
+If the user invokes this skill with `--no-preview`, skip step 6 entirely —
+do not open the browser and do not ask the `AskUserQuestion`. Proceed directly
+from step 5 to step 7 using `/tmp/<frontend>-trending-<YYYY-MM>.html` as the
+source. The findings panels are still editable in the HTML (they are always
+`contenteditable`), but the PDF is built immediately without waiting for review.
+
+---
+
 ## --install flag
 
 If the user invokes this skill with `--install`, run the following checks and
@@ -250,6 +260,9 @@ traffic add noise, not signal.
 
 ### 6. Preview in browser
 
+**Skip this entire step if `--no-preview` was passed.** Proceed directly to
+step 7 with `SOURCE=/tmp/<frontend>-trending-<YYYY-MM>.html`.
+
 Open the HTML for the user to review and edit findings in-place:
 
 **macOS:**
@@ -272,7 +285,7 @@ Then use `AskUserQuestion` with the following options, including this prompt tex
 ### 7. Convert to PDF
 
 Determine the source HTML based on the user's choice in step 6:
-- **Looks good**: `SOURCE=/tmp/<frontend>-trending-<YYYY-MM>.html`
+- **Looks good** or **`--no-preview`**: `SOURCE=/tmp/<frontend>-trending-<YYYY-MM>.html`
 - **I edited and saved**: `SOURCE=~/Downloads/<frontend>-trending-<YYYY-MM>.html`
 
 **macOS:**
