@@ -5,7 +5,7 @@
 <title>{{REPORT_TITLE}}</title>
 <!--
   CONTRACT for scripts/build-report.mjs (owned by another workstream).
-  This file is the 3-PAGE "Trending" report layout (Traffic / Core Web Vitals / Browser Performance).
+  This file is the 4-PAGE "Trending" report layout (Executive Summary / Traffic / Core Web Vitals / Browser Performance).
   Its sibling report-cm.html.tmpl is the 4-page "Current Month" layout — pick ONE per render,
   they are two separate template files (not one file with a REPORT_TYPE switch).
 
@@ -31,7 +31,7 @@
                                                   // (use true for LCP/INP/CLS/error-rate style KPIs, false for
                                                   // traffic/session-count style KPIs)
 
-      trafficMonthly: {                          // bar-in-cell table, page 1 (matches the live app's User Traffic panel)
+      trafficMonthly: {                          // bar-in-cell table, page 2 (matches the live app's User Traffic panel)
         labels: ["Jan 2026", "Feb 2026", ...],    // one row per month
         sessions: [12000, 13500, ...],            // each column's bar width is relative to that column's own max
         userActions: [34000, 36000, ...],
@@ -39,19 +39,19 @@
         pctDesktop: [62, 61, ...],                 // optional: renders a "Device Split" bar column (% desktop, filled bar)
       },
 
-      cwvMonthly: {                               // bar-in-cell table, page 2 (LCP/INP/CLS columns, one row per month)
+      cwvMonthly: {                               // bar-in-cell table, page 3 (LCP/INP/CLS columns, one row per month)
         labels: ["Jan 2026", "Feb 2026", ...],     // bars are colored per-point by good/warn/poor threshold
         lcp: [2200, 2600, ...],                    // ms
         inp: [180, 210, ...],                      // ms
         cls: [0.05, 0.09, ...],                     // unitless
       },
 
-      cwvWeekly: {                                // line chart w/ dashed good/poor threshold lines, page 2
+      cwvWeekly: {                                // line chart w/ dashed good/poor threshold lines, page 3
         labels: ["W1", "W2", ...],
         lcp: [2200, ...], inp: [180, ...], cls: [0.05, ...],
       },
 
-      browserPerf: {                              // page 3: grid of bar-in-cell tables, one panel per browser×device.
+      browserPerf: {                              // page 4: grid of bar-in-cell tables, one panel per browser×device.
         panels: [                                  // Selection policy (real apps can report 10+ browsers — showing
           {                                        // all of them doesn't fit the page and buries the ones that carry
             label: "Chrome · Desktop",             // real traffic): keep only the top N browser×device combos by
@@ -109,7 +109,10 @@
 
   .hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6mm; position: relative; }
   .hdr-left { display: flex; align-items: center; gap: 10px; }
-  .hdr-left .brand { font-size: 11px; font-weight: 700; letter-spacing: 0.18em; color: #666e8c; text-transform: uppercase; }
+  .hdr-left .brand { display: flex; align-items: center; gap: 8px; }
+  .hdr-left .brand svg { height: 18px; width: auto; color: #f4f6fb; flex-shrink: 0; }
+  .hdr-left .brand-sep { font-size: 14px; color: rgba(255,255,255,0.25); font-weight: 300; margin: 0 2px; }
+  .hdr-left .brand-sub { font-size: 11px; font-weight: 400; letter-spacing: 0.14em; color: #f4f6fb; text-transform: uppercase; white-space: nowrap; }
   .hdr-left .divider { width: 1px; height: 22px; background: rgba(255,255,255,0.15); }
   .hdr-center { position: absolute; left: 50%; transform: translateX(-50%); text-align: center; }
   .hdr-center .kind { font-size: 18px; font-weight: 700; letter-spacing: 0.24em; color: #fff; text-transform: uppercase; }
@@ -124,6 +127,7 @@
 
   .content { flex: 1; display: flex; flex-direction: column; gap: 4mm; min-height: 0; }
 
+  /* ── KPI tiles ─────────────────────────────────────────────────────────── */
   .kpi-row { display: flex; gap: 12px; flex: 0 0 auto; }
   .kpi-tile {
     flex: 1; background: #1c1e2e; border: 1px solid rgba(20,150,255,0.16);
@@ -136,6 +140,93 @@
   .kpi-change.down { color: #E8345A; }
   .kpi-change.neutral { color: #b1b2d2; }
 
+  /* ── Executive Summary analysis cards ─────────────────────────────────── */
+  .exec-grid {
+    flex: 1; min-height: 0;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+  .exec-card {
+    background: #1c1e2e;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 16px 18px 14px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+  /* Colored top accent bar per section */
+  .exec-card::before {
+    content: "";
+    position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    border-radius: 10px 10px 0 0;
+  }
+  .exec-card--traffic::before  { background: linear-gradient(90deg, #7B61FF, rgba(123,97,255,0.3)); }
+  .exec-card--cwv::before      { background: linear-gradient(90deg, #F5A623, rgba(245,166,35,0.3)); }
+  .exec-card--browser::before  { background: linear-gradient(90deg, #00A98F, rgba(0,169,143,0.3)); }
+
+  .exec-section-label {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.14em;
+    margin-bottom: 12px; padding-top: 4px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .exec-section-label::before {
+    content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto;
+  }
+  .exec-card--traffic .exec-section-label { color: #a99aff; }
+  .exec-card--cwv     .exec-section-label { color: #f7bf68; }
+  .exec-card--browser .exec-section-label { color: #3dd9bc; }
+  .exec-card--traffic .exec-section-label::before { background: #7B61FF; }
+  .exec-card--cwv     .exec-section-label::before { background: #F5A623; }
+  .exec-card--browser .exec-section-label::before { background: #00A98F; }
+
+  .exec-card .findings-body {
+    font-size: 13px; line-height: 1.6; color: #cdd0e8;
+    flex: 1; min-height: 0; overflow: hidden;
+  }
+  .exec-card .findings-body ul { margin: 0; padding-left: 16px; }
+  .exec-card .findings-body li { margin-bottom: 6px; }
+  .exec-card .findings-body li:last-child { margin-bottom: 0; }
+  .exec-card .findings-body p { margin: 0 0 6px; }
+
+  /* Mini-stat chips pinned to the bottom of each exec card */
+  .exec-mini-stats {
+    flex: 0 0 auto;
+    margin-top: 14px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255,255,255,0.07);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .exec-mini-period {
+    font-size: 9px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.1em; color: #666e8c; white-space: nowrap;
+  }
+  .exec-mini-chips-row {
+    display: flex; gap: 6px; align-items: stretch;
+  }
+  .exec-mini-chip {
+    flex: 1; min-width: 0;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 6px;
+    padding: 5px 8px;
+    display: flex; flex-direction: column; gap: 2px; align-items: center; text-align: center;
+  }
+  .exec-mini-chip-label {
+    font-size: 9px; color: #666e8c;
+    text-transform: uppercase; letter-spacing: 0.07em;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%;
+  }
+  .exec-mini-chip-value {
+    font-size: 15px; font-weight: 700; color: #f4f6fb; line-height: 1;
+  }
+
+  /* ── Detail page chart cards ───────────────────────────────────────────── */
   .chart-card {
     background: #1c1e2e; border: 1px solid rgba(20,150,255,0.16); border-radius: 10px;
     padding: 12px 14px 10px; position: relative; display: flex; flex-direction: column; min-height: 0;
@@ -149,10 +240,41 @@
   .chart-body { position: relative; flex: 1; min-height: 0; min-width: 0; }
   .chart-body canvas { width: 100% !important; height: 100% !important; }
 
-  /* Bar-in-cell table (matches the live app's User Traffic / Core Web Vitals
-     panels: one row per month, a horizontal bar sized relative to the column's
-     max value, value label after the bar). */
-  .bar-table-wrap { flex: 1; min-height: 0; overflow: auto; }
+  /* ── Flex bar chart — rows distribute evenly across full card height ─────
+     Used for Traffic (page 2) and CWV (page 3) tables. Replaces the HTML
+     <table> approach, which can't flex-grow <tr> elements to fill height. */
+  .flex-bars-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .flex-bars { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .flex-bars-header {
+    display: flex; align-items: center; flex: 0 0 auto;
+    padding: 0 10px 6px; border-bottom: 1px solid rgba(255,255,255,0.07); margin-bottom: 2px;
+  }
+  .flex-bars-spacer { flex: 0 0 80px; }
+  .flex-bars-col-hdr { flex: 1; font-size: 10px; font-weight: 700; color: #b1b2d2; text-transform: uppercase; letter-spacing: 0.06em; }
+  .flex-bars-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .flex-bars-row { display: flex; align-items: center; flex: 1; min-height: 0; border-top: 1px solid rgba(255,255,255,0.05); }
+  .flex-bars-row:first-child { border-top: none; }
+  .flex-bars-row--current .flex-bars-row-label { color: #e8edf5; font-weight: 700; }
+  .flex-bars-row--current .flex-bars-value { color: #f4f6fb; font-weight: 700; }
+  .flex-bars-row--current .flex-bars-fill { filter: brightness(1.35); }
+  .flex-bars-row-label { flex: 0 0 80px; padding: 0 10px; color: #b1b2d2; font-size: 11px; }
+  .flex-bars-cell { flex: 1; display: flex; align-items: center; padding: 6px 10px; min-width: 0; border-left: 1px solid rgba(255,255,255,0.06); }
+  .flex-bars-track { flex: 1; display: flex; align-items: center; min-width: 0; }
+  .flex-bars-fill { height: 42px; border-radius: 3px; min-width: 2px; flex-shrink: 0; }
+  .flex-bars-value { white-space: nowrap; font-size: 11px; color: #e8edf5; padding-left: 6px; }
+  .flex-bars-device-cell { flex: 0 0 120px; padding: 4px 10px 4px 0; }
+  .flex-bars-device-track { background: rgba(255,255,255,0.06); border-radius: 2px; }
+  .flex-bars-device-fill {
+    height: 24px; border-radius: 2px; background: #7B61FF;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 10px; font-weight: 700; min-width: 20px;
+  }
+  /* Compact variant: CWV page shares space with weekly chart */
+  .flex-bars--compact .flex-bars-fill { height: 18px; }
+  .flex-bars--compact .flex-bars-row-label { font-size: 10.5px; }
+  .flex-bars--compact .flex-bars-value { font-size: 10.5px; }
+
+  /* Bar-in-cell table — kept for browser performance panels only */
   .bar-table { width: 100%; height: 100%; border-collapse: collapse; font-size: 12px; }
   .bar-table th { text-align: left; font-size: 10px; font-weight: 700; color: #b1b2d2; text-transform: uppercase; letter-spacing: 0.06em; padding: 4px 10px 8px; }
   .bar-table td { padding: 5px 10px; vertical-align: middle; white-space: nowrap; }
@@ -160,55 +282,31 @@
   .bar-cell { display: flex; align-items: center; gap: 8px; }
   .bar-track { flex: 1; min-width: 60px; }
   .bar-fill { height: 20px; border-radius: 3px; min-width: 2px; }
-  /* Page 2's CWV table has less vertical budget than page 1's traffic table
-     (its card shares height with the weekly trend chart below it) — measured
-     20px bars overflowing by 14px there, so it gets a slightly shorter bar. */
-  #table-cwvMonthly .bar-fill { height: 16px; }
   .bar-value { color: #e8edf5; font-size: 11px; min-width: 42px; }
-  .device-track { flex: 1; min-width: 100px; background: rgba(255,255,255,0.05); border-radius: 2px; }
-  .device-fill {
-    height: 16px; border-radius: 2px; background: #7B61FF;
-    display: flex; align-items: center; justify-content: center;
-    color: #fff; font-size: 11px; font-weight: 700; min-width: 24px;
-  }
 
-  /* Browser Performance: grid of small bar-tables, one per browser×device
-     (capped upstream by build-report.mjs — see its --max-browsers). Column
-     headers are abbreviated (LCP/INP/CLS, not full metric names) and bar
-     tracks are narrower than the page-2 CWV table's — two panels side by
-     side at full metric-name width overflow the printed page width. */
-  /* 2 columns, matching the live app's layout — 3 columns fit more panels but
-     read as cramped small multiples. MAX_BROWSERS defaults to 4 (2×2) so each
-     panel gets real room instead of overflowing the page (see build-report.mjs). */
-  /* 2 columns × 3 rows for 6 panels (matches the live app's layout). 3 rows
-     means less height per panel than a 2×2 grid, so sizing is tighter here
-     than it would be for 4 panels — measured to confirm it still fits
-     without clipping (see the render notes in build-report.mjs). */
-  .browser-perf-grid { flex: 1; min-height: 0; overflow: hidden; display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px 14px; }
-  .browser-panel { border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 3px 8px; min-width: 0; display: flex; flex-direction: column; }
-  .browser-panel .browser-panel-title { font-size: 10px; font-weight: 700; color: #f4f6fb; margin-bottom: 1px; flex: 0 0 auto; }
+  /* Browser Performance: grid of small bar-tables, one per browser×device */
+  .browser-perf-grid { flex: 1; min-height: 0; overflow: hidden; display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px 20px; }
+  .browser-panel { border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 6px 10px; min-width: 0; display: flex; flex-direction: column; }
+  .browser-panel .browser-panel-title {
+    font-size: 9px; font-weight: 700; color: #b1b2d2;
+    text-transform: uppercase; letter-spacing: 0.09em;
+    margin-bottom: 5px; padding-bottom: 5px; flex: 0 0 auto;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
   .browser-panel .bar-table { table-layout: fixed; width: 100%; flex: 1; }
   .browser-panel .bar-table th { font-size: 9px; }
-  .browser-panel .bar-table td, .browser-panel .bar-table th { padding: 1px 6px; }
+  .browser-panel .bar-table td, .browser-panel .bar-table th { padding: 1px 6px; border-right: 1px solid rgba(255,255,255,0.06); }
+  .browser-panel .bar-table td:last-child, .browser-panel .bar-table th:last-child { border-right: none; }
+  .browser-panel .bar-table tbody tr { border-top: 1px solid rgba(255,255,255,0.05); }
+  .browser-panel .bar-table tbody tr:first-child { border-top: none; }
   .browser-panel .bar-table .row-label { width: 50px; font-size: 9.5px; }
   .browser-panel .bar-value { font-size: 9.5px; min-width: 30px; }
   .browser-panel .bar-track { min-width: 46px; }
-  .browser-panel .bar-fill { height: 9px; }
-
-  .findings {
-    flex: 0 0 auto; background: #1c1e2e; border: 1px solid rgba(20,150,255,0.16); border-radius: 10px;
-    padding: 10px 16px 12px; position: relative; max-height: 34mm; overflow: hidden;
-  }
-  .findings::before {
-    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 10px 10px 0 0;
-    background: linear-gradient(90deg, rgba(20,150,255,0.5) 0%, transparent 60%);
-  }
-  .findings .findings-label { font-size: 11px; font-weight: 700; color: #b1b2d2; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px; }
-  .findings-body { font-size: 12px; line-height: 1.55; color: #e8edf5; }
-  .findings-body h2 { font-size: 12px; margin: 0 0 4px; color: #1496ff; text-transform: uppercase; letter-spacing: 0.06em; }
-  .findings-body ul { margin: 0 0 4px; padding-left: 18px; }
-  .findings-body p { margin: 0 0 4px; }
-  .findings:empty, .findings.is-empty { display: none; }
+  .browser-panel .bar-fill { height: 7px; }
+  .browser-panel--empty { background: rgba(255,255,255,0.02); border-color: rgba(255,255,255,0.04); }
+  .browser-panel .bar-table tbody tr.current-month .row-label { color: #e8edf5; font-weight: 700; }
+  .browser-panel .bar-table tbody tr.current-month .bar-value { color: #f4f6fb; font-weight: 700; }
+  .browser-panel .bar-table tbody tr.current-month .bar-fill { filter: brightness(1.35); }
 
   .ftr { display: flex; align-items: center; justify-content: space-between; margin-top: 4mm; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.07); flex: 0 0 auto; }
   .ftr span { font-size: 9px; color: #666e8c; letter-spacing: 0.05em; }
@@ -217,11 +315,54 @@
 </head>
 <body>
 
-  <!-- ── Page 1: Traffic ─────────────────────────────────────────────── -->
+  <!-- ── Page 1: Executive Summary ────────────────────────────────────── -->
   <section class="page" data-page="1">
     <header class="hdr">
       <div class="hdr-left">
-        <span class="brand">Dynatrace · Business Insights</span>
+        <span class="brand"><!-- brand --></span>
+      </div>
+      <div class="hdr-center">
+        <div class="kind">Trending</div>
+        <div class="section">Executive Summary</div>
+      </div>
+      <div class="hdr-right">
+        <div class="name">{{FRONTEND_NAME}}</div>
+        <div class="env">{{ENVIRONMENT_NAME}}</div>
+        <div class="range">{{DATE_RANGE_LABEL}}</div>
+      </div>
+    </header>
+    <div class="accent-line"></div>
+    <div class="content">
+      <div class="kpi-row" id="kpi-row"></div>
+      <div class="exec-grid">
+        <div class="exec-card exec-card--traffic">
+          <div class="exec-section-label">Traffic</div>
+          <div class="findings-body">{{FINDINGS_TRAFFIC_HTML}}</div>
+          <div class="exec-mini-stats" id="exec-mini-traffic"></div>
+        </div>
+        <div class="exec-card exec-card--cwv">
+          <div class="exec-section-label">Core Web Vitals</div>
+          <div class="findings-body">{{FINDINGS_CWV_HTML}}</div>
+          <div class="exec-mini-stats" id="exec-mini-cwv"></div>
+        </div>
+        <div class="exec-card exec-card--browser">
+          <div class="exec-section-label">Browser &amp; Device</div>
+          <div class="findings-body">{{FINDINGS_BROWSER_HTML}}</div>
+          <div class="exec-mini-stats" id="exec-mini-browser"></div>
+        </div>
+      </div>
+    </div>
+    <footer class="ftr">
+      <span>CONFIDENTIAL · FOR CUSTOMER USE ONLY</span>
+      <span>Page 1 of 4 · Powered by <span class="brand-name">Dynatrace</span> · {{GENERATED_AT}}</span>
+    </footer>
+  </section>
+
+  <!-- ── Page 2: Traffic ─────────────────────────────────────────────── -->
+  <section class="page" data-page="2">
+    <header class="hdr">
+      <div class="hdr-left">
+        <span class="brand"><!-- brand --></span>
       </div>
       <div class="hdr-center">
         <div class="kind">Trending</div>
@@ -235,26 +376,21 @@
     </header>
     <div class="accent-line"></div>
     <div class="content">
-      <div class="kpi-row" id="kpi-row"></div>
       <div class="chart-card" style="flex: 1;">
         <div class="chart-title">User Traffic</div>
-        <div class="bar-table-wrap" id="table-trafficMonthly"></div>
-      </div>
-      <div class="findings" id="findings-traffic">
-        <div class="findings-label">Analysis</div>
-        <div class="findings-body">{{FINDINGS_TRAFFIC_HTML}}</div>
+        <div class="flex-bars-wrap" id="table-trafficMonthly"></div>
       </div>
     </div>
     <footer class="ftr">
       <span>CONFIDENTIAL · FOR CUSTOMER USE ONLY</span>
-      <span>Page 1 of 3 · Powered by <span class="brand-name">Dynatrace</span> · {{GENERATED_AT}}</span>
+      <span>Page 2 of 4 · Powered by <span class="brand-name">Dynatrace</span> · {{GENERATED_AT}}</span>
     </footer>
   </section>
 
-  <!-- ── Page 2: Core Web Vitals ─────────────────────────────────────── -->
-  <section class="page" data-page="2">
+  <!-- ── Page 3: Core Web Vitals ─────────────────────────────────────── -->
+  <section class="page" data-page="3">
     <header class="hdr">
-      <div class="hdr-left"><span class="brand">Dynatrace · Business Insights</span></div>
+      <div class="hdr-left"><span class="brand"><!-- brand --></span></div>
       <div class="hdr-center">
         <div class="kind">Trending</div>
         <div class="section">Core Web Vitals</div>
@@ -268,28 +404,24 @@
     <div class="accent-line"></div>
     <div class="content">
       <div class="chart-card" style="flex: 1;">
-        <div class="chart-title">Core Web Vitals</div>
-        <div class="bar-table-wrap" id="table-cwvMonthly"></div>
+        <div class="chart-title">Core Web Vitals - Monthly</div>
+        <div class="flex-bars-wrap" id="table-cwvMonthly"></div>
       </div>
       <div class="chart-card" style="flex: 1;">
-        <div class="chart-title">Core Web Vitals Trend (Weekly)</div>
+        <div class="chart-title">Core Web Vitals - Historical</div>
         <div class="chart-body"><canvas id="chart-cwvWeekly"></canvas></div>
-      </div>
-      <div class="findings" id="findings-cwv">
-        <div class="findings-label">Analysis</div>
-        <div class="findings-body">{{FINDINGS_CWV_HTML}}</div>
       </div>
     </div>
     <footer class="ftr">
       <span>CONFIDENTIAL · FOR CUSTOMER USE ONLY</span>
-      <span>Page 2 of 3 · Powered by <span class="brand-name">Dynatrace</span> · {{GENERATED_AT}}</span>
+      <span>Page 3 of 4 · Powered by <span class="brand-name">Dynatrace</span> · {{GENERATED_AT}}</span>
     </footer>
   </section>
 
-  <!-- ── Page 3: Browser Performance ─────────────────────────────────── -->
-  <section class="page" data-page="3">
+  <!-- ── Page 4: Browser Performance ─────────────────────────────────── -->
+  <section class="page" data-page="4">
     <header class="hdr">
-      <div class="hdr-left"><span class="brand">Dynatrace · Business Insights</span></div>
+      <div class="hdr-left"><span class="brand"><!-- brand --></span></div>
       <div class="hdr-center">
         <div class="kind">Trending</div>
         <div class="section">Browser Performance</div>
@@ -306,14 +438,10 @@
         <div class="chart-title">Browser Performance</div>
         <div class="browser-perf-grid" id="browser-perf-grid"></div>
       </div>
-      <div class="findings" id="findings-browser">
-        <div class="findings-label">Analysis</div>
-        <div class="findings-body">{{FINDINGS_BROWSER_HTML}}</div>
-      </div>
     </div>
     <footer class="ftr">
       <span>CONFIDENTIAL · FOR CUSTOMER USE ONLY</span>
-      <span>Page 3 of 3 · Powered by <span class="brand-name">Dynatrace</span> · {{GENERATED_AT}}</span>
+      <span>Page 4 of 4 · Powered by <span class="brand-name">Dynatrace</span> · {{GENERATED_AT}}</span>
     </footer>
   </section>
 
@@ -338,11 +466,6 @@ Chart.defaults.animation = false;
 Chart.defaults.plugins.legend.labels.boxWidth = 10;
 Chart.defaults.plugins.legend.labels.font = { size: 10 };
 
-// hides empty findings panels so they don't leave a blank card
-document.querySelectorAll(".findings-body").forEach(el => {
-  if (!el.textContent.trim()) el.closest(".findings").classList.add("is-empty");
-});
-
 function renderKpis(kpis) {
   const row = document.getElementById("kpi-row");
   if (!row || !kpis) return;
@@ -361,13 +484,43 @@ function renderKpis(kpis) {
   }).join("");
 }
 
-// One flat bar/line chart per (metric) colored per-point by good/warn/poor threshold.
-// ── bar-in-cell table renderer (User Traffic / Core Web Vitals / Browser Performance) ──
+// ── bar-in-cell table renderer ────────────────────────────────────────────
 function compactFmt(n) {
   if (n == null || Number.isNaN(n)) return "—";
   if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(1) + "M";
   if (Math.abs(n) >= 1e3) return (n / 1e3).toFixed(1) + "k";
-  return n.toFixed(1);
+  return Math.round(n).toString();
+}
+
+function flexBarsHtml(rows, columns, compact) {
+  const compactClass = compact ? " flex-bars--compact" : "";
+  const maxByCol = {};
+  columns.forEach(c => {
+    maxByCol[c.key] = Math.max(0, ...rows.map(r => (typeof r.values[c.key] === "number" ? r.values[c.key] : 0)));
+  });
+  const header = `<div class="flex-bars-header">
+    <div class="flex-bars-spacer"></div>
+    ${columns.map(c => `<div class="flex-bars-col-hdr">${c.label}</div>`).join("")}
+  </div>`;
+  const body = rows.map((r, ri) => {
+    const isCurrent = ri === rows.length - 1;
+    const cells = columns.map(c => {
+      if (c.key === "__device") {
+        const pct = r.values.__device;
+        if (pct == null) return `<div class="flex-bars-cell"><div class="flex-bars-track"><span class="flex-bars-value">—</span></div></div>`;
+        return `<div class="flex-bars-cell"><div class="flex-bars-track"><div class="flex-bars-fill" style="width:${Math.max(pct * 0.72, 2)}%;background:#7B61FF"></div><span class="flex-bars-value">${Math.round(pct)}%</span></div></div>`;
+      }
+      const v = r.values[c.key];
+      if (v == null) return `<div class="flex-bars-cell"><div class="flex-bars-track"><span class="flex-bars-value">—</span></div></div>`;
+      const max = maxByCol[c.key];
+      const pct = max > 0 ? Math.max(2, (v / max) * 72) : 0;
+      const color = c.metric ? statusColor(c.metric, v) : c.color;
+      const text = c.format ? c.format(v) : v;
+      return `<div class="flex-bars-cell"><div class="flex-bars-track"><div class="flex-bars-fill" style="width:${pct}%;background:${color}"></div><span class="flex-bars-value">${text}</span></div></div>`;
+    }).join("");
+    return `<div class="flex-bars-row${isCurrent ? " flex-bars-row--current" : ""}"><div class="flex-bars-row-label">${r.label}</div>${cells}</div>`;
+  }).join("");
+  return `<div class="flex-bars${compactClass}">${header}<div class="flex-bars-body">${body}</div></div>`;
 }
 function fmtMsClient(ms) {
   if (ms == null || Number.isNaN(ms)) return "—";
@@ -380,7 +533,7 @@ function barTableHtml(rows, columns) {
   });
   const head = `<tr><th></th>${columns.map((c) => `<th>${c.label}</th>`).join("")}</tr>`;
   const body = rows
-    .map((r) => {
+    .map((r, ri) => {
       const cells = columns
         .map((c) => {
           const v = r.values[c.key];
@@ -392,7 +545,8 @@ function barTableHtml(rows, columns) {
           return `<td><div class="bar-cell"><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div><span class="bar-value">${text}</span></div></td>`;
         })
         .join("");
-      return `<tr><td class="row-label">${r.label}</td>${cells}</tr>`;
+      const isCur = ri === rows.length - 1;
+      return `<tr${isCur ? ` class="current-month"` : ""}><td class="row-label">${r.label}</td>${cells}</tr>`;
     })
     .join("");
   return `<table class="bar-table"><thead>${head}</thead><tbody>${body}</tbody></table>`;
@@ -404,27 +558,20 @@ function renderTrafficTable() {
   if (!d || !el) return;
   const rows = d.labels.map((label, i) => ({
     label,
-    values: { sessions: d.sessions[i], userActions: d.userActions[i], pageLoads: d.pageLoads[i] },
+    values: {
+      sessions: d.sessions[i],
+      userActions: d.userActions[i],
+      pageLoads: d.pageLoads[i],
+      ...(d.pctDesktop ? { __device: d.pctDesktop[i] } : {}),
+    },
   }));
   const columns = [
     { key: "sessions", label: "Sessions", color: SERIES_COLOR.sessions, format: compactFmt },
     { key: "userActions", label: "User Actions", color: SERIES_COLOR.userActions, format: compactFmt },
     { key: "pageLoads", label: "Page Loads", color: SERIES_COLOR.pageLoads, format: compactFmt },
+    ...(d.pctDesktop ? [{ key: "__device", label: "Device" }] : []),
   ];
-  el.innerHTML = barTableHtml(rows, columns);
-  if (d.pctDesktop) {
-    const table = el.querySelector("table");
-    table.querySelector("thead tr").insertAdjacentHTML("beforeend", `<th>Device Split</th>`);
-    table.querySelectorAll("tbody tr").forEach((tr, i) => {
-      const pct = d.pctDesktop[i];
-      tr.insertAdjacentHTML(
-        "beforeend",
-        pct == null
-          ? "<td>—</td>"
-          : `<td><div class="device-track"><div class="device-fill" style="width:${Math.max(pct, 8)}%">${Math.round(pct)}%</div></div></td>`
-      );
-    });
-  }
+  el.innerHTML = flexBarsHtml(rows, columns, false);
 }
 
 function renderCwvTable() {
@@ -433,34 +580,25 @@ function renderCwvTable() {
   if (!d || !el) return;
   const rows = d.labels.map((label, i) => ({ label, values: { lcp: d.lcp[i], inp: d.inp[i], cls: d.cls[i] } }));
   const columns = [
-    { key: "lcp", label: "Largest Contentful Paint", metric: "lcp", format: fmtMsClient },
-    { key: "inp", label: "Interaction to Next Paint", metric: "inp", format: fmtMsClient },
-    { key: "cls", label: "Cumulative Layout Shift", metric: "cls", format: (v) => v.toFixed(2) },
+    { key: "lcp", label: "LCP p75", metric: "lcp", format: fmtMsClient },
+    { key: "inp", label: "INP p75", metric: "inp", format: fmtMsClient },
+    { key: "cls", label: "CLS p75", metric: "cls", format: (v) => v.toFixed(2) },
   ];
-  el.innerHTML = barTableHtml(rows, columns);
+  el.innerHTML = flexBarsHtml(rows, columns, true);
 }
 
-// Line chart + flat dashed "reference line" datasets for the good/poor thresholds.
-// ponytail: no annotation plugin (extra vendor dep) — a constant-value line dataset
-// gives the same visual result for a fixed horizontal threshold.
-function refLineDataset(label, value, color) {
-  return { label, data: null, _flatValue: value, borderColor: color, borderDash: [4, 4], borderWidth: 1, pointRadius: 0, fill: false };
-}
 function renderCwvWeekly() {
   const d = DATA.cwvWeekly;
   const el = document.getElementById("chart-cwvWeekly");
   if (!d || !el) return;
-  const flat = v => d.labels.map(() => v);
   new Chart(el, {
     type: "line",
     data: {
       labels: d.labels,
       datasets: [
-        { label: "LCP (ms)", data: d.lcp, borderColor: SERIES_COLOR.lcp, backgroundColor: SERIES_COLOR.lcp, yAxisID: "ms", tension: 0.25, pointRadius: 2 },
-        { label: "INP (ms)", data: d.inp, borderColor: SERIES_COLOR.inp, backgroundColor: SERIES_COLOR.inp, yAxisID: "ms", tension: 0.25, pointRadius: 2 },
-        { label: "CLS", data: d.cls, borderColor: SERIES_COLOR.cls, backgroundColor: SERIES_COLOR.cls, yAxisID: "cls", tension: 0.25, pointRadius: 2 },
-        { label: "LCP good ≤2.5s", data: flat(THRESHOLDS.lcp.good), yAxisID: "ms", borderColor: "rgba(46,204,133,0.5)", borderDash: [4, 4], borderWidth: 1, pointRadius: 0 },
-        { label: "LCP poor >4s", data: flat(THRESHOLDS.lcp.poor), yAxisID: "ms", borderColor: "rgba(232,52,90,0.5)", borderDash: [4, 4], borderWidth: 1, pointRadius: 0 },
+        { label: "LCP (ms)", data: d.lcp, borderColor: SERIES_COLOR.lcp, backgroundColor: SERIES_COLOR.lcp, yAxisID: "ms", tension: 0.35, pointRadius: 0 },
+        { label: "INP (ms)", data: d.inp, borderColor: SERIES_COLOR.inp, backgroundColor: SERIES_COLOR.inp, yAxisID: "ms", tension: 0.35, pointRadius: 0 },
+        { label: "CLS", data: d.cls, borderColor: SERIES_COLOR.cls, backgroundColor: SERIES_COLOR.cls, yAxisID: "cls", tension: 0.35, pointRadius: 0 },
       ],
     },
     options: {
@@ -473,9 +611,6 @@ function renderCwvWeekly() {
   });
 }
 
-// One panel per browser×device (already capped to the most relevant N by
-// build-report.mjs's --max-browsers — see its selection policy), each a
-// bar-table across all months, matching the live app's grid layout.
 function renderBrowserPerfPanels() {
   const d = DATA.browserPerf;
   const el = document.getElementById("browser-perf-grid");
@@ -488,18 +623,76 @@ function renderBrowserPerfPanels() {
   ];
   el.innerHTML = d.panels
     .map((p) => {
+      if (p === null) return `<div class="browser-panel browser-panel--empty"></div>`;
       const rows = p.months.map((m) => ({ label: m.label, values: { visits: m.visits, lcp: m.lcp, inp: m.inp, cls: m.cls } }));
       return `<div class="browser-panel"><div class="browser-panel-title">${p.label}</div>${barTableHtml(rows, columns)}</div>`;
     })
     .join("");
 }
 
+function chip(label, value, color) {
+  const valStyle = color ? ` style="color:${color}"` : "";
+  return `<div class="exec-mini-chip"><div class="exec-mini-chip-label">${label}</div><div class="exec-mini-chip-value"${valStyle}>${value}</div></div>`;
+}
+
+function chipsRow(chips) {
+  return `<div class="exec-mini-chips-row">${chips}</div>`;
+}
+
+function renderExecMiniStats() {
+  const tm = DATA.trafficMonthly;
+  const cwv = DATA.cwvMonthly;
+  const bp = DATA.browserPerf;
+  if (!tm || !tm.labels.length) return;
+  const i = tm.labels.length - 1;
+  const period = `<span class="exec-mini-period">${tm.labels[i]}</span>`;
+
+  const trafficEl = document.getElementById("exec-mini-traffic");
+  if (trafficEl) trafficEl.innerHTML = period + chipsRow(
+    chip("Sessions", compactFmt(tm.sessions[i]), "#a99aff") +
+    chip("User Actions", compactFmt(tm.userActions[i]), "#3dd9bc") +
+    chip("Page Loads", compactFmt(tm.pageLoads[i]), "#4db8e8")
+  );
+
+  const cwvEl = document.getElementById("exec-mini-cwv");
+  if (cwvEl && cwv) {
+    const lcp = cwv.lcp[i], inp = cwv.inp[i], cls = cwv.cls[i];
+    cwvEl.innerHTML = period + chipsRow(
+      chip("LCP p75", fmtMsClient(lcp), statusColor("lcp", lcp)) +
+      chip("INP p75", fmtMsClient(inp), statusColor("inp", inp)) +
+      chip("CLS p75", cls != null ? cls.toFixed(2) : "—", statusColor("cls", cls))
+    );
+  }
+
+  const browserEl = document.getElementById("exec-mini-browser");
+  if (browserEl && bp && bp.panels) {
+    const latestLabel = tm.labels[i];
+    const ranked = bp.panels
+      .filter(p => p !== null)
+      .map(p => ({
+        label: p.label.replace(/\s*[·•]\s*(desktop|mobile)/i, "").trim(),
+        visits: (p.months.find(m => m.label === latestLabel) || {}).visits || 0,
+      }))
+      .sort((a, b) => b.visits - a.visits)
+      .slice(0, 3);
+    browserEl.innerHTML = period + chipsRow(ranked.map(r =>
+      `<div class="exec-mini-chip"><div class="exec-mini-chip-label" style="font-size:8px">${r.label}</div><div class="exec-mini-chip-value" style="font-size:13px">${r.visits > 0 ? compactFmt(r.visits) : "—"}</div></div>`
+    ).join(""));
+  }
+}
+
+const DT_LOGO_SVG = `<svg enable-background="new 0 0 800 142" viewBox="0 0 800 142" xmlns="http://www.w3.org/2000/svg"><g fill="currentColor"><path d="m578.6 37.2h-18.4c-5.2 0-8.8 1-11 3.2-2.2 2.1-3.3 5.8-3.3 10.8v63.6h-11v-64.4c.1-4.9.9-10.2 3.5-14.2 4.7-7.5 13.7-8.9 20.4-8.9h19.9v9.9z"/><path d="m507.6 104.8c-5.2 0-8.8-1-11-3.2-2.2-2.1-3.3-5.6-3.3-10.6v-53.8h23.1v-9.9h-23.1v-26.3h-11v90.6c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h19.9v-9.9z"/><path d="m219.3 1v26.2h-23.1c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h10.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2v-90.7zm-3.3 100.7c-2.2 2.1-5.8 3.2-11 3.2h-10c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-28.9c0-4.1 1.4-9.4 5.5-13.4 3.5-3.4 9.1-6 18.2-6h24.2v53.9c.1 4.9-1 8.4-3.2 10.6z"/><path d="m678.2 43.2c3.5-3.4 9.1-6 18.2-6h26.5v-9.9h-25.4c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h25.4v-9.9h-26.5c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-29c0-4.1 1.4-9.5 5.5-13.4z"/><path d="m470.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m652.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m317.8 27.2h-11.5l-27.9 72.6-27.9-72.6h-11.4l33.6 87.5-10.1 26.3h11.5z"/><path d="m392.2 56.9c0-1.2 0-12.5-8-20.4-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v57.9h11v-58.2c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v58.2h11c0-4.5 0-56.5 0-57.9z"/><path d="m791 36.5c-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v28.2c0 1.2 0 12.5 8 20.4 5.1 5 13.2 9.1 26.4 9.3h26v-10h-25.4c-8.7-.1-15.2-2.7-18.6-6-4-4-5.4-9.3-5.4-13.4v-10.3h59v-18.2c.1-1.2.1-12.5-8-20.4zm-50.9 28.7v-8.6c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v8.6z"/></g><g><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9-2.1 25.2-.8 42.1-.8 42.1l-35.5 33.7s-2.7-18.9-4.1-40.2c-.8-13.2-1.1-24.8-1.1-31.8 0-.4.2-.8.2-1.2 0-.5.6-5.2 5.2-9.6 5-4.8 41.9-33.7 41.3-30.9z" fill="#1496ff"/><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9 0 0-39.3-4.7-41.5 4.8 0-.5.7-6.3 5.3-10.7 5-4.8 42-34.8 41.4-32z" fill="#1284ea"/><path d="m1 53.1v2.2c.4-1.7 1.1-2.9 2.5-4.8 2.9-3.7 7.6-4.7 9.5-4.9 9.6-1.3 23.8-2.8 38.1-3.2 25.3-.8 42 1.3 42 1.3l35.5-33.7s-18.6-3.5-39.8-6c-13.9-1.7-26.1-2.6-33-3-.5 0-5.4-.6-10 3.8-5 4.8-30.4 28.9-40.6 38.6-4.6 4.4-4.2 9.3-4.2 9.7z" fill="#b4dc00"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4-25.3.8-42.1-1.3-42.1-1.3l-35.5 33.8s18.8 3.7 40 6.1c13 1.5 24.5 2.3 31.5 2.7.5 0 1.3-.4 1.8-.4s5.4-.9 10-5.3c5-4.8 35.2-39.3 32.4-39z" fill="#6f2da8"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4 0 0 2.7 39.5-6.8 41.2.5 0 7-.3 11.6-4.7 5-4.8 36.1-40.2 33.3-39.9z" fill="#591f91"/><path d="m84.5 141c-.7 0-1.4-.1-2.2-.1 1.8-.3 3-.9 4.9-2.3 3.8-2.7 5-7.4 5.4-9.3 1.7-9.5 4-23.6 5.1-37.9 2-25.2.8-42 .8-42l35.5-33.8s2.6 18.8 4.1 40.1c.9 13.9 1.2 26.2 1.3 33 0 .5.4 5.4-4.2 9.8-5 4.8-30.4 29-40.5 38.7-4.8 4.4-9.7 3.8-10.2 3.8z" fill="#73be28"/></g></svg>`;
+
 document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll(".hdr-left .brand").forEach(el => {
+    el.innerHTML = DT_LOGO_SVG + `<span class="brand-sep">|</span><span class="brand-sub">Business Insights</span>`;
+  });
   renderKpis(DATA.kpis);
   renderTrafficTable();
   renderCwvTable();
   renderCwvWeekly();
   renderBrowserPerfPanels();
+  renderExecMiniStats();
 });
 </script>
 </body>

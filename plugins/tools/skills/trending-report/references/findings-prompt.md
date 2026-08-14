@@ -50,6 +50,7 @@ Apply these Core Web Vitals thresholds (p75) when flagging violations:
 - 3-4 bullets per heading maximum, and only if genuinely warranted by the
   data — fewer bullets (or the fallback in §5) when there's less to say.
 - No preamble, no conclusion, no general advice.
+- **Writing style:** clear and direct. Lead with the finding, follow with the supporting number. Cut filler words ("notably", "it is worth noting", "significantly", "continues to"). Avoid restating what the reader can see in the chart — state the implication or the delta, not the raw description. Aim for ~15 words per bullet; hard cap at 20.
 - Use exactly these headings, in this order:
 
 ```
@@ -92,7 +93,7 @@ Output markdown:
 
 ```
 ## Core Web Vitals
-- LCP improved steadily from 2.65s in Feb to 2.40s in Jul, now comfortably in the good range (<2500ms).
-- INP dropped from 220ms to 190ms over the period, remaining good throughout.
-- CLS declined from 0.090 to 0.070, staying well within the good threshold (<0.1).
+- LCP steady improvement Feb–Jul (2.65s → 2.40s); well within good range throughout.
+- INP down 30ms over the period; all months good (<200ms).
+- CLS declined from 0.090 to 0.070; no threshold concerns.
 ```

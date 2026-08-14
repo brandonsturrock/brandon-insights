@@ -147,8 +147,11 @@ function buildTrendingData(dataDir) {
     .sort((a, b) => a.month - b.month);
   const cwvRows = loadRecords(dataDir, "cwv-monthly.json")
     .sort((a, b) => a.month - b.month);
+  // Filter weekly rows to the completed 6-month window (exclude current partial month).
+  const cutoffMs = Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1);
   const weeklyRows = loadRecords(dataDir, "cwv-weekly.json")
-    .sort((a, b) => a.week - b.week);
+    .filter(r => new Date(r.week).getTime() < cutoffMs)
+    .sort((a, b) => new Date(a.week).getTime() - new Date(b.week).getTime());
   const browserRows = loadRecords(dataDir, "browser-perf-monthly.json");
 
   const trafficMonthly = {
@@ -196,11 +199,14 @@ function buildTrendingData(dataDir) {
     g.byMonth.set(r.month, r);
   });
   const allMonths = [...new Set(browserRows.map((r) => r.month))].sort((a, b) => a - b);
+  const latestMonth = allMonths[allMonths.length - 1];
   const topGroups = [...browserGroups.values()]
-    .sort((a, b) => b.totalVisits - a.totalVisits)
+    .sort((a, b) => (b.byMonth.get(latestMonth)?.Visits || 0) - (a.byMonth.get(latestMonth)?.Visits || 0))
     .slice(0, MAX_BROWSERS);
+  // Always emit exactly MAX_BROWSERS panel slots; null = render as empty/blank card.
+  const paddedGroups = [...topGroups, ...Array(Math.max(0, MAX_BROWSERS - topGroups.length)).fill(null)];
   const browserPerf = {
-    panels: topGroups.map((g) => ({
+    panels: paddedGroups.map((g) => g === null ? null : ({
       label: g.label,
       months: allMonths.map((m) => {
         const r = g.byMonth.get(m);

@@ -169,7 +169,7 @@ Otherwise run:
 
 ```bash
 dtctl query --agent --spill=never -o json -f - <<'EOF'
-fetch user.events, from: now()-6M
+fetch user.events, from: now()-7d
 | filter isNotNull(frontend.name)
 | summarize sessions = count(), by: {frontend.name}
 | sort sessions desc
@@ -189,7 +189,7 @@ For each query needed for the chosen report type (see the tab column in
 run:
 
 ```bash
-dtctl query -f <query>.dql --set frontend="NAME" [--context NAME] -o json --agent --spill=never > <data-dir>/<canonical-filename>.json
+dtctl query -f <query>.dql --set frontend="NAME" [--context NAME] -o json --agent --spill=never | grep '^{' > <data-dir>/<canonical-filename>.json
 ```
 
 - **Output location:** always write to `~/Downloads/` — never create output
@@ -204,6 +204,9 @@ dtctl query -f <query>.dql --set frontend="NAME" [--context NAME] -o json --agen
   all small pre-aggregated result sets. If `dtctl` ever spills anyway,
   branch on `result.kind` per the dtctl skill and `dtctl inspect` the file
   instead of re-querying.
+- The `| grep '^{'` strips any warning lines dtctl emits on stdout before the
+  JSON envelope (e.g. field-override warnings from timeseries queries). The
+  JSON envelope is always a single line starting with `{`.
 - Run queries 0 and 1–5 from `references/queries.md`.
 
 ### 4. Generate findings
@@ -219,7 +222,7 @@ file in the same data directory (e.g. `<data-dir>/findings.md`).
 node scripts/build-report.mjs --type trending --frontend "NAME" \
   --data ~/Downloads/<frontend>-trending-<YYYY-MM> \
   --findings ~/Downloads/<frontend>-trending-<YYYY-MM>/findings.md \
-  --out ~/Downloads/<frontend>-trending-<YYYY-MM>.html
+  --out ~/Downloads/<frontend>-trending-<YYYY-MM>.html &>/dev/null
 ```
 
 This reads the canonical JSON filenames from the data directory, applies the unit
@@ -228,31 +231,25 @@ standalone HTML report (charts, tables, KPI cards) with the findings
 narrative woven in.
 
 **Browser selection (Trending report only):** the Browser Performance page
-shows one panel per browser×device combo, 2 per row (matching the live
-app's layout). Real tenants can report 10+ distinct browsers/devices —
-showing all of them doesn't fit a landscape A4 page and buries the ones
-that actually matter. `build-report.mjs` ranks browser×device combos by
-total visits summed across the whole period and keeps only the top N
-(default 4, a 2×2 grid — measured to be the largest count that keeps each
-panel's fonts/bars comfortably legible in one page). Pass `--max-browsers
-<N>` to change it, but be aware raising it packs more, smaller panels into
-the same fixed page area — verify the render still looks legible rather
-than assuming a bigger number is strictly better. Don't try to fit every
-browser the tenant has ever seen; a couple of long-tail browsers with
-negligible traffic add noise, not signal.
+shows one panel per browser×device combo, 2 per row. `build-report.mjs`
+always renders exactly 6 panel slots (default), ranked by the latest
+month's visit count descending — empty slots render as blank cards. Pass
+`--max-browsers <N>` to change the slot count. Don't try to fit every
+browser the tenant has ever seen; long-tail browsers with negligible
+traffic add noise, not signal.
 
 ### 6. Convert to PDF
 
 **macOS:**
 ```bash
 bash assets/render-pdf.sh ~/Downloads/<frontend>-trending-<YYYY-MM>.html \
-  ~/Downloads/<frontend>-trending-<YYYY-MM>.pdf
+  ~/Downloads/<frontend>-trending-<YYYY-MM>.pdf &>/dev/null
 ```
 
 **Windows** (PowerShell):
 ```powershell
 pwsh assets/render-pdf.ps1 ~/Downloads/<frontend>-trending-<YYYY-MM>.html `
-  ~/Downloads/<frontend>-trending-<YYYY-MM>.pdf
+  ~/Downloads/<frontend>-trending-<YYYY-MM>.pdf *> $null
 ```
 
 ### 7. Report back

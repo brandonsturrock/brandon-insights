@@ -157,7 +157,7 @@ timeseries {
     inp = percentile(dt.frontend.web.page.interaction_to_next_paint, 75),
     cls = percentile(dt.frontend.web.page.cumulative_layout_shift, 75),
     t = start()
-  }, from: -6M, to: now(), interval: 7d, filter: frontend.name == "{{.frontend}}"
+  }, from: -6M, to: now()@M, interval: 7d, filter: frontend.name == "{{.frontend}}"
 | fieldsAdd d = record(t=t[], lcp=lcp[], inp=inp[], cls=cls[])
 | expand d
 | fieldsAdd week = d[t], lcp = d[lcp], inp = d[inp], cls = d[cls]
