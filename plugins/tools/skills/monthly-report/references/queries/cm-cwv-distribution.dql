@@ -1,0 +1,45 @@
+fetch user.events, from: (now()-1M)@M, to: now()@M
+| filter frontend.name == "{{.frontend}}"
+| filter dt.rum.user_type == "real_user"
+| filter characteristics.classifier == "page_summary"
+| fieldsAdd
+    lcp_ms = toLong(web_vitals.largest_contentful_paint) / 1000000,
+    inp_ms = toLong(web_vitals.interaction_to_next_paint) / 1000000,
+    cls_val = toDouble(web_vitals.cumulative_layout_shift) / 10000
+| summarize
+    lcp_b0  = countIf(lcp_ms < 1000),
+    lcp_b1  = countIf(lcp_ms >= 1000  and lcp_ms < 2000),
+    lcp_b2  = countIf(lcp_ms >= 2000  and lcp_ms < 3000),
+    lcp_b3  = countIf(lcp_ms >= 3000  and lcp_ms < 4000),
+    lcp_b4  = countIf(lcp_ms >= 4000  and lcp_ms < 5000),
+    lcp_b5  = countIf(lcp_ms >= 5000  and lcp_ms < 6000),
+    lcp_b6  = countIf(lcp_ms >= 6000  and lcp_ms < 7000),
+    lcp_b7  = countIf(lcp_ms >= 7000  and lcp_ms < 8000),
+    lcp_b8  = countIf(lcp_ms >= 8000  and lcp_ms < 9000),
+    lcp_b9  = countIf(lcp_ms >= 9000  and lcp_ms < 10000),
+    lcp_b10 = countIf(lcp_ms >= 10000),
+    lcp_total = countIf(isNotNull(lcp_ms)),
+    inp_b0  = countIf(inp_ms < 1000),
+    inp_b1  = countIf(inp_ms >= 1000  and inp_ms < 2000),
+    inp_b2  = countIf(inp_ms >= 2000  and inp_ms < 3000),
+    inp_b3  = countIf(inp_ms >= 3000  and inp_ms < 4000),
+    inp_b4  = countIf(inp_ms >= 4000  and inp_ms < 5000),
+    inp_b5  = countIf(inp_ms >= 5000  and inp_ms < 6000),
+    inp_b6  = countIf(inp_ms >= 6000  and inp_ms < 7000),
+    inp_b7  = countIf(inp_ms >= 7000  and inp_ms < 8000),
+    inp_b8  = countIf(inp_ms >= 8000  and inp_ms < 9000),
+    inp_b9  = countIf(inp_ms >= 9000  and inp_ms < 10000),
+    inp_b10 = countIf(inp_ms >= 10000),
+    inp_total = countIf(isNotNull(inp_ms)),
+    cls_b0  = countIf(cls_val < 0.1),
+    cls_b1  = countIf(cls_val >= 0.1 and cls_val < 0.2),
+    cls_b2  = countIf(cls_val >= 0.2 and cls_val < 0.3),
+    cls_b3  = countIf(cls_val >= 0.3 and cls_val < 0.4),
+    cls_b4  = countIf(cls_val >= 0.4 and cls_val < 0.5),
+    cls_b5  = countIf(cls_val >= 0.5 and cls_val < 0.6),
+    cls_b6  = countIf(cls_val >= 0.6 and cls_val < 0.7),
+    cls_b7  = countIf(cls_val >= 0.7 and cls_val < 0.8),
+    cls_b8  = countIf(cls_val >= 0.8 and cls_val < 0.9),
+    cls_b9  = countIf(cls_val >= 0.9 and cls_val < 1.0),
+    cls_b10 = countIf(cls_val >= 1.0),
+    cls_total = countIf(isNotNull(cls_val))

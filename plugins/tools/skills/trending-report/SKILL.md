@@ -23,9 +23,9 @@ add one before proceeding (see **Context check** below).
 
 ## --no-preview flag
 
-If the user invokes this skill with `--no-preview`, skip step 6 entirely —
+If the user invokes this skill with `--no-preview`, skip step 5 entirely —
 do not open the browser and do not ask the `AskUserQuestion`. Proceed directly
-from step 5 to step 7 using `/tmp/<frontend>-trending-<YYYY-MM>.html` as the
+from step 4 to step 6 using `/tmp/<frontend>-trending-<YYYY-MM>.html` as the
 source. The findings panels are still editable in the HTML (they are always
 `contenteditable`), but the PDF is built immediately without waiting for review.
 
@@ -222,7 +222,7 @@ Files and their canonical output names (contract for `build-report.mjs`):
   JSON envelope (e.g. field-override warnings from timeseries queries). The
   JSON envelope is always a single line starting with `{`.
 
-### 4. Generate findings
+### 3. Generate findings
 
 Follow `references/findings-prompt.md` (in this skill directory) for exact
 instructions on reading the query JSON files and authoring the findings
@@ -232,7 +232,7 @@ narrative for the report. Write the result to:
 /tmp/<frontend>-trending-<YYYY-MM>/findings.txt
 ```
 
-### 5. Assemble the report
+### 4. Assemble the report
 
 ```bash
 node scripts/build-report.mjs --type trending --frontend "NAME" \
@@ -258,10 +258,10 @@ month's visit count descending — empty slots render as blank cards. Pass
 browser the tenant has ever seen; long-tail browsers with negligible
 traffic add noise, not signal.
 
-### 6. Preview in browser
+### 5. Preview in browser
 
 **Skip this entire step if `--no-preview` was passed.** Proceed directly to
-step 7 with `SOURCE=/tmp/<frontend>-trending-<YYYY-MM>.html`.
+step 6 with `SOURCE=/tmp/<frontend>-trending-<YYYY-MM>.html`.
 
 Open the HTML for the user to review and edit findings in-place:
 
@@ -278,13 +278,13 @@ Start-Process /tmp/<frontend>-trending-<YYYY-MM>.html
 Then use `AskUserQuestion` with the following options, including this prompt text:
 "The report is open in your browser. The three findings panels on page 1 are editable — click into any panel and type. When you're done, click **Save changes** (bottom-right) to save your edits to ~/Downloads. Then come back here and confirm."
 
-- **Looks good — build the PDF** — proceed to step 7 using `/tmp/<frontend>-trending-<YYYY-MM>.html`
-- **I edited and saved** — proceed to step 7 using `~/Downloads/<frontend>-trending-<YYYY-MM>.html`
-- **Regenerate analysis** — rewrite the findings (step 4) and rebuild the HTML (step 5), then reopen
+- **Looks good — build the PDF** — proceed to step 6 using `/tmp/<frontend>-trending-<YYYY-MM>.html`
+- **I edited and saved** — proceed to step 6 using `~/Downloads/<frontend>-trending-<YYYY-MM>.html`
+- **Regenerate analysis** — rewrite the findings (step 3) and rebuild the HTML (step 4), then reopen
 
-### 7. Convert to PDF
+### 6. Convert to PDF
 
-Determine the source HTML based on the user's choice in step 6:
+Determine the source HTML based on the user's choice in step 5:
 - **Looks good** or **`--no-preview`**: `SOURCE=/tmp/<frontend>-trending-<YYYY-MM>.html`
 - **I edited and saved**: `SOURCE=~/Downloads/<frontend>-trending-<YYYY-MM>.html`
 
@@ -300,7 +300,7 @@ pwsh assets/render-pdf.ps1 $SOURCE `
   ~/Downloads/<frontend>-trending-<YYYY-MM>.pdf *> $null
 ```
 
-### 8. Clean up and report back
+### 7. Clean up and report back
 
 Delete the data directory, the /tmp HTML, and the edited HTML from ~/Downloads (if it exists):
 

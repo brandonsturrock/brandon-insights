@@ -1,0 +1,19 @@
+timeseries {
+    sessions=countDistinct(dt.frontend.session.active.estimated_count),
+    lcp = percentile(dt.frontend.web.page.largest_contentful_paint, 75),
+    lcp2 = count(dt.frontend.web.page.largest_contentful_paint),
+    inp = percentile(dt.frontend.web.page.interaction_to_next_paint, 75),
+    inp2 = count(dt.frontend.web.page.interaction_to_next_paint),
+    cls = percentile(dt.frontend.web.page.cumulative_layout_shift, 75),
+    cls2 = count(dt.frontend.web.page.cumulative_layout_shift)
+  }, from: (now()-1M)@M, to: now()@M, interval: 1d, filter: frontend.name == "{{.frontend}}", by: {device.type}
+| fieldsAdd d = record(d=sessions[], lcp=lcp[], lcp2=lcp2[], inp=inp[], inp2=inp2[], cls=cls[], cls2=cls2[])
+| expand d
+| filterOut isNull(device.type)
+| summarize
+    sessions = sum(d[d]),
+    page_loads = sum(d[lcp2]),
+    lcp_p75 = sum(d[lcp] * d[lcp2]) / sum(d[lcp2]),
+    inp_p75 = sum(d[inp] * d[inp2]) / sum(d[inp2]),
+    cls_p75 = sum(d[cls] * d[cls2]) / sum(d[cls2]),
+  by: { device_type = device.type }

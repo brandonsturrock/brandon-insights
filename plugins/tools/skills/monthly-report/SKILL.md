@@ -18,6 +18,16 @@ add one before proceeding (see **Context check** below).
 
 ---
 
+## --no-preview flag
+
+If the user invokes this skill with `--no-preview`, skip step 5 entirely —
+do not open the browser and do not ask the `AskUserQuestion`. Proceed directly
+from step 4 to step 6 using `/tmp/<frontend>-monthly-<YYYY-MM>.html` as the
+source. The findings panels are still editable in the HTML (they are always
+`contenteditable`), but the PDF is built immediately without waiting for review.
+
+---
+
 ## --install flag
 
 If the user invokes this skill with `--install`, run the following checks and
@@ -35,7 +45,7 @@ applicable method:
 
 **Homebrew (Mac/Linux — check first):**
 ```bash
-brew install dynatrace-oss/tap/dtctl
+brew install dynatrace-oss/tap/dtctl > /dev/null 2>&1
 ```
 
 **Mac/Linux (no Homebrew):**
@@ -133,7 +143,7 @@ dtctl config get-contexts
 Show the list. Use `AskUserQuestion` to let the user pick one, then:
 
 ```bash
-dtctl config use-context "CHOSEN_CONTEXT"
+dtctl config use-context "CHOSEN_CONTEXT" > /dev/null 2>&1
 ```
 
 **If adding new context:**
@@ -181,48 +191,59 @@ more...", advance the window by 3 and ask again. Highest sessions first. Set
 
 ### 2. Run the queries
 
-Write all query bodies to temp `.dql` files, then **fire all 11 queries in
-parallel** (they are fully independent):
+The 10 pre-written `.dql` files live in `references/queries/` inside the skill
+base directory. Run each directly — no temp file needed:
 
 ```bash
-dtctl query -f <query>.dql --set frontend="NAME" [--context NAME] -o json --agent --spill=never \
-  | grep -m1 '^{' > <data-dir>/<canonical-filename>.json
+dtctl query -f <SKILL_BASE_DIR>/references/queries/<query>.dql --set frontend="NAME" [--context NAME] -o json --agent --spill=never | grep '^{' > /tmp/<frontend>-monthly-<YYYY-MM>/<canonical-filename>.json
 ```
 
-- **Output location:** always write to `~/Downloads/` — never create output
-  directories inside the project repo. Use
-  `~/Downloads/<frontend>-monthly-<YYYY-MM>/` as the data directory (query
-  JSONs and findings.md) and `~/Downloads/<frontend>-monthly-<YYYY-MM>.html`
-  / `~/Downloads/<frontend>-monthly-<YYYY-MM>.pdf` for the rendered files.
-- Use the exact canonical filenames from the table at the top of
-  `references/queries.md` (`metrics-monthly.json`, `cwv-monthly.json`, etc.)
-  — the report-builder script and findings prompt both key off these names.
+Files and their canonical output names (contract for `build-report.mjs`):
+
+| Query file | Output filename |
+|---|---|
+| `cm-daily-device.dql` | `cm-daily-device.json` |
+| `cm-daily-cwv.dql` | `cm-daily-cwv.json` |
+| `cm-cwv-distribution.dql` | `cm-cwv-distribution.json` |
+| `cm-top-pages.dql` | `cm-top-pages.json` |
+| `cm-top-exceptions.dql` | `cm-top-exceptions.json` |
+| `cm-top-request-errors.dql` | `cm-top-request-errors.json` |
+| `cm-error-count.dql` | `cm-error-count.json` |
+| `cm-errors.dql` | `cm-errors.json` |
+| `cm-device-compare.dql` | `cm-device-compare.json` |
+| `cm-cwv-tier.dql` | `cm-cwv-tier.json` |
+
+- **Output location:** use `/tmp/<frontend>-monthly-<YYYY-MM>/` as the data
+  directory (query JSONs and findings.txt) and
+  `/tmp/<frontend>-monthly-<YYYY-MM>.html` for the intermediate HTML. Only
+  the final PDF goes to `~/Downloads/<frontend>-monthly-<YYYY-MM>.pdf`.
 - `--spill=never` forces rows inline (`result.kind == "records"`); these are
   all small pre-aggregated result sets. If `dtctl` ever spills anyway,
   branch on `result.kind` per the dtctl skill and `dtctl inspect` the file
   instead of re-querying.
-- **Warning line stripping:** `dtctl` may print one or more `Warning: ...`
-  lines to stdout before the JSON envelope (e.g. scan-limit warnings, field
-  override notices). Pipe through `grep -m1 '^{'` to extract only the JSON
-  line. Without this, downstream JSON parsers will fail on the leading text.
-- **Parallelism:** background all 11 `dtctl query` invocations with `&`, then
-  `wait` for them all before proceeding. This cuts wall time roughly in half
-  compared to sequential execution.
+- The `| grep '^{'` strips any warning lines dtctl emits on stdout before the
+  JSON envelope (e.g. field-override warnings from timeseries queries). The
+  JSON envelope is always a single line starting with `{`.
+- **Parallelism:** background all 10 `dtctl query` invocations with `&`, then
+  `wait` for them all before proceeding.
 
 ### 3. Generate findings
 
 Follow `references/findings-prompt.md` (in this skill directory) for exact
-instructions on reading the query JSON files and authoring the markdown
-findings/narrative for the report. Write the result to a findings markdown
-file in the same data directory (e.g. `<data-dir>/findings.md`).
+instructions on reading the query JSON files and authoring the findings
+narrative for the report. Write the result to:
+
+```
+/tmp/<frontend>-monthly-<YYYY-MM>/findings.txt
+```
 
 ### 4. Assemble the report
 
 ```bash
 node scripts/build-report.mjs --type current-month --frontend "NAME" \
-  --data ~/Downloads/<frontend>-monthly-<YYYY-MM> \
-  --findings ~/Downloads/<frontend>-monthly-<YYYY-MM>/findings.md \
-  --out ~/Downloads/<frontend>-monthly-<YYYY-MM>.html
+  --data /tmp/<frontend>-monthly-<YYYY-MM> \
+  --findings /tmp/<frontend>-monthly-<YYYY-MM>/findings.txt \
+  --out /tmp/<frontend>-monthly-<YYYY-MM>.html &>/dev/null
 ```
 
 This reads the canonical JSON filenames from the data directory, applies the unit
@@ -230,20 +251,68 @@ conversions documented per-query in `references/queries.md`, and renders the
 standalone HTML report (charts, tables, KPI cards) with the findings
 narrative woven in.
 
-### 5. Convert to PDF
+The rendered HTML is self-contained (Chart.js inlined) and includes:
+- `contenteditable` findings panels so the user can edit analysis text directly in the browser
+- A floating **Save changes** button that downloads the edited HTML to `~/Downloads/<frontend>-monthly-<YYYY-MM>.html`
+
+### 5. Preview in browser
+
+**Skip this entire step if `--no-preview` was passed.** Proceed directly to
+step 6 with `SOURCE=/tmp/<frontend>-monthly-<YYYY-MM>.html`.
+
+Open the HTML for the user to review and edit findings in-place:
 
 **macOS:**
 ```bash
-bash assets/render-pdf.sh ~/Downloads/<frontend>-monthly-<YYYY-MM>.html \
-  ~/Downloads/<frontend>-monthly-<YYYY-MM>.pdf
+open /tmp/<frontend>-monthly-<YYYY-MM>.html > /dev/null 2>&1
+```
+
+**Windows:**
+```powershell
+Start-Process /tmp/<frontend>-monthly-<YYYY-MM>.html
+```
+
+Then use `AskUserQuestion` with the following options, including this prompt text:
+"The report is open in your browser. The findings panels are editable — click into any panel and type. When you're done, click **Save changes** (bottom-right) to save your edits to ~/Downloads. Then come back here and confirm."
+
+- **Looks good — build the PDF** — proceed to step 6 using `/tmp/<frontend>-monthly-<YYYY-MM>.html`
+- **I edited and saved** — proceed to step 6 using `~/Downloads/<frontend>-monthly-<YYYY-MM>.html`
+- **Regenerate analysis** — rewrite the findings (step 3) and rebuild the HTML (step 4), then reopen
+
+### 6. Convert to PDF
+
+Determine the source HTML based on the user's choice in step 5:
+- **Looks good** or **`--no-preview`**: `SOURCE=/tmp/<frontend>-monthly-<YYYY-MM>.html`
+- **I edited and saved**: `SOURCE=~/Downloads/<frontend>-monthly-<YYYY-MM>.html`
+
+**macOS:**
+```bash
+bash assets/render-pdf.sh "$SOURCE" \
+  ~/Downloads/<frontend>-monthly-<YYYY-MM>.pdf &>/dev/null
 ```
 
 **Windows** (PowerShell):
 ```powershell
-pwsh assets/render-pdf.ps1 ~/Downloads/<frontend>-monthly-<YYYY-MM>.html `
-  ~/Downloads/<frontend>-monthly-<YYYY-MM>.pdf
+pwsh assets/render-pdf.ps1 $SOURCE `
+  ~/Downloads/<frontend>-monthly-<YYYY-MM>.pdf *> $null
 ```
 
-### 6. Report back
+### 7. Clean up and report back
 
-Tell the user the absolute path to the PDF in `~/Downloads/`.
+Delete the data directory, the /tmp HTML, and the edited HTML from ~/Downloads (if it exists):
+
+**macOS / Linux:**
+```bash
+rm -rf /tmp/<frontend>-monthly-<YYYY-MM>/ > /dev/null 2>&1
+rm -f /tmp/<frontend>-monthly-<YYYY-MM>.html > /dev/null 2>&1
+rm -f ~/Downloads/<frontend>-monthly-<YYYY-MM>.html > /dev/null 2>&1
+```
+
+**Windows:**
+```powershell
+Remove-Item -Recurse -Force /tmp/<frontend>-monthly-<YYYY-MM>/ -ErrorAction SilentlyContinue
+Remove-Item -Force /tmp/<frontend>-monthly-<YYYY-MM>.html -ErrorAction SilentlyContinue
+Remove-Item -Force ~/Downloads/<frontend>-monthly-<YYYY-MM>.html -ErrorAction SilentlyContinue
+```
+
+Then tell the user the absolute path to the PDF in `~/Downloads/`.

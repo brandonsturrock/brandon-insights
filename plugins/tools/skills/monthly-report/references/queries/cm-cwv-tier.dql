@@ -1,0 +1,21 @@
+fetch user.events, from: (now()-1M)@M, to: now()@M
+| filter frontend.name == "{{.frontend}}"
+| filter characteristics.classifier == "page_summary"
+| filter dt.rum.user_type == "real_user"
+| fieldsAdd
+    lcp_ms = toLong(web_vitals.largest_contentful_paint) / 1000000,
+    inp_ms = toLong(web_vitals.interaction_to_next_paint) / 1000000,
+    cls_val = toDouble(web_vitals.cumulative_layout_shift) / 10000
+| summarize
+    lcp_good = countIf(lcp_ms < 2500),
+    lcp_ni = countIf(lcp_ms >= 2500 and lcp_ms < 4000),
+    lcp_poor = countIf(lcp_ms >= 4000),
+    lcp_total = countIf(isNotNull(lcp_ms)),
+    inp_good = countIf(inp_ms < 200),
+    inp_ni = countIf(inp_ms >= 200 and inp_ms < 500),
+    inp_poor = countIf(inp_ms >= 500),
+    inp_total = countIf(isNotNull(inp_ms)),
+    cls_good = countIf(cls_val < 0.1),
+    cls_ni = countIf(cls_val >= 0.1 and cls_val < 0.25),
+    cls_poor = countIf(cls_val >= 0.25),
+    cls_total = countIf(isNotNull(cls_val))

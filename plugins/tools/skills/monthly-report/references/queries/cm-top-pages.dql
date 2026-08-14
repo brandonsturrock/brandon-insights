@@ -1,0 +1,18 @@
+fetch user.events, from: (now()-1M)@M, to: now()@M
+| filter frontend.name == "{{.frontend}}"
+| filter dt.rum.user_type == "real_user"
+| filter characteristics.classifier == "page_summary" and isNotNull(page.name)
+| fieldsAdd
+    lcp_ms = toLong(web_vitals.largest_contentful_paint) / 1000000,
+    inp_ms = toLong(web_vitals.interaction_to_next_paint) / 1000000,
+    cls_dec = toDouble(web_vitals.cumulative_layout_shift) / 10000
+| summarize
+    count = count(),
+    lcp = percentile(lcp_ms, 75),
+    inp = percentile(inp_ms, 75),
+    cls = percentile(cls_dec, 75),
+    exceptions = avg(error.exception_count),
+    request_errors = avg(error.http_4xx_count + error.http_5xx_count),
+    by: page.name
+| sort count desc
+| limit 10

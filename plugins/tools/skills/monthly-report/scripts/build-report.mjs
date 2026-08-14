@@ -398,12 +398,48 @@ function renderReport(outPath) {
   after = after.replace("{{DATA_JSON}}", () => JSON.stringify(data));
   let html = head + comment + after;
 
+  // Inline Chart.js so the HTML is self-contained — works from any location
+  // (e.g. ~/Downloads after the user saves edits via the in-browser save bar).
+  const chartJs = fs.readFileSync(path.join(SKILL_ROOT, "assets", "chart.umd.min.js"), "utf8")
+    .replace(/\/\/# sourceMappingURL=\S+/g, "");
+  html = html.replace('<script src="chart.umd.min.js"></script>', `<script>${chartJs}</script>`);
+
+  // Make findings panels editable in the browser preview.
+  html = html.replace(/class="exec-body"/g, 'class="exec-body" contenteditable="true" spellcheck="false"');
+
+  // Inject a floating save bar. The save button downloads the current DOM as
+  // an HTML file to ~/Downloads — the PDF step uses that file if it exists.
+  // Hidden at print time so it never appears in the PDF.
+  const reportFilename = path.basename(outPath);
+  html = html.replace("</body>", `<style>
+  #dt-save-bar{position:fixed;bottom:20px;right:20px;z-index:9999;display:flex;align-items:center;gap:12px;background:#12122a;border:1px solid #7B61FF;border-radius:10px;padding:10px 18px;box-shadow:0 4px 20px rgba(0,0,0,.6);font-family:sans-serif;font-size:13px;color:#ccc}
+  #dt-save-bar button{background:#7B61FF;color:#fff;border:none;border-radius:6px;padding:7px 16px;cursor:pointer;font-size:13px;font-weight:600}
+  #dt-save-bar button:hover{background:#9b85ff}
+  @media print{#dt-save-bar{display:none!important}}
+</style>
+<div id="dt-save-bar">
+  <span>Edit findings above, then save when ready</span>
+  <button id="dt-save-btn" onclick="dtSave()">Save changes</button>
+</div>
+<script>
+function dtSave(){
+  var html='<!DOCTYPE html>\\n'+document.documentElement.outerHTML;
+  var blob=new Blob([html],{type:'text/html'});
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=${JSON.stringify(reportFilename)};
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(function(){URL.revokeObjectURL(a.href)},1000);
+  var btn=document.getElementById('dt-save-btn');
+  btn.textContent='✓ Saved to Downloads';btn.style.background='#00A98F';
+  setTimeout(function(){btn.textContent='Save changes';btn.style.background=''},3000);
+}
+</script>
+</body>`);
+
   const outDir = path.dirname(path.resolve(outPath));
   fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(outPath, html);
-  // The template loads Chart.js via a relative <script src="chart.umd.min.js">,
-  // so it must sit next to the rendered HTML, not just in assets/.
-  fs.copyFileSync(path.join(SKILL_ROOT, "assets", "chart.umd.min.js"), path.join(outDir, "chart.umd.min.js"));
   console.log(`Wrote ${outPath}`);
 }
 

@@ -1,0 +1,10 @@
+fetch user.events, from: (now()-1M)@M, to: now()@M
+| filter frontend.name == "{{.frontend}}"
+| filter dt.rum.user_type == "real_user"
+| summarize
+    total_sessions = countDistinct(dt.rum.session.id),
+    js_error_sessions = countDistinct(if(characteristics.has_exception == true, dt.rum.session.id, else: null)),
+    req_error_sessions = countDistinct(if(characteristics.has_failed_request == true, dt.rum.session.id, else: null)),
+  by: { day = bin(start_time, 1d), device.type }
+| filterOut isNull(device.type)
+| sort day asc

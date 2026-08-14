@@ -1,0 +1,10 @@
+fetch user.events, from: (now()-1M)@M, to: now()@M
+| filter frontend.name == "{{.frontend}}"
+| filter dt.rum.user_type == "real_user"
+| filter characteristics.classifier == "error"
+| filter characteristics.has_failed_request == true
+| filter http.response.status_code > 0
+| filterOut isNull(url.path)
+| summarize count = count(), by: {http.request.method, http.response.status_code, url.host, url.path}
+| sort count desc
+| limit 10

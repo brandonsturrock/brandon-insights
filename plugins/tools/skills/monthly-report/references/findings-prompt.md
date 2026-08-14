@@ -49,6 +49,7 @@ Apply these Core Web Vitals thresholds (p75) when flagging violations:
 ## 4. Output format rules
 
 - Strict markdown, bullets only (`- `), one short sentence per bullet.
+- **Writing style:** clear and direct. Lead with the finding, follow with the supporting number. Cut filler words ("notably", "it is worth noting", "significantly", "continues to"). Avoid restating what the reader can see in the chart — state the implication or the delta, not the raw description. Aim for ~15 words per bullet; hard cap at 20.
 - 3-4 bullets per heading maximum, and only if genuinely warranted by the
   data — fewer bullets (or the fallback in §5) when there's less to say.
 - No preamble, no conclusion, no general advice.
@@ -59,6 +60,37 @@ Apply these Core Web Vitals thresholds (p75) when flagging violations:
 ## Core Web Vitals
 ## Top Pages
 ## Error Rates
+```
+
+After the four rendered sections, append a `## Raw Data` section containing
+the pipe-delimited data tables built in step 2. This section is **not
+rendered** — the report builder only extracts sections matching the four
+heading keywords above. It exists solely as a reference for the analyst
+reviewing the file.
+
+```
+## Raw Data
+<!-- NOT RENDERED — for analyst reference only -->
+
+### Daily Sessions
+Day | Sessions
+...
+
+### Daily CWV (p75)
+Day | LCP p75 | INP p75 | CLS p75
+...
+
+### Daily Errors
+Day | JS Error Sessions | Request Error Sessions
+...
+
+### Device Comparison
+Device | Sessions | Page Loads | LCP p75 | INP p75 | CLS p75
+...
+
+### Top Pages
+Page | Visits | LCP p75 | INP p75 | CLS p75 | Avg Exceptions | Avg Req Errors
+...
 ```
 
 ## 4a. Sparse data handling
