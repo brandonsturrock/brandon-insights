@@ -222,36 +222,7 @@ narrative for the report. Write the result to:
 /tmp/<frontend>-trending-<YYYY-MM>/findings.txt
 ```
 
-### 5. Review findings
-
-Open the file for the user to review and edit:
-
-**macOS:**
-```bash
-open /tmp/<frontend>-trending-<YYYY-MM>/findings.txt > /dev/null 2>&1
-```
-
-**Windows:**
-```powershell
-Start-Process ~/Downloads/<frontend>-trending-<YYYY-MM>/findings.txt
-```
-
-Then use `AskUserQuestion` with the following options:
-
-- **Looks good — build the report** — proceed to step 6
-- **I've made edits (saved) — build the report** — re-read the file, then proceed to step 6
-- **Regenerate analysis** — rewrite the findings and repeat this step
-
-Include this reminder in the question text: "Make sure to save the file before confirming. The file also contains a `## Raw Data` section at the bottom with the source data tables — this is for your reference and additional analysis only, it is not rendered into the PDF."
-
-**Length check:** before proceeding to step 6 (whether the user edited or not),
-re-read the file and count characters per section (`## Traffic`, `## Core Web
-Vitals`, `## Browser & Device`). If any section exceeds **550 characters**,
-warn the user: that section may overflow its panel in the PDF. Show the actual
-character count and advise trimming before building. Let the user decide whether
-to edit further or proceed anyway.
-
-### 6. Assemble the report
+### 5. Assemble the report
 
 ```bash
 node scripts/build-report.mjs --type trending --frontend "NAME" \
@@ -265,6 +236,10 @@ conversions documented per-query in `references/queries.md`, and renders the
 standalone HTML report (charts, tables, KPI cards) with the findings
 narrative woven in.
 
+The rendered HTML is self-contained (Chart.js inlined) and includes:
+- `contenteditable` findings panels so the user can edit analysis text directly in the browser
+- A floating **Save changes** button that downloads the edited HTML to `~/Downloads/<frontend>-trending-<YYYY-MM>.html`
+
 **Browser selection (Trending report only):** the Browser Performance page
 shows one panel per browser×device combo, 2 per row. `build-report.mjs`
 always renders exactly 6 panel slots (default), ranked by the latest
@@ -273,34 +248,61 @@ month's visit count descending — empty slots render as blank cards. Pass
 browser the tenant has ever seen; long-tail browsers with negligible
 traffic add noise, not signal.
 
-### 7. Convert to PDF
+### 6. Preview in browser
+
+Open the HTML for the user to review and edit findings in-place:
 
 **macOS:**
 ```bash
-bash assets/render-pdf.sh /tmp/<frontend>-trending-<YYYY-MM>.html \
+open /tmp/<frontend>-trending-<YYYY-MM>.html > /dev/null 2>&1
+```
+
+**Windows:**
+```powershell
+Start-Process /tmp/<frontend>-trending-<YYYY-MM>.html
+```
+
+Then use `AskUserQuestion` with the following options, including this prompt text:
+"The report is open in your browser. The three findings panels on page 1 are editable — click into any panel and type. When you're done, click **Save changes** (bottom-right) to save your edits to ~/Downloads. Then come back here and confirm."
+
+- **Looks good — build the PDF** — proceed to step 7 using `/tmp/<frontend>-trending-<YYYY-MM>.html`
+- **I edited and saved** — proceed to step 7 using `~/Downloads/<frontend>-trending-<YYYY-MM>.html`
+- **Regenerate analysis** — rewrite the findings (step 4) and rebuild the HTML (step 5), then reopen
+
+### 7. Convert to PDF
+
+Determine the source HTML based on the user's choice in step 6:
+- **Looks good**: `SOURCE=/tmp/<frontend>-trending-<YYYY-MM>.html`
+- **I edited and saved**: `SOURCE=~/Downloads/<frontend>-trending-<YYYY-MM>.html`
+
+**macOS:**
+```bash
+bash assets/render-pdf.sh "$SOURCE" \
   ~/Downloads/<frontend>-trending-<YYYY-MM>.pdf &>/dev/null
 ```
 
 **Windows** (PowerShell):
 ```powershell
-pwsh assets/render-pdf.ps1 /tmp/<frontend>-trending-<YYYY-MM>.html `
+pwsh assets/render-pdf.ps1 $SOURCE `
   ~/Downloads/<frontend>-trending-<YYYY-MM>.pdf *> $null
 ```
 
 ### 8. Clean up and report back
 
-Delete the data directory and the HTML file — only the PDF is needed:
+Delete the data directory, the /tmp HTML, and the edited HTML from ~/Downloads (if it exists):
 
 **macOS / Linux:**
 ```bash
 rm -rf /tmp/<frontend>-trending-<YYYY-MM>/ > /dev/null 2>&1
 rm -f /tmp/<frontend>-trending-<YYYY-MM>.html > /dev/null 2>&1
+rm -f ~/Downloads/<frontend>-trending-<YYYY-MM>.html > /dev/null 2>&1
 ```
 
 **Windows:**
 ```powershell
-Remove-Item -Recurse -Force /tmp/<frontend>-trending-<YYYY-MM>/
-Remove-Item -Force /tmp/<frontend>-trending-<YYYY-MM>.html
+Remove-Item -Recurse -Force /tmp/<frontend>-trending-<YYYY-MM>/ -ErrorAction SilentlyContinue
+Remove-Item -Force /tmp/<frontend>-trending-<YYYY-MM>.html -ErrorAction SilentlyContinue
+Remove-Item -Force ~/Downloads/<frontend>-trending-<YYYY-MM>.html -ErrorAction SilentlyContinue
 ```
 
 Then tell the user the absolute path to the PDF in `~/Downloads/`.
