@@ -3,7 +3,7 @@ timeseries {
     inp = percentile(dt.frontend.web.page.interaction_to_next_paint, 75),
     cls = percentile(dt.frontend.web.page.cumulative_layout_shift, 75),
     t = start()
-  }, from: (now()-1M)@M, to: now()@M, interval: 1d, filter: frontend.name == "{{.frontend}}", by: {device.type}
+  }, from: (now()-1M)@M - 2d, to: now()@M, interval: 1d, filter: frontend.name == "{{.frontend}}", by: {device.type}
 | fieldsAdd d = record(t=t[], lcp=lcp[], inp=inp[], cls=cls[])
 | expand d
 | fieldsAdd day = d[t], lcp = d[lcp], inp = d[inp], cls = d[cls]

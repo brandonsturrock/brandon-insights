@@ -1,7 +1,7 @@
 timeseries {
     errors = count(dt.frontend.error.count),
     t = start()
-  }, by: {device.type, error.type}, interval: 1d, from: (now()-1M)@M, to: now()@M, filter: frontend.name == "{{.frontend}}"
+  }, by: {device.type, error.type}, interval: 1d, from: (now()-1M)@M - 2d, to: now()@M, filter: frontend.name == "{{.frontend}}"
 | fieldsAdd d = record(t=t[], e=errors[])
 | expand d
 | fieldsAdd day = d[t], error_count = d[e]

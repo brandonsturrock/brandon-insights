@@ -1,7 +1,7 @@
 timeseries {
     sessions=countDistinct(dt.frontend.session.active.estimated_count),
     t=start()
-  }, from: (now()-1M)@M, to: now()@M, interval: 1d, filter: frontend.name == "{{.frontend}}", by: {device.type}
+  }, from: (now()-1M)@M - 2d, to: now()@M, interval: 1d, filter: frontend.name == "{{.frontend}}", by: {device.type}
 | fieldsAdd d = record(sessions = sessions[], t = t[])
 | expand d
 | fieldsAdd day = d[t], sessions = d[sessions]

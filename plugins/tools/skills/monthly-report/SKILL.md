@@ -176,7 +176,7 @@ Otherwise run:
 
 ```bash
 dtctl query --agent --spill=never -o json -f - <<'EOF'
-fetch user.events, from: now()-6M
+fetch user.events, from: now()-7d
 | filter isNotNull(frontend.name)
 | summarize sessions = count(), by: {frontend.name}
 | sort sessions desc

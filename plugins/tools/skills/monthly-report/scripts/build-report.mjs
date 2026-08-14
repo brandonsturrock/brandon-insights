@@ -147,8 +147,16 @@ function buildCurrentMonthData(dataDir) {
   const topExceptionsRows = loadRecords(dataDir, "cm-top-exceptions.json");
   const topRequestErrorsRows = loadRecords(dataDir, "cm-top-request-errors.json");
 
+  // Strip warm-up days (queries start 2d before month start to avoid timeseries artifacts on day 1)
+  const now = new Date();
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)).toISOString().slice(0, 10);
+  const inMonth = (r) => r.day.slice(0, 10) >= monthStart;
+  const dailyDeviceRowsFiltered = dailyDeviceRows.filter(inMonth);
+  const dailyCwvRowsFiltered = dailyCwvRows.filter(inMonth);
+  const errorCountRowsFiltered = errorCountRows.filter(inMonth);
+
   // cmDailyDevice
-  const days = [...new Set(dailyDeviceRows.map((r) => r.day))].sort((a, b) => a - b);
+  const days = [...new Set(dailyDeviceRowsFiltered.map((r) => r.day))].sort((a, b) => a - b);
   const dayLabels = days.map(dayLabel);
   const byDayDevice = (rows, valueKey, deviceKey = "device.type") => {
     const desktop = new Array(days.length).fill(0);
@@ -161,7 +169,7 @@ function buildCurrentMonthData(dataDir) {
     });
     return { desktop, mobile };
   };
-  const cmDailyDevice = { labels: dayLabels, ...byDayDevice(dailyDeviceRows, "sessions") };
+  const cmDailyDevice = { labels: dayLabels, ...byDayDevice(dailyDeviceRowsFiltered, "sessions") };
 
   // deviceCompareRows
   const deviceCompare = deviceCompareRows.map((r) => ({
@@ -205,10 +213,10 @@ function buildCurrentMonthData(dataDir) {
   // cmDailyCwv
   const cmDailyCwv = {
     labels: dayLabels,
-    lcp: byDayDevice(dailyCwvRows, "lcp"),
-    inp: byDayDevice(dailyCwvRows, "inp"),
+    lcp: byDayDevice(dailyCwvRowsFiltered, "lcp"),
+    inp: byDayDevice(dailyCwvRowsFiltered, "inp"),
     cls: (() => {
-      const c = byDayDevice(dailyCwvRows, "cls");
+      const c = byDayDevice(dailyCwvRowsFiltered, "cls");
       return { desktop: c.desktop.map((v) => (v == null ? null : v / 10000)), mobile: c.mobile.map((v) => (v == null ? null : v / 10000)) };
     })(),
   };
@@ -241,11 +249,11 @@ function buildCurrentMonthData(dataDir) {
   };
 
   // cmErrorCounts: pivot by day x error.type, summed across device
-  const errCountDays = [...new Set(errorCountRows.map((r) => r.day))].sort((a, b) => a - b);
-  const errorTypes = [...new Set(errorCountRows.map((r) => r["error.type"]).filter((t) => t != null))];
+  const errCountDays = [...new Set(errorCountRowsFiltered.map((r) => r.day))].sort((a, b) => a - b);
+  const errorTypes = [...new Set(errorCountRowsFiltered.map((r) => r["error.type"]).filter((t) => t != null))];
   const byType = {};
   errorTypes.forEach((t) => { byType[t] = new Array(errCountDays.length).fill(0); });
-  errorCountRows.forEach((r) => {
+  errorCountRowsFiltered.forEach((r) => {
     const type = r["error.type"];
     if (type == null) return;
     const idx = errCountDays.indexOf(r.day);
