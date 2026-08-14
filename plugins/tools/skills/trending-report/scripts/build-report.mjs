@@ -200,7 +200,14 @@ function buildTrendingData(dataDir) {
   });
   const allMonths = [...new Set(browserRows.map((r) => r.month))].sort((a, b) => a - b);
   const latestMonth = allMonths[allMonths.length - 1];
+  const prevMonth = allMonths[allMonths.length - 2];
   const topGroups = [...browserGroups.values()]
+    .filter((g) => {
+      const cur = g.byMonth.get(latestMonth)?.Visits || 0;
+      const prev = g.byMonth.get(prevMonth)?.Visits || 0;
+      // Exclude if both current and previous month have negligible traffic
+      return cur > 0 || prev > 10;
+    })
     .sort((a, b) => (b.byMonth.get(latestMonth)?.Visits || 0) - (a.byMonth.get(latestMonth)?.Visits || 0))
     .slice(0, MAX_BROWSERS);
   // Always emit exactly MAX_BROWSERS panel slots; null = render as empty/blank card.
