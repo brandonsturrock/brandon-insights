@@ -372,7 +372,8 @@ function renderReport(outPath) {
   const frontend = args.demo ? "demo-frontend" : args.frontend;
   const now = new Date();
   const generatedAt = `Generated ${now.toISOString().slice(0, 16).replace("T", " ")} UTC`;
-  const dateRangeLabel = now.toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+  const prevMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  const dateRangeLabel = prevMonth.toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 
   const replacements = {
     "{{REPORT_TITLE}}": `${frontend} — ${dateRangeLabel} Review`,
