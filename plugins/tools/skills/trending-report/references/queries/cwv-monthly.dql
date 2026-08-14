@@ -1,0 +1,20 @@
+timeseries {
+    x=countDistinct(dt.frontend.session.active.estimated_count),
+    lcp = percentile(dt.frontend.web.page.largest_contentful_paint, 75),
+    lcp2 = count(dt.frontend.web.page.largest_contentful_paint),
+    inp = percentile(dt.frontend.web.page.interaction_to_next_paint, 75),
+    inp2 = count(dt.frontend.web.page.interaction_to_next_paint),
+    cls = percentile(dt.frontend.web.page.cumulative_layout_shift, 75),
+    cls2 = count(dt.frontend.web.page.cumulative_layout_shift),
+    t=start()
+  }, from: -6M, to: now()@M, interval: 1d, filter: frontend.name == "{{.frontend}}"
+| fieldsAdd d = record(d = x[], t = t[], inp=inp[], inp2=inp2[], lcp=lcp[], lcp2=lcp2[], cls=cls[], cls2=cls2[])
+| expand d
+| summarize
+    `Largest Contentful Paint` = sum(d[lcp] * d[lcp2]) / sum(d[lcp2]),
+    `Interaction to Next Paint` = sum(d[inp] * d[inp2]) / sum(d[inp2]),
+    `Cumulative Layout Shift` = sum(d[cls] * d[cls2]) / sum(d[cls2]),
+  by: { t = timeframe(from: (d[t]+interval/2)@M, to: (d[t]+interval/2)@M + 1M) }
+| fieldsAdd month = t[start]
+| fieldsRemove t
+| sort month asc

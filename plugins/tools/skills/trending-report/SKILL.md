@@ -184,21 +184,26 @@ more...", advance the window by 3 and ask again. Highest sessions first. Set
 
 ### 2. Run the queries
 
-For each query needed for the chosen report type (see the tab column in
-`references/queries.md`), write the query body to a temp `.dql` file, then
-run:
+The 4 pre-written `.dql` files live in `references/queries/` inside the skill
+base directory. Run each directly — no temp file needed:
 
 ```bash
-dtctl query -f <query>.dql --set frontend="NAME" [--context NAME] -o json --agent --spill=never | grep '^{' > /tmp/<frontend>-trending-<YYYY-MM>/<canonical-filename>.json
+dtctl query -f <SKILL_BASE_DIR>/references/queries/<query>.dql --set frontend="NAME" [--context NAME] -o json --agent --spill=never | grep '^{' > /tmp/<frontend>-trending-<YYYY-MM>/<canonical-filename>.json
 ```
+
+Files and their canonical output names (contract for `build-report.mjs`):
+
+| Query file | Output filename |
+|---|---|
+| `metrics-monthly.dql` | `metrics-monthly.json` |
+| `cwv-monthly.dql` | `cwv-monthly.json` |
+| `cwv-weekly.dql` | `cwv-weekly.json` |
+| `browser-perf-monthly.dql` | `browser-perf-monthly.json` |
 
 - **Output location:** use `/tmp/<frontend>-trending-<YYYY-MM>/` as the data
   directory (query JSONs and findings.txt) and
   `/tmp/<frontend>-trending-<YYYY-MM>.html` for the intermediate HTML. Only
   the final PDF goes to `~/Downloads/<frontend>-trending-<YYYY-MM>.pdf`.
-- Use the exact canonical filenames from the table at the top of
-  `references/queries.md` (`metrics-monthly.json`, `cwv-monthly.json`, etc.)
-  — the report-builder script and findings prompt both key off these names.
 - `--spill=never` forces rows inline (`result.kind == "records"`); these are
   all small pre-aggregated result sets. If `dtctl` ever spills anyway,
   branch on `result.kind` per the dtctl skill and `dtctl inspect` the file
@@ -206,7 +211,6 @@ dtctl query -f <query>.dql --set frontend="NAME" [--context NAME] -o json --agen
 - The `| grep '^{'` strips any warning lines dtctl emits on stdout before the
   JSON envelope (e.g. field-override warnings from timeseries queries). The
   JSON envelope is always a single line starting with `{`.
-- Run all 4 queries from `references/queries.md` (queries 1–4).
 
 ### 4. Generate findings
 

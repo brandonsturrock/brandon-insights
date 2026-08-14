@@ -1,0 +1,24 @@
+timeseries {
+    x=countDistinct(dt.frontend.session.active.estimated_count),
+    y = count(dt.frontend.user_action.count, filter: user_action.type == "same_view"),
+    z = percentile(dt.frontend.web.page.largest_contentful_paint, 75),
+    z2 = count(dt.frontend.user_action.count, filter: user_action.type != "same_view"),
+    t=start()
+  }, from: -6M, to: now()@M, interval: 1d, filter: frontend.name == "{{.frontend}}", by:device.type
+| fieldsAdd d = record(d = x[], t = t[], y=y[], z=z[], z2=z2[])
+| expand d
+| summarize
+    Sessions = sum(d[d]),
+    `XHR Requests` = sum(d[y]),
+    `Navigations` = sum(d[z2]),
+    Desktop_Sessions = sum(if(device.type == "desktop", d[d], else: 0)),
+    Mobile_Sessions  = sum(if(device.type == "mobile",  d[d], else: 0)),
+    Total_NonNull    = sum(if(isNotNull(device.type),   d[d], else: 0)),
+  by: { t = timeframe(from: (d[t]+interval/2)@M, to: (d[t]+interval/2)@M + 1M) }
+| fieldsAdd month = t[start]
+| fieldsRemove t
+| fieldsAdd
+    `% Desktop` = if(Total_NonNull > 0, round(toDouble(Desktop_Sessions) / toDouble(Total_NonNull) * 100, decimals: 2), else: null),
+    `% Mobile`  = if(Total_NonNull > 0, round(toDouble(Mobile_Sessions)  / toDouble(Total_NonNull) * 100, decimals: 2), else: null)
+| fieldsRemove Desktop_Sessions, Mobile_Sessions, Total_NonNull
+| sort month asc
