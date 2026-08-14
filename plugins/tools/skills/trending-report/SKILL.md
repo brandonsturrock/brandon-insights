@@ -241,6 +241,13 @@ Then use `AskUserQuestion` with the following options:
 
 Include this reminder in the question text: "Make sure to save the file before confirming."
 
+**Length check:** before proceeding to step 6 (whether the user edited or not),
+re-read the file and count characters per section (`## Traffic`, `## Core Web
+Vitals`, `## Browser & Device`). If any section exceeds **550 characters**,
+warn the user: that section may overflow its panel in the PDF. Show the actual
+character count and advise trimming before building. Let the user decide whether
+to edit further or proceed anyway.
+
 ### 6. Assemble the report
 
 ```bash
@@ -277,6 +284,20 @@ pwsh assets/render-pdf.ps1 ~/Downloads/<frontend>-trending-<YYYY-MM>.html `
   ~/Downloads/<frontend>-trending-<YYYY-MM>.pdf *> $null
 ```
 
-### 8. Report back
+### 8. Clean up and report back
 
-Tell the user the absolute path to the PDF in `~/Downloads/`.
+Delete the data directory and the HTML file — only the PDF is needed:
+
+**macOS / Linux:**
+```bash
+rm -rf ~/Downloads/<frontend>-trending-<YYYY-MM>/
+rm -f ~/Downloads/<frontend>-trending-<YYYY-MM>.html
+```
+
+**Windows:**
+```powershell
+Remove-Item -Recurse -Force ~/Downloads/<frontend>-trending-<YYYY-MM>/
+Remove-Item -Force ~/Downloads/<frontend>-trending-<YYYY-MM>.html
+```
+
+Then tell the user the absolute path to the PDF in `~/Downloads/`.
