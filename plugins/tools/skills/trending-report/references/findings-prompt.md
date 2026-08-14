@@ -59,6 +59,29 @@ Apply these Core Web Vitals thresholds (p75) when flagging violations:
 ## Browser & Device
 ```
 
+After the three rendered sections, append a `## Raw Data` section containing
+the pipe-delimited data tables built in step 2. This section is **not
+rendered** — the report builder only extracts sections matching the three
+heading keywords above. It exists solely as a reference for the analyst
+reviewing the file.
+
+```
+## Raw Data
+<!-- NOT RENDERED — for analyst reference only -->
+
+### Monthly Traffic
+Month | Sessions | XHR Requests | Navigations | % Desktop | % Mobile
+...
+
+### Monthly CWV (p75)
+Month | LCP p75 | INP p75 | CLS p75
+...
+
+### Browser & Device (latest month, top 8)
+Browser | Device | Visits | LCP p75 | INP p75 | CLS p75
+...
+```
+
 ## 5. Anti-hallucination guardrails
 
 Stricter than the original app: this is Claude's own output now, not a

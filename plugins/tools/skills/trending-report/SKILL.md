@@ -38,12 +38,12 @@ applicable method:
 
 **Homebrew (Mac/Linux — check first):**
 ```bash
-brew install dynatrace-oss/tap/dtctl
+brew install dynatrace-oss/tap/dtctl > /dev/null 2>&1
 ```
 
 **Mac/Linux (no Homebrew):**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dynatrace-oss/dtctl/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/dynatrace-oss/dtctl/main/install.sh | sh > /dev/null 2>&1
 ```
 
 **Windows (PowerShell):**
@@ -136,7 +136,7 @@ dtctl config get-contexts
 Show the list. Use `AskUserQuestion` to let the user pick one, then:
 
 ```bash
-dtctl config use-context "CHOSEN_CONTEXT"
+dtctl config use-context "CHOSEN_CONTEXT" > /dev/null 2>&1
 ```
 
 **If adding new context:**
@@ -189,14 +189,13 @@ For each query needed for the chosen report type (see the tab column in
 run:
 
 ```bash
-dtctl query -f <query>.dql --set frontend="NAME" [--context NAME] -o json --agent --spill=never | grep '^{' > <data-dir>/<canonical-filename>.json
+dtctl query -f <query>.dql --set frontend="NAME" [--context NAME] -o json --agent --spill=never | grep '^{' > /tmp/<frontend>-trending-<YYYY-MM>/<canonical-filename>.json
 ```
 
-- **Output location:** always write to `~/Downloads/` — never create output
-  directories inside the project repo. Use
-  `~/Downloads/<frontend>-trending-<YYYY-MM>/` as the data directory (query
-  JSONs and findings.md) and `~/Downloads/<frontend>-trending-<YYYY-MM>.html`
-  / `~/Downloads/<frontend>-trending-<YYYY-MM>.pdf` for the rendered files.
+- **Output location:** use `/tmp/<frontend>-trending-<YYYY-MM>/` as the data
+  directory (query JSONs and findings.txt) and
+  `/tmp/<frontend>-trending-<YYYY-MM>.html` for the intermediate HTML. Only
+  the final PDF goes to `~/Downloads/<frontend>-trending-<YYYY-MM>.pdf`.
 - Use the exact canonical filenames from the table at the top of
   `references/queries.md` (`metrics-monthly.json`, `cwv-monthly.json`, etc.)
   — the report-builder script and findings prompt both key off these names.
@@ -216,7 +215,7 @@ instructions on reading the query JSON files and authoring the findings
 narrative for the report. Write the result to:
 
 ```
-~/Downloads/<frontend>-trending-<YYYY-MM>/findings.txt
+/tmp/<frontend>-trending-<YYYY-MM>/findings.txt
 ```
 
 ### 5. Review findings
@@ -225,7 +224,7 @@ Open the file for the user to review and edit:
 
 **macOS:**
 ```bash
-open ~/Downloads/<frontend>-trending-<YYYY-MM>/findings.txt
+open /tmp/<frontend>-trending-<YYYY-MM>/findings.txt > /dev/null 2>&1
 ```
 
 **Windows:**
@@ -239,7 +238,7 @@ Then use `AskUserQuestion` with the following options:
 - **I've made edits (saved) — build the report** — re-read the file, then proceed to step 6
 - **Regenerate analysis** — rewrite the findings and repeat this step
 
-Include this reminder in the question text: "Make sure to save the file before confirming."
+Include this reminder in the question text: "Make sure to save the file before confirming. The file also contains a `## Raw Data` section at the bottom with the source data tables — this is for your reference and additional analysis only, it is not rendered into the PDF."
 
 **Length check:** before proceeding to step 6 (whether the user edited or not),
 re-read the file and count characters per section (`## Traffic`, `## Core Web
@@ -252,9 +251,9 @@ to edit further or proceed anyway.
 
 ```bash
 node scripts/build-report.mjs --type trending --frontend "NAME" \
-  --data ~/Downloads/<frontend>-trending-<YYYY-MM> \
-  --findings ~/Downloads/<frontend>-trending-<YYYY-MM>/findings.txt \
-  --out ~/Downloads/<frontend>-trending-<YYYY-MM>.html &>/dev/null
+  --data /tmp/<frontend>-trending-<YYYY-MM> \
+  --findings /tmp/<frontend>-trending-<YYYY-MM>/findings.txt \
+  --out /tmp/<frontend>-trending-<YYYY-MM>.html &>/dev/null
 ```
 
 This reads the canonical JSON filenames from the data directory, applies the unit
@@ -274,13 +273,13 @@ traffic add noise, not signal.
 
 **macOS:**
 ```bash
-bash assets/render-pdf.sh ~/Downloads/<frontend>-trending-<YYYY-MM>.html \
+bash assets/render-pdf.sh /tmp/<frontend>-trending-<YYYY-MM>.html \
   ~/Downloads/<frontend>-trending-<YYYY-MM>.pdf &>/dev/null
 ```
 
 **Windows** (PowerShell):
 ```powershell
-pwsh assets/render-pdf.ps1 ~/Downloads/<frontend>-trending-<YYYY-MM>.html `
+pwsh assets/render-pdf.ps1 /tmp/<frontend>-trending-<YYYY-MM>.html `
   ~/Downloads/<frontend>-trending-<YYYY-MM>.pdf *> $null
 ```
 
@@ -290,14 +289,14 @@ Delete the data directory and the HTML file — only the PDF is needed:
 
 **macOS / Linux:**
 ```bash
-rm -rf ~/Downloads/<frontend>-trending-<YYYY-MM>/
-rm -f ~/Downloads/<frontend>-trending-<YYYY-MM>.html
+rm -rf /tmp/<frontend>-trending-<YYYY-MM>/ > /dev/null 2>&1
+rm -f /tmp/<frontend>-trending-<YYYY-MM>.html > /dev/null 2>&1
 ```
 
 **Windows:**
 ```powershell
-Remove-Item -Recurse -Force ~/Downloads/<frontend>-trending-<YYYY-MM>/
-Remove-Item -Force ~/Downloads/<frontend>-trending-<YYYY-MM>.html
+Remove-Item -Recurse -Force /tmp/<frontend>-trending-<YYYY-MM>/
+Remove-Item -Force /tmp/<frontend>-trending-<YYYY-MM>.html
 ```
 
 Then tell the user the absolute path to the PDF in `~/Downloads/`.
