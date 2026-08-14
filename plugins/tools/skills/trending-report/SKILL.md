@@ -207,7 +207,7 @@ dtctl query -f <query>.dql --set frontend="NAME" [--context NAME] -o json --agen
 - The `| grep '^{'` strips any warning lines dtctl emits on stdout before the
   JSON envelope (e.g. field-override warnings from timeseries queries). The
   JSON envelope is always a single line starting with `{`.
-- Run queries 0 and 1–5 from `references/queries.md`.
+- Run all 4 queries from `references/queries.md` (queries 1–4).
 
 ### 4. Generate findings
 
