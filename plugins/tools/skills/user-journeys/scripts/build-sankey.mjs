@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 // build-sankey.mjs — template renderer for the user-journeys skill.
-// Reads dtctl query JSON output and fills the Sankey HTML template.
+// Reads aggregated session arrays (or legacy event rows) and fills the Sankey HTML template.
 //
 // Usage:
-//   node build-sankey.mjs --mode common --records <file.json> --app "NAME" [--max-depth 6] --out ~/Downloads/out.html
+//   node build-sankey.mjs --mode common --records <file.json> --app "NAME" [--max-depth 8] --out ~/Downloads/out.html
 //   node build-sankey.mjs --mode journey --records <file.json> --app "NAME" --funnel-steps '["a","b","c"]' --out ~/Downloads/out.html
 
 import fs from "node:fs";
 import https from "node:https";
 import path from "node:path";
+import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -31,14 +32,26 @@ function parseArgs(argv) {
   return out;
 }
 
+function sessionRowsToRecords(rows) {
+  return rows.flatMap(({ session_id, views }) =>
+    [...views]
+      .sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)))
+      .filter((view) => view["view.name"])
+      .map((view) => ({
+        "dt.rum.session.id": session_id,
+        start_time: view.timestamp,
+        "view.name": view["view.name"],
+      }))
+  );
+}
+
 function loadRecords(file) {
   const raw = fs.readFileSync(file, "utf8");
   const parsed = JSON.parse(raw);
-  if (Array.isArray(parsed)) return parsed;
   const result = parsed.result ?? parsed;
-  if (result && Array.isArray(result.records)) return result.records;
-  if (Array.isArray(result)) return result;
-  throw new Error(`Unexpected JSON shape in ${file} (kind=${result && result.kind})`);
+  const rows = Array.isArray(parsed) ? parsed : result?.records ?? result;
+  if (!Array.isArray(rows)) throw new Error(`Unexpected JSON shape in ${file} (kind=${result && result.kind})`);
+  return rows.some((row) => Array.isArray(row.views) && row.session_id) ? sessionRowsToRecords(rows) : rows;
 }
 
 function fetchUrl(url) {
@@ -74,6 +87,18 @@ async function getD3Libs() {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
 
+  if ("self-test" in args) {
+    assert.deepEqual(
+      sessionRowsToRecords([{ session_id: "s", views: [
+        { "view.name": "second", timestamp: "2026-01-01T00:00:02Z" },
+        { "view.name": "first", timestamp: "2026-01-01T00:00:01Z" },
+      ] }]).map((record) => record["view.name"]),
+      ["first", "second"]
+    );
+    console.log("ok");
+    return;
+  }
+
   const mode = args.mode;
   if (!mode || !["common", "journey"].includes(mode)) {
     console.error('Error: --mode must be "common" or "journey"'); process.exit(1);
@@ -89,7 +114,10 @@ async function main() {
   const d3Libs = await getD3Libs();
   const generatedAt = args["generated-at"] ||
     new Date().toLocaleString("en-US", { timeZone: "UTC" }) + " UTC";
-  const maxDepth = parseInt(args["max-depth"] || "6", 10);
+  const maxDepth = Number(args["max-depth"] || 8);
+  if (!Number.isInteger(maxDepth) || maxDepth < 3 || maxDepth > 10) {
+    throw new Error("--max-depth must be an integer from 3 to 10");
+  }
 
   const tmplName = mode === "common" ? "sankey-common.html.tmpl" : "sankey-journey.html.tmpl";
   let html = fs.readFileSync(path.join(SKILL_ROOT, "assets", tmplName), "utf8");

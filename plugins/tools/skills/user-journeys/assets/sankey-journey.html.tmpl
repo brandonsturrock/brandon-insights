@@ -32,7 +32,7 @@
   <h1>Journey Analysis</h1>
   <div class="subtitle" id="subtitle"></div>
   <div class="chart-container">
-    <svg id="sankey" viewBox="0 0 1620 580" style="width:80vw;min-width:600px;height:auto;"></svg>
+    <svg id="sankey" viewBox="0 0 1620 580" style="width:92%;min-width:600px;height:auto;"></svg>
   </div>
   <div class="breakdown">
     <h2>Step Breakdown</h2>
@@ -104,7 +104,7 @@
   document.getElementById("subtitle").textContent = `${APP_NAME} — ${FUNNEL_STEPS.join(" → ")}`;
   document.getElementById("meta").textContent = `${data.totalSessions.toLocaleString()} sessions entered funnel · Generated ${GENERATED_AT}`;
 
-  const WIDTH=1400,HEIGHT=580,NODE_WIDTH=16,NODE_PADDING=40;
+  const WIDTH=1500,HEIGHT=580,NODE_WIDTH=16,NODE_PADDING=40;
   const layout = d3Sankey.sankey().nodeAlign(d3Sankey.sankeyLeft).nodeWidth(NODE_WIDTH).nodePadding(NODE_PADDING).extent([[0,0],[WIDTH,HEIGHT]]);
   const {nodes:ln,links:ll} = layout({nodes:data.nodes.map(n=>({...n})),links:data.links.map(l=>({...l}))});
   const linkPath = d3Sankey.sankeyLinkHorizontal();
@@ -169,7 +169,7 @@
       g.setAttribute("fill",isLeft?"#888888":isExit?"#aaaaaa":color);
       g.style.cursor="pointer";
       const ps=document.createElementNS("http://www.w3.org/2000/svg","tspan");ps.setAttribute("font-weight","700");ps.textContent=`${pct}%`;
-      const ls=document.createElementNS("http://www.w3.org/2020/svg","tspan");ls.setAttribute("fill","#ffffff");ls.textContent=` ${truncated}`;
+      const ls=document.createElementNS("http://www.w3.org/2000/svg","tspan");ls.setAttribute("fill","#ffffff");ls.textContent=` ${truncated}`;
       g.appendChild(ps);g.appendChild(ls);svg.appendChild(g);
       textEl=g;
     }

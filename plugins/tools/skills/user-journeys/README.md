@@ -1,18 +1,19 @@
 # Session Path Analysis (Sankey)
 
-Interactive HTML Sankey diagram of user journeys from Dynatrace RUM session data.
+Interactive HTML Sankey diagram of completed Dynatrace RUM session journeys.
 
 ## What it does
 
-1. Picks a Dynatrace context and frontend app
-2. Fetches session navigation events for a chosen time range
-3. Generates a self-contained HTML file with an interactive Sankey diagram
+1. Picks a Dynatrace context, completed Eastern-time window, and frontend app
+2. Selects sessions that started and ended inside that window
+3. Fetches one timestamped navigation array per session
+4. Sorts each path locally and generates a self-contained interactive Sankey
 
 ## Modes
 
 | Mode | Description |
 |---|---|
-| **Common User Journeys** | All session paths as a Sankey; top routes surfaced automatically |
+| **Common User Journeys** | Completed session paths as an eight-step Sankey; top routes surfaced automatically |
 | **Pick a Journey** | Define up to 8 specific steps; shows funnel dropout at each transition |
 
 ## Outputs
@@ -25,6 +26,7 @@ Interactive HTML Sankey diagram of user journeys from Dynatrace RUM session data
 - Session count + percentage overlay on hover
 - Step breakdown table below the chart
 - "Left Funnel" nodes show dropout at each Pick a Journey step
+- Historical defaults exclude active and boundary-crossing sessions
 
 ## Prerequisites
 

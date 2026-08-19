@@ -33,7 +33,7 @@
   <h1>Session Path Analysis</h1>
   <div class="subtitle" id="subtitle"></div>
   <div class="chart-container">
-    <svg id="sankey" viewBox="0 0 1620 580" style="width:80vw;min-width:600px;height:auto;"></svg>
+    <svg id="sankey" viewBox="0 0 1620 580" style="width:92%;min-width:600px;height:auto;"></svg>
   </div>
   <div class="breakdown">
     <h2>Step Breakdown</h2>
@@ -48,7 +48,7 @@
   const APP_NAME = "__APP_NAME__";
   const GENERATED_AT = "__GENERATED_AT__";
   const STEP_COLORS = ["#5C5BA8","#1A7A9E","#1A9070","#A07A10","#A86020","#A83050","#1A7848","#2458A0"];
-  function buildSankeyData(records, maxDepth = 6) {
+  function buildSankeyData(records, maxDepth = 8) {
     const MAX_NODES_PER_STEP = 8, EXIT_LABEL = "Exit";
     const sessionPaths = new Map();
     for (const r of records) {
@@ -108,7 +108,7 @@
   }
   document.getElementById("subtitle").textContent = APP_NAME;
   document.getElementById("meta").textContent = `${data.totalSessions.toLocaleString()} sessions · Generated ${GENERATED_AT}`;
-  const WIDTH=1400,HEIGHT=580,NODE_WIDTH=16,NODE_PADDING=40;
+  const WIDTH=1500,HEIGHT=580,NODE_WIDTH=16,NODE_PADDING=40;
   const layout = d3Sankey.sankey().nodeAlign(d3Sankey.sankeyLeft).nodeWidth(NODE_WIDTH).nodePadding(NODE_PADDING).extent([[0,0],[WIDTH,HEIGHT]]);
   const {nodes:ln,links:ll} = layout({nodes:data.nodes.map(n=>({...n})),links:data.links.map(l=>({...l}))});
   const linkPath = d3Sankey.sankeyLinkHorizontal();
