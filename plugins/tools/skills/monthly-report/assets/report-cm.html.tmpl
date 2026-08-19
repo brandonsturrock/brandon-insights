@@ -195,12 +195,13 @@
   table.dt-table td.num, table.dt-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
 
   /* CWV stoplight (horizontal 100%-stacked bar per metric) */
-  .stoplight-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-  .stoplight-label { width: 34px; font-size: 11px; font-weight: 700; color: #b1b2d2; flex: 0 0 auto; }
-  .stoplight-bar { flex: 1; height: 20px; border-radius: 4px; overflow: hidden; display: flex; }
+  #stoplight { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+  .stoplight-row { display: flex; align-items: stretch; gap: 10px; flex: 1; min-height: 0; }
+  .stoplight-label { width: 34px; font-size: 11px; font-weight: 700; color: #b1b2d2; flex: 0 0 auto; display: flex; align-items: center; }
+  .stoplight-bar { flex: 1; border-radius: 4px; overflow: hidden; display: flex; height: 38px; align-self: center; }
   .stoplight-seg { display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: rgba(0,0,0,0.75); }
   .stoplight-seg.poor { color: #fff; }
-  .stoplight-legend { display: flex; gap: 14px; justify-content: center; margin-top: 4px; }
+  .stoplight-legend { display: flex; gap: 14px; justify-content: center; margin-top: 4px; flex: 0 0 auto; }
   .stoplight-legend span { font-size: 10px; color: #b1b2d2; }
   .stoplight-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; }
 
@@ -295,7 +296,7 @@
   </header>
   <div class="accent-line"></div>
   <div class="content">
-    <div class="row" style="flex: 0 0 50mm;">
+    <div class="row" style="flex: 1 1 0;">
       <div class="chart-card" style="flex: 0 0 55mm;">
         <div class="chart-title">Experience Distribution</div>
         <div id="stoplight"></div>
@@ -309,7 +310,7 @@
         </div>
       </div>
     </div>
-    <div class="row" style="flex: 1;">
+    <div class="row" style="flex: 1 1 0;">
       <div class="chart-card" style="flex: 1;"><div class="chart-title">LCP — Daily Trend</div><div class="chart-body"><canvas id="chart-daily-lcp"></canvas></div></div>
       <div class="chart-card" style="flex: 1;"><div class="chart-title">INP — Daily Trend</div><div class="chart-body"><canvas id="chart-daily-inp"></canvas></div></div>
       <div class="chart-card" style="flex: 1;"><div class="chart-title">CLS — Daily Trend</div><div class="chart-body"><canvas id="chart-daily-cls"></canvas></div></div>
@@ -360,8 +361,8 @@
   <div class="accent-line"></div>
   <div class="content">
     <div class="row" style="flex: 0 0 45mm;">
-      <div class="chart-card" style="flex: 1;"><div class="chart-title">JS Error Rate</div><div class="chart-body"><canvas id="chart-jsErrorRate"></canvas></div></div>
-      <div class="chart-card" style="flex: 1;"><div class="chart-title">Request Error Rate</div><div class="chart-body"><canvas id="chart-reqErrorRate"></canvas></div></div>
+      <div class="chart-card" style="flex: 1;"><div class="chart-title">Sessions with JS Error Rate</div><div class="chart-body"><canvas id="chart-jsErrorRate"></canvas></div></div>
+      <div class="chart-card" style="flex: 1;"><div class="chart-title">Sessions with Request Error Rate</div><div class="chart-body"><canvas id="chart-reqErrorRate"></canvas></div></div>
     </div>
     <div class="chart-card" style="flex: 1;">
       <div class="chart-title">Error Count (Daily)</div>
@@ -593,7 +594,6 @@ function renderTopRequestErrorsTable() {
     { key: "count", label: "#", num: true, render: v => v.toLocaleString() },
     { key: "method", label: "Method" },
     { key: "status", label: "Status", render: v => `<span style="color:${statusColor(v)};font-weight:700">${v ?? "—"}</span>` },
-    { key: "host", label: "Host" },
     { key: "path", label: "Path" },
   ], (DATA.topRequestErrorRows || []).slice(0, 5));
 }

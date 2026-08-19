@@ -207,7 +207,7 @@ function buildCurrentMonthData(dataDir) {
   const cmCwvDistribution = {
     lcp: { buckets: LCP_INP_BUCKETS, counts: bucketCounts(distRow, "lcp"), p75: blended("lcp_p75") },
     inp: { buckets: LCP_INP_BUCKETS, counts: bucketCounts(distRow, "inp"), p75: blended("inp_p75") },
-    cls: { buckets: CLS_BUCKETS, counts: bucketCounts(distRow, "cls"), p75: blended("cls_p75") == null ? null : blended("cls_p75") },
+    cls: { buckets: CLS_BUCKETS, counts: bucketCounts(distRow, "cls"), p75: blended("cls_p75") == null ? null : blended("cls_p75") / 10000 },
   };
 
   // cmDailyCwv
