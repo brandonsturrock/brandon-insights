@@ -3,7 +3,7 @@
 // Reads aggregated session arrays (or legacy event rows) and fills the Sankey HTML template.
 //
 // Usage:
-//   node build-sankey.mjs --mode common --records <file.json> --app "NAME" [--max-depth 8] --out ~/Downloads/out.html
+//   node build-sankey.mjs --mode common --records <file.json> --app "NAME" [--max-depth 6] --out ~/Downloads/out.html
 //   node build-sankey.mjs --mode journey --records <file.json> --app "NAME" --funnel-steps '["a","b","c"]' --out ~/Downloads/out.html
 
 import fs from "node:fs";
@@ -114,7 +114,7 @@ async function main() {
   const d3Libs = await getD3Libs();
   const generatedAt = args["generated-at"] ||
     new Date().toLocaleString("en-US", { timeZone: "UTC" }) + " UTC";
-  const maxDepth = Number(args["max-depth"] || 8);
+  const maxDepth = Number(args["max-depth"] || 6);
   if (!Number.isInteger(maxDepth) || maxDepth < 3 || maxDepth > 10) {
     throw new Error("--max-depth must be an integer from 3 to 10");
   }

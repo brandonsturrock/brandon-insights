@@ -48,7 +48,7 @@
   const APP_NAME = "__APP_NAME__";
   const GENERATED_AT = "__GENERATED_AT__";
   const STEP_COLORS = ["#5C5BA8","#1A7A9E","#1A9070","#A07A10","#A86020","#A83050","#1A7848","#2458A0"];
-  function buildSankeyData(records, maxDepth = 8) {
+  function buildSankeyData(records, maxDepth = 6) {
     const MAX_NODES_PER_STEP = 6, EXIT_LABEL = "Exit";
     const sessionPaths = new Map();
     for (const r of records) {

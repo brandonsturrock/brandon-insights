@@ -96,7 +96,7 @@ Collect before starting:
 2. **Time range** — picked interactively in Step 0b (default: yesterday's 12–2 PM Eastern peak window)
 3. **Mode** — picked interactively in Step 1b (Common User Journeys or Pick a Journey)
 4. **Output path** — default: `~/Downloads/session-sankey-<appname>-<date>.html`
-5. **Max depth** — Common User Journeys only, default: 8 steps. Accept 3–10.
+5. **Max depth** — Common User Journeys only, default: 6 steps. Accept 3–10.
 
 ## Steps
 
@@ -256,7 +256,7 @@ node SKILL_ROOT/scripts/build-sankey.mjs \
   --out OUTPUT_PATH
 ```
 
-The default `MAX_DEPTH` is 8. The script downloads and caches d3 libs to `/tmp/brandon-insights-d3/` on first run. Template source: `assets/sankey-common.html.tmpl`.
+The default `MAX_DEPTH` is 6. The script downloads and caches d3 libs to `/tmp/brandon-insights-d3/` on first run. Template source: `assets/sankey-common.html.tmpl`.
 
 ### Step 3b — Generate the HTML file (Pick a Journey)
 
