@@ -12,6 +12,15 @@
         "path": "plugins/tools"
       },
       "description": "Workflows for Dynatrace Business Insights"
+    },
+    {
+      "name": "development",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/brandonsturrock/brandon-insights.git",
+        "path": "plugins/development"
+      },
+      "description": "Frontend development skills for Dynatrace AppEngine apps"
     }
   ]
 }
