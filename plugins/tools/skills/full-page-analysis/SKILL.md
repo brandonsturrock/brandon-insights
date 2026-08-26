@@ -343,10 +343,13 @@ fetch user.events, from: TF
 
 Set `BROWSER` to the top `browser.name`.
 
-### 4b — Instance closest to p75 LCP
+### 4b — Instance closest to p75 LCP with linked page_summary and requests
 
 **Do NOT use `abs()`** — DQL returns null for arithmetic on string-typed numeric
 fields. Use a ±15% range filter; widen to ±25% if no rows return.
+
+The join ensures only instances that have **both** a linked page_summary and at
+least one request are returned — no separate validation step needed.
 
 ```dql
 fetch user.events, from: TF
@@ -358,44 +361,35 @@ fetch user.events, from: TF
 | filter lcp.status == "reported"
 | fieldsAdd lcp_ms = toLong(lcp.render_time)
 | filter lcp_ms >= LOW_BOUND AND lcp_ms <= HIGH_BOUND
-| sort lcp_ms asc
-| fields user_action.instance_id, view.instance_id, lcp_ms,
+| fields user_action.instance_id, view.instance_id, dt.rum.session.id, lcp_ms,
          lcp.url, lcp.ui_element.tag_name,
          ttfb.value, browser.name, browser.version,
          device.type, os.name, timestamp
+| join [
+    fetch user.events, from: TF
+    | filter frontend.name == "FRONTEND"
+    | filter characteristics.has_page_summary == true
+    | summarize count(), by: {view.instance_id, dt.rum.session.id}
+], on: {view.instance_id, dt.rum.session.id}, prefix: "page_summary."
+| join [
+    fetch user.events, from: TF
+    | filter frontend.name == "FRONTEND"
+    | filter characteristics.has_request == true
+    | summarize count(), by: {user_action.instance_id, dt.rum.session.id}
+], on: {user_action.instance_id, dt.rum.session.id}, prefix: "requests."
+| sort lcp_ms asc
 | limit 1
 ```
 
 Replace `LOW_BOUND` with `round(P75_LCP_MS * 0.85)` and `HIGH_BOUND` with
 `round(P75_LCP_MS * 1.15)`.
 
+- If 0 rows returned: widen to ±25% and retry once.
+- If still 0: tell the user no instance with linked page_summary and requests was
+  found near p75 for this browser. Ask whether to try a different browser or continue
+  without a representative instance.
+
 Set `UA_INSTANCE_ID` and `VIEW_INSTANCE_ID`.
-
-### 4c — Validate instance linkage
-
-Confirm the selected instance has both a page_summary and at least one request.
-Run both queries in parallel:
-
-```dql
-fetch user.events, from: TF
-| filter view.instance_id == toUid("VIEW_INSTANCE_ID")
-| filter characteristics.has_page_summary == true
-| summarize count()
-```
-
-```dql
-fetch user.events, from: TF
-| filter user_action.instance_id == "UA_INSTANCE_ID"
-| filter characteristics.has_request == true
-| summarize count()
-```
-
-- If page_summary count = 0: warn the user — CWV metrics will be unavailable for
-  this instance. Ask whether to pick a different instance or continue without metrics.
-- If request count = 0: warn the user — no resource waterfall data exists for this
-  instance. Ask whether to pick a different instance or continue without waterfall.
-- If both = 0: this instance is unusable — go back to Step 4b and widen the LCP
-  range to ±25%, then repeat 4c.
 
 ---
 
