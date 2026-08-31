@@ -25,20 +25,26 @@ assert.equal(THRESHOLDS.ttfb.good, 800);
 // TTFB over 800ms fires
 assert.ok(ids({ ...base, cwv: { ...base.cwv, ttfbP75: 950 } }).includes("slow-ttfb"));
 
-// a resource blocking on most loads fires; one blocking on a handful does not
-const blocking = (loads) => ({
+// a resource blocking on most loads fires; one blocking on a handful does not.
+// (fix round 2: render-blocking has no duration floor — a fast universal
+// blocker still fires, at medium severity, not high and not invisible)
+const blocking = (loads, durationP75) => ({
   ...base,
   resources: [{ path: "/a.css", domain: "example.com", initiatorType: "link",
-                loads, requests: loads, durationP75: 600, transferP75: 20000, blocking: loads, failures: 0 }],
+                loads, requests: loads, durationP75, transferP75: 20000, blocking: loads, failures: 0 }],
 });
-assert.ok(ids(blocking(900)).includes("render-blocking"));
-assert.ok(!ids(blocking(5)).includes("render-blocking"));
+assert.ok(ids(blocking(900, 60)).includes("render-blocking"));
+assert.ok(!ids(blocking(5, 60)).includes("render-blocking"));
 
-// the near-universal slow resource is named in the evidence with its numbers
-const f = computeFindings(blocking(900)).find((x) => x.id === "render-blocking");
+// the near-universal blocking resource is named in the evidence with its numbers
+const f = computeFindings(blocking(900, 60)).find((x) => x.id === "render-blocking");
 assert.match(f.evidence, /a\.css/);
 assert.match(f.evidence, /900/);
-assert.equal(f.severity, "high");
+
+// severity scales with duration instead of gating on it: fast blocker is
+// medium, slow blocker is high
+assert.equal(computeFindings(blocking(900, 60)).find((x) => x.id === "render-blocking").severity, "medium");
+assert.equal(computeFindings(blocking(900, 600)).find((x) => x.id === "render-blocking").severity, "high");
 
 // a browser whose LCP p75 is far worse than the blended figure fires
 assert.ok(

@@ -99,22 +99,26 @@ export function computeFindings(data) {
   // `blocking` is a REQUEST count in the same population as `requests` (see
   // fpa-resources-agg.dql), not a per-load boolean — a resource present on
   // 90% of loads that blocked once ever is not "blocking on most loads".
-  // Gate on the blocking *share of requests*, not mere presence, and require
-  // the same duration floor as slow-resources: a fast blocker is not a high
-  // severity finding regardless of how often it blocks.
-  const isBlocker = (r) => r.requests > 0 && r.blocking / r.requests >= THRESHOLDS.prevalence.widespread &&
-    (num(r.durationP75) ?? 0) > THRESHOLDS.resourceSlowMs && prevalent(r);
+  // Gate on the blocking *share of requests*, not mere presence. No duration
+  // floor here (fix round 2): render-blocking is about position in the
+  // critical path, not speed — a stylesheet that blocks 100% of its own
+  // requests on 91% of loads delays first paint by that amount whether it
+  // takes 60ms or 600ms, and the fix (preload/self-host/font-display) is the
+  // same either way. A duration floor made that invisible; duration instead
+  // scales severity below.
+  const isBlocker = (r) => r.requests > 0 && r.blocking / r.requests >= THRESHOLDS.prevalence.widespread && prevalent(r);
   const blockers = (data.resources || [])
     .filter(isBlocker)
     .sort((a, b) => (num(b.durationP75) ?? 0) - (num(a.durationP75) ?? 0));
   if (blockers.length) {
     const top = blockers.slice(0, 5);
+    const worstDuration = num(blockers[0].durationP75) ?? 0;
     out.push({
       id: "render-blocking",
-      severity: "high",
+      severity: worstDuration >= THRESHOLDS.resourceSlowMs ? "high" : "medium",
       title: "Render-blocking resources on most loads",
-      evidence: `${blockers.length} render-blocking resource(s) block on at least ${Math.round(THRESHOLDS.prevalence.widespread * 100)}% of their own requests and are slow enough to matter. Worst: ` +
-        top.map((r) => `${r.domain}${r.path} (p75 ${Math.round(num(r.durationP75) ?? 0)}ms, blocking ${r.blocking} of ${r.requests} requests, ${r.loads} loads)`).join("; ") + ".",
+      evidence: `${blockers.length} render-blocking resource(s) block on at least ${Math.round(THRESHOLDS.prevalence.widespread * 100)}% of their own requests. Worst: ` +
+        top.map((r) => `${r.domain}${r.path} (blocks on ${r.blocking} of ${r.requests} requests across ${pct(r.loads, pageLoads)}% of loads, p75 ${Math.round(num(r.durationP75) ?? 0)}ms)`).join("; ") + ".",
     });
   }
 
