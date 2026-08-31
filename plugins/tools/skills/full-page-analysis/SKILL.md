@@ -124,16 +124,6 @@ environment URL. Then continue to Step 0.
 
 ---
 
-## Data model
-
-Anchor: **hard navigation user action** (`characteristics.has_user_action == true`,
-`user_action.type == "hard_navigation"`). Two IDs flow from the selected instance:
-
-- `user_action.instance_id` → scope all **requests**, exceptions — filter as plain string (`== "ID"`)
-- `view.instance_id` → scope the **page summary** (CWV metrics) — filter with `toUid()` (`== toUid("ID")`)
-
----
-
 ## Context check (normal runs only)
 
 ```bash

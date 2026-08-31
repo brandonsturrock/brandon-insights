@@ -17,7 +17,7 @@
 <style>
   /* v1 custom properties, remapped onto the Strato tokens above.
      Redefined here rather than edited rule-by-rule, so the ported waterfall
-     rules are unchanged from assets/template.html.
+     rules are unchanged from v1's assets/template.html (deleted in Task 9).
      v1 was a dark theme; Strato's are the light-theme roles, so the surface
      ramp inverts. Derived shades use color-mix over the tokens — no new hex. */
   :root {
@@ -509,9 +509,10 @@
        the port silently. #metrics-slot and #findings-slot are deliberately
        absent — Phase 2 and Phase 3 replace those two panels.
        #page-title / #page-subtitle are also part of the contract: the ported
-       static-header block at template.html:507-510 writes into them by id and
-       throws on null, which would abort every renderer below it. They carry the
-       sampled load's own title and its browser/device/timestamp context, which
+       static-header block (originally v1's assets/template.html, deleted in
+       Task 9 — see git history for line numbers) writes into them by id and
+       throws on null, which would abort every renderer below it. They carry
+       the sampled load's own title and its browser/device/timestamp context, which
        is panel-scoped information, so they live inside the panel. -->
   <div id="page-title" class="wf-instance-title"></div>
   <div id="page-subtitle" class="subtitle"></div>
