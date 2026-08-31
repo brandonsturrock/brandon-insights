@@ -1297,7 +1297,8 @@ const truncate = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 
 function ratingCell(value, thresholdKey, format) {
   if (value == null) return NIL;
-  const rating = msRating(value, T[thresholdKey]);
+  const t = T[thresholdKey];
+  const rating = msRating(value, [t.good, t.poor]);
   const word = { good: "Good", "needs-improvement": "Needs work", poor: "Poor" }[rating];
   // Never colour alone: the rating word rides alongside the coloured figure.
   return `<span class="rating" style="color:${RATING_COLORS[rating]}">${escHtml(format(value))}` +
@@ -1348,18 +1349,20 @@ function renderSkipped() {
 // unitless shift score) have no shared axis, and the reader's question is
 // "what is the number and is it acceptable", which is a lookup.
 const CWV_ROWS = [
-  { label: "LCP", name: "Largest contentful paint", key: "lcp", th: "lcpMs", fmt: formatMs },
-  { label: "FCP", name: "First contentful paint", key: "fcp", th: "fcpMs", fmt: formatMs },
-  { label: "INP", name: "Interaction to next paint", key: "inp", th: "inpMs", fmt: formatMs },
-  // clsRating hardcodes the same 0.1 / 0.25 boundaries THRESHOLDS now owns.
-  // msRating is the identical two-boundary comparator, so driving CLS through
-  // it keeps one source of truth instead of two that can drift apart.
+  { label: "LCP", name: "Largest contentful paint", key: "lcp", th: "lcp", fmt: formatMs },
+  { label: "FCP", name: "First contentful paint", key: "fcp", th: "fcp", fmt: formatMs },
+  { label: "INP", name: "Interaction to next paint", key: "inp", th: "inp", fmt: formatMs },
+  // Routed through msRating, not the ported clsRating: clsRating hardcodes the
+  // same 0.1 / 0.25 boundaries THRESHOLDS now owns, and it is the identical
+  // two-boundary comparator, so driving CLS through msRating keeps one source
+  // of truth instead of two copies that can drift apart. Not a replacement
+  // helper — msRating is the ported one.
   // toFixed(3) alone prints this tenant's real 0.0001 as "0.000", which is a
   // measured non-zero shown as no shift at all. Anything below the last
   // displayed digit is labelled as such instead.
-  { label: "CLS", name: "Cumulative layout shift", key: "cls", th: "clsScore",
+  { label: "CLS", name: "Cumulative layout shift", key: "cls", th: "cls",
     fmt: (v) => (v > 0 && v < 0.001 ? "< 0.001" : v.toFixed(3)) },
-  { label: "TTFB", name: "Time to first byte", key: "ttfb", th: "ttfbMs", fmt: formatMs },
+  { label: "TTFB", name: "Time to first byte", key: "ttfb", th: "ttfb", fmt: formatMs },
 ];
 function renderCwv() {
   const c = DATA.cwv;
@@ -1542,7 +1545,7 @@ function renderBrowserDevice() {
     { label: "Browser", cell: (r) => `<span class="lead">${escHtml(r.browser || "—")}</span>` },
     { label: "Device", cell: (r) => escHtml(r.device || "—") },
     { label: "Share of loads", cell: (r) => coverageCell(r.loads, total, false) },
-    { label: "LCP p75", num: true, cell: (r) => ratingCell(r.lcpP75, "lcpMs", formatMs) },
+    { label: "LCP p75", num: true, cell: (r) => ratingCell(r.lcpP75, "lcp", formatMs) },
   ], rows));
 }
 
