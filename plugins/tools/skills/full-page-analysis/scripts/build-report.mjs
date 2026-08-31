@@ -229,7 +229,42 @@ let html = template
 // browser after the file is opened, same as every other exec-body block.
 html = html.replace(/class="exec-body"/g, 'class="exec-body" contenteditable="true" spellcheck="false"');
 
+// Inject a floating save bar. The save button downloads the current DOM as
+// an HTML file to ~/Downloads — the PDF step uses that file if it exists.
+// Hidden at print time so it never appears in the PDF. Copied from
+// monthly-report/scripts/build-report.mjs and retheme only: monthly-report's
+// bar is hand-rolled dark-theme hex, this report runs on Strato light tokens,
+// so the accent colours become var(--dt-primary) and the panel/text colours
+// become the same --dt-bg-container / --dt-text-primary / --dt-border-default
+// roles every other panel in this template already uses.
 const outPath = args.out.replace(/^~/, process.env.HOME || "");
+const reportFilename = path.basename(outPath);
+html = html.replace("</body>", `<style>
+  #dt-save-bar{position:fixed;bottom:20px;right:20px;z-index:9999;display:flex;align-items:center;gap:12px;background:var(--dt-bg-container);border:1px solid var(--dt-primary);border-radius:10px;padding:10px 18px;box-shadow:0 4px 20px rgba(0,0,0,.25);font-family:var(--dt-font-sans);font-size:13px;color:var(--dt-text-primary)}
+  #dt-save-bar button{background:var(--dt-primary);color:#fff;border:none;border-radius:6px;padding:7px 16px;cursor:pointer;font-size:13px;font-weight:600}
+  #dt-save-bar button:hover{background:color-mix(in srgb, var(--dt-primary) 85%, white)}
+  @media print{#dt-save-bar{display:none!important}}
+</style>
+<div id="dt-save-bar">
+  <span>Edit findings above, then save when ready</span>
+  <button id="dt-save-btn" onclick="dtSave()">Save changes</button>
+</div>
+<script>
+function dtSave(){
+  var html='<!DOCTYPE html>\\n'+document.documentElement.outerHTML;
+  var blob=new Blob([html],{type:'text/html'});
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=${JSON.stringify(reportFilename)};
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(function(){URL.revokeObjectURL(a.href)},1000);
+  var btn=document.getElementById('dt-save-btn');
+  btn.textContent='✓ Saved to Downloads';btn.style.background='var(--dt-success)';
+  setTimeout(function(){btn.textContent='Save changes';btn.style.background=''},3000);
+}
+</script>
+</body>`);
+
 fs.mkdirSync(path.dirname(path.resolve(outPath)), { recursive: true });
 fs.writeFileSync(outPath, html);
 console.log(`Wrote ${outPath}`);

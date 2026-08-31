@@ -363,6 +363,74 @@
      is already the link/emphasis role, so an editable region borrowing it
      reads as "this is interactive," which is the point of the outline. */
   .exec-body[contenteditable="true"]:focus { outline: 1px dashed var(--dt-primary); outline-offset: 4px; }
+
+  /* ── Print ─────────────────────────────────────────────────────────
+     The HTML report is for exploring; the PDF is what a stakeholder gets.
+     The screen canvas is already light (Strato light theme), so print
+     needs no colour inversion — what it needs is: no panel split across a
+     page boundary, no horizontally-scrolling container silently clipping
+     instead of reflowing, and the waterfall (single-load supporting
+     evidence, not the report's headline) kept short enough to not run to
+     several pages. */
+  @media print {
+    body { padding: 0; }
+    .panel { break-inside: avoid; page-break-inside: avoid; }
+    /* `break-inside: avoid` on .panel only holds while the whole panel fits
+       on one page. The resource tables run to 20 rows with multi-line
+       wrapped domains/paths (see the .agg-table .path rule below) and are
+       routinely taller than a page, so the panel itself still splits — but
+       without this rule the browser was free to split *inside* a table row,
+       cutting a cell's text at the page edge rather than between rows. */
+    .agg-table tr { break-inside: avoid; page-break-inside: avoid; }
+
+    /* overflow-x:auto clips rather than reflows when printed. Every
+       .table-scroll wrapper (Core Web Vitals, slowest/heaviest resources,
+       third-party, browser/device) must be allowed to reflow instead. */
+    .table-scroll { overflow-x: visible; }
+    /* Long resource/domain paths are nowrap on screen so the column stays
+       scannable; on paper that is exactly what would run past the page
+       edge and get cut. Let paths wrap instead of overflowing. */
+    .agg-table .path { white-space: normal; word-break: break-all; }
+
+    /* Coverage column: `.cov`'s 190px min-width (driven by `.cov-track`,
+       the bar) is the widest thing inside `.table-scroll` and the most
+       likely to force horizontal overflow. The bar is decoration — the
+       percentage, the "N of M loads" text and the "rare" chip are the
+       actual coverage information and all live in `.cov-text`/`.chip`,
+       neither of which is touched here. Drop the bar, let the column
+       shrink to its text, and the signal survives to paper. */
+    .cov { min-width: 0; gap: 4px; }
+    .cov-track { display: none; }
+
+    /* The waterfall's controls, tooltips and sticky phase-pill overlay are
+       interactive-only (hover state, scroll-relative positioning) and
+       carry nothing on a fixed printed page. */
+    #controls-slot, #tooltip, #line-tooltip, #ex-tooltip, .sticky-pills { display: none !important; }
+    /* Each row is marked wf-row-print-clip by the row builder itself for
+       rows past the first 20 in the order the viewer had selected
+       (chronological or grouped-by-type) — not an nth-child guess, since
+       #waterfall-slot's children mix section headers and overlay divs in
+       with the actual rows and a positional selector can't tell them apart
+       reliably. #waterfall-panel.wf-clipped is set by the same script only
+       when there are more than 20 rows, so the note below is silent when
+       the full waterfall already fits. */
+    .wf-row-print-clip { display: none; }
+    /* Long-task duration labels are absolutely positioned by percent of the
+       timeline and can center past the 100% mark for a task near the very
+       end of the load. On screen the page background just absorbs the
+       overhang; on paper the page edge cuts a label mid-digit, and
+       `overflow: hidden` on the slot does not help — the label's own
+       positioned ancestor (ltLabelWrap) is what needs clipping, and giving
+       that a hard width would fight the same percent-based layout that
+       causes the overhang. The pink long-task highlight bands inside the
+       waterfall itself (`.waterfall` already clips via `overflow: hidden`)
+       carry the same information visually; drop only the redundant ms text. */
+    #longtask-labels-slot { display: none; }
+    #waterfall-panel.wf-clipped::after {
+      content: "Waterfall clipped to the first 20 rows (in the order shown) for print. See the HTML report for the full interactive view.";
+      display: block; margin-top: 8px; font-size: var(--wf-text-small); color: var(--text-subdued);
+    }
+  }
 </style>
 </head>
 <body>
@@ -1074,7 +1142,13 @@ function renderWaterfall() {
     const barLightRing = `inset 0 0 0 1px ${isErrored ? failedBarColor : color}`;
     const type = resolveType(req);
 
-    const row = el("div", `wf-row ${isEven ? "even" : "odd"}${isLcp ? " lcp" : ""}${req.hasPending ? " pending" : ""}`);
+    // print-clip: rows beyond the first 20 in the order shown (chronological
+    // or grouped-by-type, whichever the viewer had selected) are hidden by
+    // the print stylesheet — see the @media print block below. The waterfall
+    // is supporting evidence, not the report's headline; a full render would
+    // run to several print pages for a busy page load.
+    const printClip = item.visualRowIdx >= 20 ? " wf-row-print-clip" : "";
+    const row = el("div", `wf-row ${isEven ? "even" : "odd"}${isLcp ? " lcp" : ""}${req.hasPending ? " pending" : ""}${printClip}`);
 
     const labelCell = el("div", "cell-label");
     labelCell.title = `${req.urlDomain}${url}`;
@@ -1189,6 +1263,11 @@ function renderWaterfall() {
 
   wf.appendChild(body);
   document.getElementById("waterfall-slot").appendChild(wf);
+
+  // Drives the print-only "clipped" footnote (@media print, wf-row-print-clip
+  // rows). Silent when everything already fits on one printed page.
+  const totalRowCount = waterfallItems.filter((i) => i.kind === "row").length;
+  document.getElementById("waterfall-panel").classList.toggle("wf-clipped", totalRowCount > 20);
 
   // Long task duration labels
   if (longTasks.length > 0) {
