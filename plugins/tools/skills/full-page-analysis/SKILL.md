@@ -349,7 +349,7 @@ This reads the canonical JSON filenames from the data directory, applies
 the unit conversions and finding rules in `scripts/lib/normalize.mjs` and
 `scripts/lib/findings.mjs`, and renders the standalone HTML report (KPI
 cards, tables, computed findings, analyst notes, resource waterfall) with
-Chart.js and the Strato tokens inlined. If `--findings` is omitted the
+the Strato tokens inlined. If `--findings` is omitted the
 analyst-notes panel is left blank; do not omit it once Step 5 is done.
 
 **The analyst-notes panel is directly editable in the browser.** The build
