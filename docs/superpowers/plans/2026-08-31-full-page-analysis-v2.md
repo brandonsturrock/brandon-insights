@@ -1257,6 +1257,7 @@ git commit -m "feat(full-page-analysis): add aggregate and selection queries"
 ### Task 6: Aggregate report sections
 
 **Files:**
+- Create: `scripts/lib/findings.mjs` (`THRESHOLDS` only)
 - Modify: `scripts/build-report.mjs`
 - Modify: `assets/report.html.tmpl`
 
@@ -1280,8 +1281,20 @@ DATA = {
   errors: { loads, loadsWithAnyError, loadsWithException, loadsWith4xx,
             loadsWith5xx, exceptionTotal, http4xxTotal, http5xxTotal },
   browserDevice: [{ browser, device, loads, lcpP75 }],
+  thresholds: THRESHOLDS,                         // from scripts/lib/findings.mjs
+  skipped: [<filename>],                          // data files missing or empty
 }
 ```
+
+- [ ] **Step 0: Create the thresholds module**
+
+Task 7 needs these thresholds for its rules and this task needs them for the Core
+Web Vitals table, so they are created once, here, and shared. Create
+`scripts/lib/findings.mjs` containing **only** the `THRESHOLDS` export exactly as
+Task 7 specifies it — Task 7 appends `computeFindings` to the same file later.
+Import it in `build-report.mjs` and put it on the payload as
+`data.thresholds = THRESHOLDS;` so the template reads one source of truth rather
+than hardcoding the numbers in CSS or JS.
 
 - [ ] **Step 1: Add the aggregate loaders to the build script**
 
@@ -1379,7 +1392,7 @@ run is never mistaken for a complete one.
 
 In `assets/report.html.tmpl`, insert these sections above `#waterfall-panel`, and add a render function for each at the bottom of the script block. The sections, in order:
 
-1. **Core Web Vitals** — a table of LCP / FCP / INP / CLS / TTFB rows with p50, p75, p95 columns. Colour the p75 cell with `var(--dt-success)`, `var(--dt-warning)`, or `var(--dt-critical)` per the thresholds in Task 7's `THRESHOLDS` constant. Show `DATA.cwv.loads` as the sample size in the heading.
+1. **Core Web Vitals** — a table of LCP / FCP / INP / CLS / TTFB rows with p50, p75, p95 columns. Colour the p75 cell with `var(--dt-success)`, `var(--dt-warning)`, or `var(--dt-critical)` per `DATA.thresholds` (see Step 0 below). Show `DATA.cwv.loads` as the sample size in the heading.
 2. **TTFB phases** — a horizontal stacked bar of `dnsP75`, `connectionP75`, `waitingP75`, `requestP75`, `cacheP75`, with a labelled legend and the total.
 3. **Slowest resources** — `DATA.resources` sorted by `durationP75` desc, first 20 rows. Columns: path (truncated to 60 chars, full value in the `title` attribute), domain, type, loads, p50 / p75 / p95 duration, p75 transfer. Render `loads` — and `loads / DATA.loadCount` as a percentage — prominently: that ratio is what separates a page-wide problem from one unlucky load, and it is the whole reason v2 exists.
 4. **Heaviest resources** — the same array sorted by `transferP75` desc, first 20 rows.
@@ -1425,7 +1438,7 @@ git commit -m "feat(full-page-analysis): add aggregate report sections"
 ### Task 7: Deterministic finding rules
 
 **Files:**
-- Create: `scripts/lib/findings.mjs`
+- Modify: `scripts/lib/findings.mjs` (created in Task 6 with `THRESHOLDS` only; this task appends `computeFindings`)
 - Create: `scripts/test-findings.mjs`
 - Create: `references/findings-prompt.md`
 - Modify: `scripts/build-report.mjs`
