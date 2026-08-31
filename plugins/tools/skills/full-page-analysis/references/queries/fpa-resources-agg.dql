@@ -1,10 +1,12 @@
 fetch user.events, from: {{.timeframe}}
 | filter frontend.name == "{{.frontend}}"
 | filter characteristics.has_request == true
+| filter dt.rum.user_type == "real_user"
 | join [
     fetch user.events, from: {{.timeframe}}
     | filter frontend.name == "{{.frontend}}"
     | filter characteristics.has_user_action == true
+    | filter dt.rum.user_type == "real_user"
     | filter user_action.type == "hard_navigation"
     | filter page.detected_name == "{{.page}}"
     | summarize count(), by: {user_action.instance_id}

@@ -10,6 +10,19 @@ Data-model probes resolved against `demo live` on 2026-08-31 (do not re-probe):
 - `duration` on `user.events` is NANOSECONDS — user action instance `552c90689fb8da5e` reports
   `duration = 1439000000`, matching Dynatrace's built-in waterfall rendering of `1.44 s` for the
   same action. The `/ 1000000` divisor used throughout these queries is correct.
+
+All eight aggregate queries (load-count, cwv-percentiles, ttfb-phases, resources-agg,
+thirdparty-agg, longtasks-agg, errors-agg, browser-device) filter
+`dt.rum.user_type == "real_user"`, on the outer fetch and, where present, the inner
+nav-join subquery too. Request events on `www.easytravel.com` carry substantial
+robot/synthetic traffic (111,562 `robot` request events vs 2,591,562 `real_user` over
+24h) — leaving it unfiltered inflates the resource-prevalence denominator with
+synthetic loads and produces an unexplained mismatch between request-scoped and
+page-summary-scoped `loads` figures in the same report. The five selection queries
+(`fpa-frontends`, `fpa-pages`, `fpa-lcp-baseline`, `fpa-top-browser`,
+`fpa-select-instance`) do NOT filter on `dt.rum.user_type` — they mirror v1's behavior
+exactly, and the instance-selection path is already validated against the built-in
+waterfall, so their population was left untouched.
 -->
 
 `build-report.mjs` reads the `--data` directory by these exact filenames.
