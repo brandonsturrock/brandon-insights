@@ -11,7 +11,8 @@
            border-radius: var(--dt-radius); padding: var(--dt-space-16);
            margin-bottom: var(--dt-space-32); }
   h1, h2 { font-weight: 600; margin: 0 0 var(--dt-space-16); }
-  .example-note { color: var(--dt-warning); font-size: 13px; }
+  h2 { font-size: var(--wf-text-title); }
+  .example-note { color: var(--dt-warning); font-size: var(--wf-text-body); }
 </style>
 <style>
   /* v1 custom properties, remapped onto the Strato tokens above.
@@ -36,11 +37,12 @@
     --critical:                  var(--dt-critical);
 
     /* One type ramp replaces the ad-hoc 9/10/11/12/13/15/18/20px sizes. */
-    --dt-text-micro: 10px;   /* type column, tick labels, tooltip keys */
-    --dt-text-small: 12px;   /* secondary / dense labels */
-    --dt-text-body:  13px;   /* body */
-    --dt-text-lead:  16px;   /* emphasised numbers */
-    --dt-text-title: 20px;   /* panel titles */
+    --wf-text-micro: 10px;   /* type column, tick labels, tooltip keys */
+    --wf-text-small: 12px;   /* secondary / dense labels */
+    --wf-text-body:  13px;   /* body */
+    --wf-text-lead:  16px;   /* emphasised numbers */
+    --wf-text-title: 20px;   /* section headings (h2) */
+    --wf-text-display: 24px; /* report heading (h1) */
   }
   * { box-sizing: border-box; }
   body {
@@ -48,13 +50,13 @@
     background: var(--bg-page);
     color: var(--text-default);
     font-family: var(--dt-font-sans);
-    font-size: var(--dt-text-body);
+    font-size: var(--wf-text-body);
     padding: var(--dt-space-32);
   }
   .page-wrap { max-width: 1400px; margin: 0 auto; }
-  h1 { font-size: var(--dt-text-title); margin: 0 0 4px; }
-  .subtitle { color: var(--text-subdued); font-size: var(--dt-text-small); margin-bottom: var(--dt-space-32); }
-  .small { font-size: var(--dt-text-small); }
+  h1 { font-size: var(--wf-text-display); margin: 0 0 4px; }
+  .subtitle { color: var(--text-subdued); font-size: var(--wf-text-small); margin-bottom: var(--dt-space-32); }
+  .small { font-size: var(--wf-text-small); }
   .subdued { color: var(--text-subdued); }
 
   /* ── Metrics panel ─────────────────────────────────────────── */
@@ -67,9 +69,9 @@
     flex: 1;
     min-width: 100px;
   }
-  .metric-tile .label { color: var(--text-subdued); font-size: var(--dt-text-small); display: block; margin-bottom: 4px; }
-  .metric-tile .value { font-size: var(--dt-text-lead); font-weight: 600; margin: 0; font-variant-numeric: tabular-nums; }
-  .metric-tile .sub { color: var(--text-subdued); font-size: var(--dt-text-small); display: block; margin-top: 2px; }
+  .metric-tile .label { color: var(--text-subdued); font-size: var(--wf-text-small); display: block; margin-bottom: 4px; }
+  .metric-tile .value { font-size: var(--wf-text-lead); font-weight: 600; margin: 0; font-variant-numeric: tabular-nums; }
+  .metric-tile .sub { color: var(--text-subdued); font-size: var(--wf-text-small); display: block; margin-top: 2px; }
 
   .ttfb-breakdown { margin-top: 8px; margin-bottom: 16px; }
   .ttfb-bar { display: flex; height: 16px; border-radius: 3px; overflow: hidden; gap: 1px; }
@@ -90,7 +92,7 @@
   }
   .context-item { display: flex; gap: 6px; }
 
-  .findings-title { color: var(--text-subdued); font-size: var(--dt-text-small); margin-bottom: 8px; display: block; }
+  .findings-title { color: var(--text-subdued); font-size: var(--wf-text-small); margin-bottom: 8px; display: block; }
   .findings-row { display: flex; flex-wrap: wrap; gap: var(--dt-space-8); margin-bottom: var(--dt-space-16); }
   .finding-tile {
     display: flex; align-items: center; gap: 8px;
@@ -101,7 +103,7 @@
     flex: 1 1 180px;
     min-width: 160px;
   }
-  .finding-tile .fv { font-size: var(--dt-text-lead); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .finding-tile .fv { font-size: var(--wf-text-lead); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .finding-tile .fv.warn { color: var(--warning); }
 
   /* ── Controls ──────────────────────────────────────────────── */
@@ -116,7 +118,7 @@
     color: var(--text-default);
     border-radius: 4px;
     padding: 5px 10px;
-    font-size: var(--dt-text-small);
+    font-size: var(--wf-text-small);
     cursor: pointer;
     line-height: 1.2;
   }
@@ -145,7 +147,7 @@
     border: 1px solid var(--border-default);
     border-radius: 3px;
     padding: 1px 5px;
-    font-size: var(--dt-text-micro);
+    font-size: var(--wf-text-micro);
     letter-spacing: 0.07em;
     white-space: nowrap;
     line-height: 14px;
@@ -164,7 +166,7 @@
   }
   .sticky-pills .pill { pointer-events: auto; position: absolute; }
 
-  .tick-label { position: absolute; bottom: 6px; padding-left: 3px; font-size: var(--dt-text-micro); color: var(--text-subdued); white-space: nowrap; }
+  .tick-label { position: absolute; bottom: 6px; padding-left: 3px; font-size: var(--wf-text-micro); color: var(--text-subdued); white-space: nowrap; }
 
   .wf-body { position: static; }
   .wf-overlay { position: absolute; top: 0; bottom: 0; right: 0; }
@@ -182,7 +184,7 @@
   }
   .wf-section-header .lbl {
     width: 420px; flex-shrink: 0; padding-left: 8px;
-    font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; font-size: var(--dt-text-micro);
+    font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; font-size: var(--wf-text-micro);
   }
   .wf-section-header .rule { flex: 1; height: 1px; background: var(--border-subdued); }
 
@@ -203,7 +205,7 @@
   .cell-label .url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-subdued); }
   .wf-row:hover .cell-label .url:not(.err) { color: var(--text-default); }
   .cell-label .url.err { color: var(--critical) !important; }
-  .cell-type { width: 40px; flex-shrink: 0; text-align: center; font-size: var(--dt-text-micro); text-transform: uppercase; line-height: 26px; }
+  .cell-type { width: 40px; flex-shrink: 0; text-align: center; font-size: var(--wf-text-micro); text-transform: uppercase; line-height: 26px; }
   .cell-dur  { width: 80px; flex-shrink: 0; box-sizing: border-box; text-align: right; padding-right: 16px; line-height: 26px; color: var(--text-subdued); overflow: hidden; white-space: nowrap; }
   .cell-dur.err { color: var(--critical); }
   .wf-row:hover .cell-dur:not(.err) { color: var(--text-default); }
@@ -225,7 +227,7 @@
   .warn-banner {
     margin-bottom: 10px; padding: 7px 12px;
     background: color-mix(in srgb, var(--warning) 10%, transparent); border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
-    border-radius: var(--dt-radius); text-align: center; color: var(--warning); font-weight: 700; font-size: var(--dt-text-small);
+    border-radius: var(--dt-radius); text-align: center; color: var(--warning); font-weight: 700; font-size: var(--wf-text-small);
   }
 
   /* ── Tooltips ──────────────────────────────────────────────── */
@@ -247,27 +249,27 @@
   #ex-tooltip { max-width: 360px; border-color: color-mix(in srgb, var(--critical) 45%, var(--border-default)); }
   .tt-header { margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border-subdued); }
   .tt-badge-row { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
-  .tt-badge { font-size: var(--dt-text-micro); font-weight: 700; border-radius: 2px; padding: 0 4px; line-height: 14px; flex-shrink: 0; }
-  .tt-title { font-size: var(--dt-text-small); font-weight: 600; color: var(--text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tt-badge { font-size: var(--wf-text-micro); font-weight: 700; border-radius: 2px; padding: 0 4px; line-height: 14px; flex-shrink: 0; }
+  .tt-title { font-size: var(--wf-text-small); font-weight: 600; color: var(--text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tt-meta-table { border-collapse: collapse; width: 100%; margin-top: 6px; }
-  .tt-meta-table td { font-size: var(--dt-text-micro); padding-right: 8px; white-space: nowrap; }
+  .tt-meta-table td { font-size: var(--wf-text-micro); padding-right: 8px; white-space: nowrap; }
   .tt-meta-table td.v { color: var(--text-default); white-space: normal; word-break: break-all; }
   .tt-meta-table td.k { color: var(--text-subdued); }
-  .tt-csp-badge { font-size: var(--dt-text-micro); font-weight: 700; color: var(--warning); background: color-mix(in srgb, var(--warning) 12%, transparent); border: 1px solid color-mix(in srgb, var(--warning) 40%, transparent); border-radius: 2px; padding: 1px 5px; display: inline-block; margin-top: 4px; }
+  .tt-csp-badge { font-size: var(--wf-text-micro); font-weight: 700; color: var(--warning); background: color-mix(in srgb, var(--warning) 12%, transparent); border: 1px solid color-mix(in srgb, var(--warning) 40%, transparent); border-radius: 2px; padding: 1px 5px; display: inline-block; margin-top: 4px; }
   .tt-table { border-collapse: collapse; width: 100%; }
-  .tt-sec-hd td { padding-top: 6px; padding-bottom: 3px; font-size: var(--dt-text-micro); font-weight: 700; color: var(--text-subdued); letter-spacing: 0.06em; text-transform: uppercase; border-bottom: 1px solid var(--border-subdued); }
-  .tt-row td { font-size: var(--dt-text-small); padding-bottom: 2px; }
+  .tt-sec-hd td { padding-top: 6px; padding-bottom: 3px; font-size: var(--wf-text-micro); font-weight: 700; color: var(--text-subdued); letter-spacing: 0.06em; text-transform: uppercase; border-bottom: 1px solid var(--border-subdued); }
+  .tt-row td { font-size: var(--wf-text-small); padding-bottom: 2px; }
   .tt-row td.k { color: var(--text-subdued); padding-right: 8px; white-space: nowrap; }
   .tt-row td.v { color: var(--text-default); text-align: right; }
   .tt-swatch-cell { width: 10px; padding-right: 4px; vertical-align: middle; }
   .tt-swatch { width: 8px; height: 8px; border-radius: 1px; }
   .tt-marker-row { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
   .tt-marker-line { width: 3px; height: 14px; border-radius: 1px; flex-shrink: 0; }
-  .tt-marker-label { font-size: var(--dt-text-small); font-weight: 700; min-width: 36px; }
-  .tt-marker-value { font-size: var(--dt-text-small); color: var(--text-default); }
+  .tt-marker-label { font-size: var(--wf-text-small); font-weight: 700; min-width: 36px; }
+  .tt-marker-value { font-size: var(--wf-text-small); color: var(--text-default); }
   /* Sampled-load title inside the waterfall panel. v1 rendered this as the page
      <h1>; here the panel <h2> owns the heading, so this is a lead-sized label. */
-  .wf-instance-title { font-size: var(--dt-text-lead); font-weight: 600; margin-bottom: 2px; }
+  .wf-instance-title { font-size: var(--wf-text-lead); font-weight: 600; margin-bottom: 2px; }
 </style>
 </head>
 <body>
@@ -363,7 +365,14 @@ const resolveType = (req) => {
   const raw = req.performanceInitiatorType;
   return raw ? raw.toLowerCase() : "other";
 };
-const resourceColors = (req) => RESOURCE_COLORS[resolveType(req)] || RESOURCE_COLORS.other;
+// The palette's `light` values are bright-on-dark tints from the v1 dark canvas;
+// on the light canvas they drop to ~1.3:1 and the phase reads as a gap. Derive the
+// light phase from the same categorical hue instead. RESOURCE_COLORS is unmodified
+// and `dark` — the hue that identifies the type — is passed through untouched.
+const resourceColors = (req) => {
+  const pair = RESOURCE_COLORS[resolveType(req)] || RESOURCE_COLORS.other;
+  return { dark: pair.dark, light: `color-mix(in srgb, ${pair.dark} 35%, var(--dt-bg-base))` };
+};
 const RESOURCE_LABELS = {
   document: "Doc", navigation: "Nav", script: "JS", stylesheet: "CSS",
   image: "Img", fetch: "XHR", xmlhttprequest: "XHR", xhr: "XHR",
@@ -637,11 +646,11 @@ function attachExceptionHover(node, displayName) {
     hideTooltip(lineTtEl); hideTooltip(ttEl);
     exTtEl.innerHTML = `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
       <svg width="12" height="12" viewBox="0 0 12 12" style="flex-shrink:0">
-        <circle cx="6" cy="6" r="5.5" fill="var(--critical)" stroke="var(--critical)" stroke-width="1"/>
+        <circle cx="6" cy="6" r="5.5" style="fill:color-mix(in srgb, var(--dt-critical) 80%, black);stroke:var(--dt-critical)" stroke-width="1"/>
         <line x1="3.5" y1="3.5" x2="8.5" y2="8.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
         <line x1="8.5" y1="3.5" x2="3.5" y2="8.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
       </svg>
-      <span style="color:var(--critical);font-weight:700;font-size:var(--dt-text-small)">Exception</span>
+      <span style="color:var(--critical);font-weight:700;font-size:var(--wf-text-small)">Exception</span>
     </div>
     <div style="color:var(--text-default);word-break:break-word;font-size:11px">${escHtml(displayName)}</div>`;
     positionTooltip(exTtEl, e.clientX, e.clientY);
@@ -848,7 +857,7 @@ function renderWaterfall() {
       svg.style.left = "0";
       const circle = document.createElementNS(svgNs, "circle");
       circle.setAttribute("cx", MARKER_R); circle.setAttribute("cy", MARKER_R); circle.setAttribute("r", MARKER_R - 0.5);
-      circle.setAttribute("fill", "var(--critical)"); circle.setAttribute("stroke", "var(--critical)"); circle.setAttribute("stroke-width", "1");
+      circle.style.fill = "color-mix(in srgb, var(--dt-critical) 80%, black)"; circle.style.stroke = "var(--dt-critical)"; circle.setAttribute("stroke-width", "1");
       svg.appendChild(circle);
       for (const [x1, y1, x2, y2] of [[4,4,MARKER_R*2-4,MARKER_R*2-4],[MARKER_R*2-4,4,4,MARKER_R*2-4]]) {
         const l2 = document.createElementNS(svgNs, "line");
@@ -885,6 +894,7 @@ function renderWaterfall() {
     const failedBarColor = "var(--critical)";
     const barColor = isErrored ? failedBarColor : color;
     const barLightColor = isErrored ? failedBarColor : barLight;
+    const barLightRing = `inset 0 0 0 1px ${isErrored ? failedBarColor : color}`;
     const type = resolveType(req);
 
     const row = el("div", `wf-row ${isEven ? "even" : "odd"}${isLcp ? " lcp" : ""}${req.hasPending ? " pending" : ""}`);
@@ -901,7 +911,9 @@ function renderWaterfall() {
     row.appendChild(labelCell);
 
     const typeCell = el("div", "cell-type", escHtml(resourceLabel(req)));
-    typeCell.style.color = isErrored ? failedBarColor : color;
+    // Raw hues run 2.3-3.7:1 as 10px text on this canvas. 55% is the
+    // least-diluted mix toward the ink token at which every type clears 4.5:1.
+    typeCell.style.color = isErrored ? failedBarColor : `color-mix(in srgb, ${color} 55%, var(--dt-text-primary))`;
     row.appendChild(typeCell);
 
     const durCell = el("div", `cell-dur${isErrored ? " err" : ""}`, formatMs(req.durationMs));
@@ -944,7 +956,7 @@ function renderWaterfall() {
         const ttfbPct = (summary.ttfbMs / maxMs) * 100;
         const respWPct = ((req.durationMs - summary.ttfbMs) / maxMs) * 100;
         const bar1 = el("div", "bar");
-        bar1.style.left = startPct + "%"; bar1.style.width = ttfbPct + "%"; bar1.style.background = barLightColor;
+        bar1.style.left = startPct + "%"; bar1.style.width = ttfbPct + "%"; bar1.style.background = barLightColor; bar1.style.boxShadow = barLightRing;
         attachBarHover(bar1, req, relativeStartMs);
         timelineCell.appendChild(bar1);
         const bar2 = el("div", "bar");
@@ -976,7 +988,7 @@ function renderWaterfall() {
       }
       if (respMs - reqMs >= 1) {
         const bar = el("div", "bar");
-        bar.style.left = pct(reqMs) + "%"; bar.style.width = wpct(respMs - reqMs) + "%"; bar.style.background = barLightColor;
+        bar.style.left = pct(reqMs) + "%"; bar.style.width = wpct(respMs - reqMs) + "%"; bar.style.background = barLightColor; bar.style.boxShadow = barLightRing;
         attachBarHover(bar, req, relativeStartMs);
         timelineCell.appendChild(bar);
       }
