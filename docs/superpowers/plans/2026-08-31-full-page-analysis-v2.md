@@ -24,6 +24,19 @@
 - **HTML template placeholder syntax is `{{NAME}}`** — e.g. `{{FRONTEND_NAME}}`, `{{DATA_JSON}}` — matching `monthly-report/assets/report-cm.html.tmpl`.
 - **Anchor event type:** hard navigation only. `characteristics.has_user_action == true` and `user_action.type == "hard_navigation"`.
 - **Two ID scopes, do not mix them:** `user_action.instance_id` filters as a plain string and scopes requests and exceptions; `view.instance_id` filters via `toUid()` and scopes the page summary.
+- **Visual work invokes the design skills.** Tasks 2, 3, and 6 touch the
+  rendered output. Each MUST invoke, before writing any CSS or markup:
+  `development:dt-ui-wizard` (Dynatrace UI conventions — non-negotiable, this is
+  a Dynatrace deliverable), `frontend-design` (visual direction), and, for Task 6
+  specifically, `dataviz` (the CWV table, the TTFB stacked bar, and the resource
+  tables are data visualisations and must read as one system).
+- **Visual direction: evolve v1, do not restart it.** The maintainer wants the
+  current design's *feel* — the waterfall's bar-and-phase language, its colour
+  coding by resource type, its density — kept, then modernised and tidied:
+  consistent spacing off the Strato scale, one type ramp, no ad-hoc hex outside
+  the categorical resource palette, and less visual noise per row. This is a
+  cleanup and a re-skin, not a redesign. Anything that changes what a bar *means*
+  is out of scope; raise it with the maintainer instead of shipping it.
 - **Commit after every task.** Conventional commit prefixes (`feat:`, `test:`, `refactor:`, `docs:`, `chore:`).
 
 ---
