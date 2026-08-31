@@ -1174,6 +1174,16 @@ fetch user.events, from: {{.timeframe}}
     http_5xx_total = sum(toLong(error.http_5xx_count))
 ```
 
+**All three request-scoped queries below (`fpa-load-count`, `fpa-resources-agg`,
+`fpa-thirdparty-agg`) carry `filter dt.rum.user_type == "real_user"` in both the
+outer filter and the nav-join subquery.** Without it their population includes
+synthetic traffic while the page-summary aggregates exclude it — measured live,
+that inflated the resource-prevalence denominator and made the report print two
+different unexplained `loads` figures (79,445 against 77,061). With the filter the
+gap closes to 376, which is the genuine page-summary-vs-hard-navigation
+difference. The selection queries deliberately do NOT carry it: they mirror v1,
+whose instance-selection path is already validated.
+
 `fpa-load-count.dql` — the denominator for every request-scoped rule. Without it
 Task 7 would divide a distinct-`user_action.instance_id` count from the request
 queries by a page-summary `count()` from the CWV query, which are different
