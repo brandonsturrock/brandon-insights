@@ -6,18 +6,13 @@
   --dt-bg-base:              #f9f9fa; /* Colors.Background.Base.Default */
   --dt-bg-container:         #f2f2f5; /* Colors.Background.Container.Neutral.Default */
   --dt-bg-container-subtle:  #f9f9fa; /* Colors.Background.Container.Neutral.Subdued */
-  --dt-text-primary:         #464cce; /* Colors.Text.Primary.Default */
-  --dt-text-secondary:       #2f2f4f; /* Colors.Text.Neutral.Default */
+  --dt-text-primary:         #2f2f4f; /* Colors.Text.Neutral.Default — body text (corrected: Text.Primary.Default is the brand-accent text role, not body text) */
+  --dt-text-secondary:       #595a7d; /* Colors.Text.Neutral.Subdued — secondary text (corrected from Text.Neutral.Default) */
   --dt-border-default:       #dadbe4; /* Colors.Border.Neutral.Default */
   --dt-critical:             #bb0731; /* Colors.Text.Critical.Default */
   --dt-warning:              #855400; /* Colors.Text.Warning.Default */
   --dt-success:              #2d6761; /* Colors.Text.Success.Default */
-  /* Colors.Text.Primary.Accent does not exist in the package (verified against the
-     full Colors.Text.Primary.* and Colors.Border.Primary.* export list). Substituted
-     with Colors.Background.Container.Primary.Accent — the nearest real role carrying
-     an explicit "Accent" state under the Primary category, and a fill/accent role
-     distinct from --dt-text-primary above rather than a duplicate of it. */
-  --dt-primary:               #474fcf; /* Colors.Background.Container.Primary.Accent (substituted) */
+  --dt-primary:               #464cce; /* Colors.Text.Primary.Default — the brand-accent text role (links, emphasis) */
 
   /* Font stacks from Strato's typography tokens: sans = Typography.Text.Base.Default.Family,
      mono = Typography.Code.Base.Default.Family. Both verified against variables.css. */
