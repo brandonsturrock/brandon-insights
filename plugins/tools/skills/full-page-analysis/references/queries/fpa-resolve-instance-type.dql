@@ -1,5 +1,5 @@
 fetch user.events, from: {{.timeframe}}
-| filter user_action.instance_id == "{{.ua_instance}}"
+| filter toString(user_action.instance_id) == "{{.ua_instance}}"
 | filter characteristics.has_user_action == true
 | fields user_action.type
 | limit 1

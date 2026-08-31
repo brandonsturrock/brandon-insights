@@ -183,7 +183,9 @@ before continuing.
 
 If the user invokes this skill with `--no-preview`, skip Step 7 entirely —
 do not open the browser and do not ask the `AskUserQuestion`. Proceed
-directly from Step 6 to Step 8 using the HTML built in Step 6 as the source.
+directly from Step 6 to Step 8 using the HTML built in Step 6 (in `/tmp`) as
+the source; no user-saved copy will exist, so Step 8's Downloads-copy step
+runs unconditionally.
 
 ---
 
@@ -350,7 +352,7 @@ node <SKILL_BASE_DIR>/scripts/build-report.mjs \
   --data /tmp/fpa-SLUG \
   --findings /tmp/fpa-SLUG/findings.md \
   --page-title "PAGE" \
-  --out ~/Downloads/full-page-analysis-SLUG-YYYY-MM-DD.html
+  --out /tmp/full-page-analysis-SLUG-YYYY-MM-DD.html
 ```
 
 This reads the canonical JSON filenames from the data directory, applies
@@ -360,8 +362,13 @@ cards, tables, computed findings, analyst notes, resource waterfall) with
 Chart.js and the Strato tokens inlined. If `--findings` is omitted the
 analyst-notes panel is left blank; do not omit it once Step 5 is done.
 
-The HTML is written directly to `~/Downloads/` — there is no separate
-`/tmp` intermediate for this artifact.
+**The analyst-notes panel is directly editable in the browser.** The build
+script injects `contenteditable` on every `exec-body` block plus a floating
+**Save changes** button; clicking it downloads the current DOM — edits
+included — to `~/Downloads/` under the exact filename passed to `--out`
+(here, `full-page-analysis-SLUG-YYYY-MM-DD.html`, not the `/tmp` path). The
+build output itself stays in `/tmp` specifically so that filename is free
+in `~/Downloads` for the save button to use without colliding.
 
 ---
 
@@ -370,26 +377,46 @@ The HTML is written directly to `~/Downloads/` — there is no separate
 **Skip this entire step if `--no-preview` was passed.** Proceed directly to
 Step 8.
 
-Open the HTML for the user to review:
+Open the HTML built in Step 6 for the user to review and edit:
 
 **macOS:**
 ```bash
-open ~/Downloads/full-page-analysis-SLUG-YYYY-MM-DD.html
+open /tmp/full-page-analysis-SLUG-YYYY-MM-DD.html
 ```
 
 **Windows:**
 ```powershell
-Start-Process ~/Downloads/full-page-analysis-SLUG-YYYY-MM-DD.html
+Start-Process /tmp/full-page-analysis-SLUG-YYYY-MM-DD.html
 ```
 
-Then use `AskUserQuestion`:
-- **Looks good — build the PDF** — proceed to Step 8
-- **Revise analyst notes** — edit `/tmp/fpa-SLUG/findings.md`, rerun Step 6
-  (this overwrites the same `~/Downloads/...html` file), and reopen
+Then use `AskUserQuestion` with this prompt text: "The report is open in
+your browser. The analyst notes panel is directly editable — click into it
+and type. When you're done, click **Save changes** (bottom-right) to save
+your edited copy to ~/Downloads. Then come back here and confirm."
+
+- **Looks good — build the PDF** — proceed to Step 8; no edited copy exists,
+  Step 8 will copy the `/tmp` build to `~/Downloads` itself
+- **I edited and saved** — proceed to Step 8; the edited copy is already in
+  `~/Downloads`
+- **Regenerate analysis** — revise `/tmp/fpa-SLUG/findings.md`, rerun Step 6,
+  and reopen
 
 ---
 
 ## Step 8 — Convert to PDF
+
+Determine `SOURCE`: if `~/Downloads/full-page-analysis-SLUG-YYYY-MM-DD.html`
+already exists (the user clicked **Save changes** in Step 7), that is the
+edited copy — use it as-is. Otherwise no edited copy exists yet; copy the
+`/tmp` build there first so the HTML artifact contract still holds:
+
+```bash
+[ -f ~/Downloads/full-page-analysis-SLUG-YYYY-MM-DD.html ] || \
+  cp /tmp/full-page-analysis-SLUG-YYYY-MM-DD.html ~/Downloads/full-page-analysis-SLUG-YYYY-MM-DD.html
+```
+
+Then render the PDF from that `~/Downloads` copy — never from `/tmp` — so
+an edit made in the browser is guaranteed to reach the PDF:
 
 ```bash
 bash <SKILL_BASE_DIR>/assets/render-pdf.sh \

@@ -53,11 +53,29 @@ Run each query as:
 
 `fpa-resolve-instance.dql` and `fpa-resolve-instance-type.dql` are used only
 by the "I have an instance ID" entry point (added in the SKILL.md rewrite
-that added Task 9's end-to-end run, to keep that path DQL-free too): the
-former resolves `view.instance_id`, `frontend.name`, `page.detected_name`,
-and browser/device metadata from a known `user_action.instance_id`; the
-latter is the fallback wrong-type check when the first returns no rows in
-either the 7-day or 30-day window.
+in Task 9, to keep that path DQL-free too): the former resolves
+`view.instance_id`, `frontend.name`, `page.detected_name`, and
+browser/device metadata from a known `user_action.instance_id`; the latter
+is the fallback wrong-type check when the first returns no rows in either
+the 7-day or 30-day window. Both verified against `demo live`: the former
+against a known Astroshop hard-navigation instance (7-day window) and a
+30+ day old easyTravel hard-navigation instance (30-day expansion); the
+latter against a `soft_navigation` instance, confirming it surfaces
+`user_action.type` for the wrong-type message.
+
+`fpa-resolve-instance-type.dql` filters `toString(user_action.instance_id)
+== "{{.ua_instance}}"`, not plain `==` like every other instance-scoped
+query in this file. Plain string equality against `user_action.instance_id`
+returns 0 rows for non-`hard_navigation` action types on `demo live` (e.g.
+`soft_navigation`, `same_view`) even when `toString(user_action.instance_id)
+== "{{.ua_instance}}"` on the identical row returns 1 — some non-hard-nav
+action types apparently store this field as a type plain string equality
+doesn't match. Since this query's entire job is identifying non-hard-nav
+instances, it needs `toString()` or it would silently report "not found"
+instead of "wrong type" for exactly the instances it exists to catch. Every
+other query file in this contract only ever matches `hard_navigation`
+instances by this field, so they are unaffected and were left as plain
+`==`.
 
 ## Aggregate
 
