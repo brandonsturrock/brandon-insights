@@ -1,0 +1,20 @@
+fetch user.events, from: {{.timeframe}}
+| filter view.instance_id == toUid("{{.view_instance}}")
+| filter characteristics.has_page_summary == true
+| fields
+    performance.time_origin, client_start_time,
+    ttfb.value, ttfb.status,
+    ttfb.dns_duration, ttfb.connection_duration,
+    ttfb.waiting_duration, ttfb.request_duration, ttfb.cache_duration,
+    web_vitals.largest_contentful_paint, lcp.status,
+    web_vitals.first_contentful_paint, fcp.status,
+    web_vitals.first_paint, fp.status,
+    web_vitals.cumulative_layout_shift, cls.status,
+    web_vitals.interaction_to_next_paint, inp.status,
+    fid.status,
+    lcp.url, lcp.ui_element.tag_name,
+    page.url.full, page.title, browser.name, browser.version,
+    device.type, os.name, navigation.type, frontend.name,
+    long_task.all.count, long_task.all.avg_duration, long_task.all.slowest_occurrences,
+    error.exception_count, error.http_4xx_count, error.http_5xx_count
+| limit 1

@@ -1,0 +1,31 @@
+fetch user.events, from: {{.timeframe}}
+| filter user_action.instance_id == "{{.ua_instance}}"
+| filter characteristics.has_request == true
+| sort start_time asc
+| limit 500
+| fields
+    url.full, url.domain, url.path, url.provider,
+    performance.initiator_type,
+    start_time, end_time, duration,
+    performance.transfer_size, performance.encoded_body_size, performance.decoded_body_size,
+    http.response.status_code, http.request.method,
+    performance.render_blocking_status,
+    performance.delivery_type,
+    performance.next_hop_protocol,
+    performance.worker_start,
+    performance.redirect_start, performance.redirect_end,
+    performance.domain_lookup_start, performance.domain_lookup_end,
+    performance.connect_start, performance.connect_end,
+    performance.secure_connection_start,
+    performance.request_start,
+    performance.response_start, performance.response_end,
+    performance.load_event_start, performance.load_event_end,
+    performance.dom_complete,
+    performance.dom_content_loaded_event_start, performance.dom_content_loaded_event_end,
+    performance.fetch_start, performance.start_time,
+    performance.incomplete_reason,
+    characteristics.has_w3c_resource_timings,
+    characteristics.has_w3c_navigation_timings,
+    characteristics.has_failed_request,
+    characteristics.has_csp_violation,
+    characteristics.has_pending_request

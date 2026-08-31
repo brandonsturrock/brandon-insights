@@ -1,0 +1,5 @@
+fetch user.events, from: {{.timeframe}}
+| filter user_action.instance_id == "{{.ua_instance}}"
+| filter characteristics.has_exception == true
+| fields start_time, error.display_name
+| limit 200
