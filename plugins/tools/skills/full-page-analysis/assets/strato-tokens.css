@@ -1,0 +1,34 @@
+/* Dynatrace Strato design tokens, extracted from @dynatrace/strato-design-tokens (v1.6.0).
+   Development-time extraction only — the package is NOT a dependency of this skill.
+   Each value below cites the Strato role it came from, verified against the package's
+   own generated stylesheet (styles/variables.css) in a scratch npm pack. */
+:root {
+  --dt-bg-base:              #f9f9fa; /* Colors.Background.Base.Default */
+  --dt-bg-container:         #f2f2f5; /* Colors.Background.Container.Neutral.Default */
+  --dt-bg-container-subtle:  #f9f9fa; /* Colors.Background.Container.Neutral.Subdued */
+  --dt-text-primary:         #464cce; /* Colors.Text.Primary.Default */
+  --dt-text-secondary:       #2f2f4f; /* Colors.Text.Neutral.Default */
+  --dt-border-default:       #dadbe4; /* Colors.Border.Neutral.Default */
+  --dt-critical:             #bb0731; /* Colors.Text.Critical.Default */
+  --dt-warning:              #855400; /* Colors.Text.Warning.Default */
+  --dt-success:              #2d6761; /* Colors.Text.Success.Default */
+  /* Colors.Text.Primary.Accent does not exist in the package (verified against the
+     full Colors.Text.Primary.* and Colors.Border.Primary.* export list). Substituted
+     with Colors.Background.Container.Primary.Accent — the nearest real role carrying
+     an explicit "Accent" state under the Primary category, and a fill/accent role
+     distinct from --dt-text-primary above rather than a duplicate of it. */
+  --dt-primary:               #474fcf; /* Colors.Background.Container.Primary.Accent (substituted) */
+
+  /* Font stacks from Strato's typography tokens: sans = Typography.Text.Base.Default.Family,
+     mono = Typography.Code.Base.Default.Family. Both verified against variables.css. */
+  --dt-font-sans: DynatraceFlow, Roboto, Helvetica, sans-serif;
+  --dt-font-mono: "Roboto Mono", monospace;
+
+  /* Borders.Radius.Container.Default — the base container radius Strato components use. */
+  --dt-radius: 9px;
+
+  /* Spacings.Size8 / Size16 / Size32 — confirmed 1:1 in px against variables.css. */
+  --dt-space-8: 8px;
+  --dt-space-16: 16px;
+  --dt-space-32: 32px;
+}
