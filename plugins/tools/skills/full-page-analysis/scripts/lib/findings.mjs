@@ -96,8 +96,16 @@ export function computeFindings(data) {
 
   const prevalent = (r) => pageLoads > 0 && r.loads / pageLoads >= THRESHOLDS.prevalence.widespread;
 
+  // `blocking` is a REQUEST count in the same population as `requests` (see
+  // fpa-resources-agg.dql), not a per-load boolean — a resource present on
+  // 90% of loads that blocked once ever is not "blocking on most loads".
+  // Gate on the blocking *share of requests*, not mere presence, and require
+  // the same duration floor as slow-resources: a fast blocker is not a high
+  // severity finding regardless of how often it blocks.
+  const isBlocker = (r) => r.requests > 0 && r.blocking / r.requests >= THRESHOLDS.prevalence.widespread &&
+    (num(r.durationP75) ?? 0) > THRESHOLDS.resourceSlowMs && prevalent(r);
   const blockers = (data.resources || [])
-    .filter((r) => r.blocking > 0 && prevalent(r))
+    .filter(isBlocker)
     .sort((a, b) => (num(b.durationP75) ?? 0) - (num(a.durationP75) ?? 0));
   if (blockers.length) {
     const top = blockers.slice(0, 5);
@@ -105,13 +113,13 @@ export function computeFindings(data) {
       id: "render-blocking",
       severity: "high",
       title: "Render-blocking resources on most loads",
-      evidence: `${blockers.length} render-blocking resource(s) appear in at least ${Math.round(THRESHOLDS.prevalence.widespread * 100)}% of ${pageLoads} loads. Slowest: ` +
-        top.map((r) => `${r.domain}${r.path} (p75 ${Math.round(num(r.durationP75) ?? 0)}ms, ${r.loads} loads)`).join("; ") + ".",
+      evidence: `${blockers.length} render-blocking resource(s) block on at least ${Math.round(THRESHOLDS.prevalence.widespread * 100)}% of their own requests and are slow enough to matter. Worst: ` +
+        top.map((r) => `${r.domain}${r.path} (p75 ${Math.round(num(r.durationP75) ?? 0)}ms, blocking ${r.blocking} of ${r.requests} requests, ${r.loads} loads)`).join("; ") + ".",
     });
   }
 
   const slow = (data.resources || [])
-    .filter((r) => (num(r.durationP75) ?? 0) > THRESHOLDS.resourceSlowMs && prevalent(r) && r.blocking === 0)
+    .filter((r) => (num(r.durationP75) ?? 0) > THRESHOLDS.resourceSlowMs && prevalent(r) && !isBlocker(r))
     .sort((a, b) => (num(b.durationP75) ?? 0) - (num(a.durationP75) ?? 0));
   if (slow.length) {
     out.push({
@@ -126,16 +134,24 @@ export function computeFindings(data) {
   const origin = (() => {
     try { return new URL(data.instance?.summary?.pageUrl || "").hostname; } catch { return null; }
   })();
-  const thirdParty = (data.thirdParty || [])
-    .filter((d) => d.domain && d.domain !== origin && (num(d.durationP75) ?? 0) > THRESHOLDS.thirdPartySlowMs)
-    .sort((a, b) => (num(b.durationP75) ?? 0) - (num(a.durationP75) ?? 0));
+  // Without an origin, "third party" cannot be told apart from "first party" —
+  // suppress the whole rule rather than let a null origin make every domain
+  // (including the page's own) look third-party. Also gate on prevalence:
+  // `thirdParty[].loads` exists for exactly this, and a domain hit on 3 of
+  // 77,000 loads is noise, not a page-wide dependency.
+  const thirdParty = origin
+    ? (data.thirdParty || [])
+        .filter((d) => d.domain && d.domain !== origin && (num(d.durationP75) ?? 0) > THRESHOLDS.thirdPartySlowMs &&
+          pageLoads > 0 && d.loads / pageLoads >= THRESHOLDS.prevalence.widespread)
+        .sort((a, b) => (num(b.durationP75) ?? 0) - (num(a.durationP75) ?? 0))
+    : [];
   if (thirdParty.length) {
     out.push({
       id: "slow-third-party",
       severity: "medium",
       title: "Slow third-party domains",
       evidence: thirdParty.slice(0, 5)
-        .map((d) => `${d.domain} (p75 ${Math.round(num(d.durationP75) ?? 0)}ms over ${d.requests} requests)`)
+        .map((d) => `${d.domain} (p75 ${Math.round(num(d.durationP75) ?? 0)}ms, ${d.loads} of ${pageLoads} loads)`)
         .join("; ") + ".",
     });
   }
@@ -157,9 +173,14 @@ export function computeFindings(data) {
   // JS exception and a 4xx would otherwise be counted twice.
   const failing = num(err.loadsWithAnyError) ?? 0;
   if (failing > 0 && errLoads > 0 && failing / errLoads > 0.05) {
+    // A single 5xx in 77,000 loads is not a high-severity signal — require the
+    // same 1% share used nowhere else as a magic number, chosen because it is
+    // an order of magnitude below the 5% gate that fires this rule at all, so
+    // "high" means "the 5xx share is itself already a meaningful fraction of
+    // the failing loads," not "at least one request 500'd."
     out.push({
       id: "errors",
-      severity: (num(err.loadsWith5xx) ?? 0) > 0 ? "high" : "medium",
+      severity: (num(err.loadsWith5xx) ?? 0) / errLoads > 0.01 ? "high" : "medium",
       title: "Errors on a meaningful share of loads",
       evidence: `${pct(failing, errLoads)}% of ${errLoads} loads had at least one error — ${pct(num(err.loadsWithException) ?? 0, errLoads)}% a JS exception, ${pct(num(err.loadsWith4xx) ?? 0, errLoads)}% a 4xx, ${pct(num(err.loadsWith5xx) ?? 0, errLoads)}% a 5xx.`,
     });

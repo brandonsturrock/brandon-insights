@@ -25,13 +25,19 @@ Pass the file to the build with `--findings <file.md>`.
 
 ## What to read before writing
 
-Read the computed findings from `DATA.findings` in the rendered report
-(open the built HTML and inspect the `DATA` object, or run a short Node
-script against the same data directory that imports `computeFindings` from
-`scripts/lib/findings.mjs` and calls it with the same shape of data
-`build-report.mjs` assembles). Each entry is
+Read the computed findings from `DATA.findings` in the **rendered HTML
+only** — open the built report and inspect the embedded `DATA` object (e.g.
+`grep "const DATA = " report.html`, or a browser console). Each entry is
 `{ id, severity, title, evidence }`, and `evidence` already contains every
 number that finding fired on.
+
+Do not hand-call `computeFindings` yourself against the raw `--data`
+directory. Raw dtctl query output carries every counter (`loads`,
+`blocking`, `requests`, and the rest) as a JSON *string*, not a number —
+`build-report.mjs` coerces every one of them through its own `num()` before
+`computeFindings` ever sees them. A hand-rolled call skips that coercion and
+can silently produce different findings than the ones actually in the
+report. `DATA.findings` in the built HTML is the only trustworthy source.
 
 ## The one failure mode this file exists to prevent
 
@@ -70,6 +76,34 @@ TTFB has no published "poor" boundary from web.dev. The report treats
 anything over 1800ms as higher severity internally, but that is a report
 convention, not a Core Web Vitals figure — do not cite 1800ms as TTFB's
 "poor" threshold in prose.
+
+## Prevalence and the other rule-only thresholds
+
+These also come from `THRESHOLDS` in `scripts/lib/findings.mjs`, and they
+are the reason a dramatic per-resource number can legitimately be absent
+from `DATA.findings` — the most important thing to understand before
+writing prose about resources, because it is the difference between a
+page-wide problem and one unlucky load:
+
+- `prevalence.widespread` (**0.5**) — a resource, third-party domain, or
+  render-blocker must appear on at least this share of loads (or, for
+  blocking, of its own requests) before a rule will fire on it at all. A
+  resource with a 10-second p75 that shows up on 11 of 77,000 loads does
+  not describe the page and correctly produces **no finding** — if you see
+  a striking outlier in the raw resource data that isn't in `DATA.findings`,
+  this is almost always why. Do not write it up as if it were a page-wide
+  problem; if it's worth a mention at all, say explicitly that it affects a
+  small number of loads.
+- `prevalence.rare` (**0.05**) — below this share, the report's own tables
+  mark a row "rare." Distinct from `widespread`: this is the tables'
+  labelling threshold, not a findings gate.
+- `resourceSlowMs` (**500**) — the p75 duration a resource must clear, on
+  top of being widespread, for `slow-resources`. Also the duration floor for
+  `render-blocking`.
+- `thirdPartySlowMs` (**200**) — same idea for `slow-third-party`.
+- `segmentRatio` (**1.5**) / `segmentMinShare` (**0.05**) — a browser/device
+  segment fires `segment-outlier` only if its LCP p75 is at least 1.5x the
+  blended p75 *and* it carries at least 5% of loads.
 
 ## Formatting numbers in prose
 

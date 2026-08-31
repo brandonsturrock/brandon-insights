@@ -54,4 +54,75 @@ assert.ok(
 // nulls never fire a threshold rule
 assert.deepEqual(ids({ ...base, cwv: { ...base.cwv, ttfbP75: null, lcpP75: null } }), []);
 
+// a resource present on most loads that blocked once ever is not render-blocking
+// (fix round 1: `blocking` is a request count, not a per-load boolean)
+assert.ok(!ids({
+  ...base,
+  resources: [{ path: "/a.css", domain: "example.com", initiatorType: "link",
+                loads: 69300, requests: 300000, durationP75: 120, blocking: 1, failures: 0 }],
+}).includes("render-blocking"));
+
+// LCP over 2500ms fires
+assert.ok(ids({ ...base, cwv: { ...base.cwv, lcpP75: 3000 } }).includes("slow-lcp"));
+
+// INP over 200ms fires
+assert.ok(ids({ ...base, cwv: { ...base.cwv, inpP75: 300 } }).includes("slow-inp"));
+
+// CLS over 0.1 fires
+assert.ok(ids({ ...base, cwv: { ...base.cwv, clsP75: 0.2 } }).includes("layout-shift"));
+
+// a widespread, slow, non-blocking resource fires slow-resources
+assert.ok(ids({
+  ...base,
+  resources: [{ path: "/big.js", domain: "example.com", initiatorType: "script",
+                loads: 900, requests: 900, durationP75: 800, transferP75: 200000, blocking: 0, failures: 0 }],
+}).includes("slow-resources"));
+
+// a slow, widespread third-party domain fires; a slow but rare one does not
+// (fix round 1: slow-third-party had no prevalence gate at all)
+const thirdParty = (loads) => ({
+  ...base,
+  thirdParty: [{ domain: "cdn.example.net", loads, requests: loads, durationP75: 5000, transferP75: 90000 }],
+});
+assert.ok(ids(thirdParty(900)).includes("slow-third-party"));
+assert.ok(!ids(thirdParty(3)).includes("slow-third-party"));
+
+// a same-origin domain never counts as third-party even at high prevalence
+assert.ok(!ids({
+  ...base,
+  thirdParty: [{ domain: "example.com", loads: 900, requests: 900, durationP75: 5000, transferP75: 90000 }],
+}).includes("slow-third-party"));
+
+// without a determinable origin, slow-third-party is suppressed entirely
+// rather than treating every domain as third-party
+assert.ok(!ids({
+  ...base,
+  instance: { ...base.instance, summary: { ...base.instance.summary, pageUrl: null } },
+  thirdParty: [{ domain: "cdn.example.net", loads: 900, requests: 900, durationP75: 5000, transferP75: 90000 }],
+}).includes("slow-third-party"));
+
+// long tasks on most loads fires
+assert.ok(ids({
+  ...base,
+  longTasks: { loads: 1000, loadsWithLongTasks: 400, countP75: 3, avgDurationP75: 150 },
+}).includes("long-tasks"));
+
+// errors on a meaningful share of loads fires
+assert.ok(ids({
+  ...base,
+  errors: { loads: 1000, loadsWithAnyError: 100, loadsWithException: 80, loadsWith4xx: 20, loadsWith5xx: 0,
+            exceptionTotal: 90, http4xxTotal: 22, http5xxTotal: 0 },
+}).includes("errors"));
+
+// a 5xx share under 1% of loads does not promote errors to high severity
+// (fix round 1: a single 5xx in 77,000 loads used to promote to high)
+{
+  const e = computeFindings({
+    ...base,
+    errors: { loads: 1000, loadsWithAnyError: 100, loadsWithException: 90, loadsWith4xx: 9, loadsWith5xx: 1,
+              exceptionTotal: 90, http4xxTotal: 9, http5xxTotal: 1 },
+  }).find((x) => x.id === "errors");
+  assert.equal(e.severity, "medium");
+}
+
 console.log("test-findings: all assertions passed");

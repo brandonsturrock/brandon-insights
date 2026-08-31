@@ -92,20 +92,6 @@
   }
   .context-item { display: flex; gap: 6px; }
 
-  .findings-title { color: var(--text-subdued); font-size: var(--wf-text-small); margin-bottom: 8px; display: block; }
-  .findings-row { display: flex; flex-wrap: wrap; gap: var(--dt-space-8); margin-bottom: var(--dt-space-16); }
-  .finding-tile {
-    display: flex; align-items: center; gap: 8px;
-    background: var(--bg-container);
-    border: 1px solid var(--border-default);
-    border-radius: var(--dt-radius);
-    padding: 8px 12px;
-    flex: 1 1 180px;
-    min-width: 160px;
-  }
-  .finding-tile .fv { font-size: var(--wf-text-lead); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .finding-tile .fv.warn { color: var(--warning); }
-
   /* ── Controls ──────────────────────────────────────────────── */
   .controls-row { display: flex; gap: var(--dt-space-16); margin-bottom: var(--dt-space-8); flex-wrap: wrap; align-items: flex-start; }
   .control-group { display: flex; flex-direction: column; align-items: center; gap: 4px; }
@@ -368,11 +354,15 @@
   .finding-title { font-weight: 600; margin-right: 6px; }
   .finding-evidence { color: var(--text-subdued); }
   /* Analyst notes: plain prose written by a later agent, edited in place. */
-  .exec-body { font-size: var(--wf-text-body); line-height: 1.55; color: var(--text-default); }
+  .exec-body { font-size: var(--wf-text-body); line-height: 1.55; color: var(--text-default); min-height: 3em; }
   .exec-body ul { margin: 0; padding-left: 18px; }
   .exec-body li { margin-bottom: 4px; }
   .exec-body p { margin: 0 0 8px; }
-  .exec-body[contenteditable="true"]:focus { outline: 1px dashed var(--border-default); outline-offset: 4px; }
+  /* --border-default (#dadbe4 on #f2f2f5) is 1.23:1 — nowhere near the 3:1 a
+     UI-component outline needs. --dt-primary is 5.9:1 on the same panel and
+     is already the link/emphasis role, so an editable region borrowing it
+     reads as "this is interactive," which is the point of the outline. */
+  .exec-body[contenteditable="true"]:focus { outline: 1px dashed var(--dt-primary); outline-offset: 4px; }
 </style>
 </head>
 <body>
@@ -1382,11 +1372,18 @@ function renderSkipped() {
 const SEVERITY_COLOR = { high: "var(--dt-critical)", medium: "var(--dt-warning)", low: "var(--dt-text-secondary)" };
 function renderFindings() {
   const findings = DATA.findings || [];
+  // Every resource- and third-party-scoped rule gates on a share of
+  // DATA.loadCount. A skipped load-count.json makes that denominator zero,
+  // which silently disables those rules rather than firing on bad math — say
+  // so, or a healthy-looking report is indistinguishable from an incomplete one.
+  const noLoadCount = !DATA.loadCount
+    ? `<p class="panel-note">load-count.json was missing or empty, so resource- and third-party-prevalence findings (render-blocking, slow-resources, slow-third-party) could not be evaluated.</p>`
+    : "";
   if (!findings.length) {
-    setSlot("computed-findings", emptyNote("No deterministic findings fired for this page."));
+    setSlot("computed-findings", noLoadCount + emptyNote("No deterministic findings fired for this page."));
     return;
   }
-  setSlot("computed-findings", findings.map((f) =>
+  setSlot("computed-findings", noLoadCount + findings.map((f) =>
     `<div class="finding-row">` +
     `<span class="chip finding-chip" style="color:${SEVERITY_COLOR[f.severity]};border-color:${SEVERITY_COLOR[f.severity]}">${escHtml(f.severity)}</span>` +
     `<span><span class="finding-title">${escHtml(f.title)}</span>` +
