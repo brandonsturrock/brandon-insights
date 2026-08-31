@@ -66,7 +66,13 @@ const first = (rows) => rows[0] || {};
 // concatenation, so they are coerced once here rather than defensively at each
 // use. Percentile results are already JSON numbers; passing them through
 // Number() is a no-op.
-const num = (v) => (v == null ? null : Number(v));
+// Empty string and unparseable input both become null, not 0 and not NaN:
+// Number("") is 0, and `NaN ?? 0` is NaN, so neither is caught downstream.
+const num = (v) => {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
 
 const loadCountRow = first(loadRecords(args.data, "load-count.json"));
 const cwvRow = first(loadRecords(args.data, "cwv-percentiles.json"));

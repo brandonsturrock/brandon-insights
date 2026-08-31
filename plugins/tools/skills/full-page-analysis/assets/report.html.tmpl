@@ -305,7 +305,11 @@
   .agg-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; width: 1%; }
   .agg-table .lead { font-size: var(--wf-text-body); font-weight: 600; }
   .agg-table .path { font-family: var(--dt-font-mono); color: var(--text-default); white-space: nowrap; }
-  .agg-table .nil { color: var(--text-disabled); }
+  /* The em dash is the mandated null mark, so it is the one glyph that must
+     stay legible: --text-disabled is 2.25:1 on the panel, --text-subdued is
+     5.90:1. The dash is already distinct from a figure by shape; it does not
+     need to be dimmer than every other label as well. */
+  .agg-table .nil { color: var(--text-subdued); }
 
   /* Coverage meter — the report's one signature device, and the reason v2
      exists: it turns "loads" from a numeric column you skim past into a bar
@@ -604,7 +608,6 @@ if (navRequest && navRequest.incompleteReason && !isCacheLike(navRequest)) {
 }
 
 // ─── Metrics panel (static) ─────────────────────────────────────────────
-const clsRating = (score) => score <= 0.1 ? "good" : score <= 0.25 ? "needs-improvement" : "poor";
 const msRating = (ms, [good, ni]) => ms <= good ? "good" : ms <= ni ? "needs-improvement" : "poor";
 const RATING_COLORS = { good: "var(--good)", "needs-improvement": "var(--warning)", poor: "var(--critical)", none: "var(--text-default)" };
 
@@ -1280,7 +1283,10 @@ const T = DATA.thresholds;
 // same statement as zero. Every value in every aggregate section goes through
 // this, so the two can never be confused.
 const NIL = '<span class="nil">—</span>';
-const fmt = (v, f) => (v == null ? NIL : f(v));
+// Escaping is owned here, not by the caller: ratingCell already wraps its
+// formatter in escHtml and fmtPct pre-escapes, so fmt doing it too means every
+// path into innerHTML is escaped exactly once.
+const fmt = (v, f) => (v == null ? NIL : escHtml(f(v)));
 const fmtInt = (v) => fmt(v, (n) => Math.round(n).toLocaleString());
 // Both tails carry the signal and both round away under Math.round: a 0.4%
 // error rate is not 0%, and 76,783 of 76,962 loads is not "100%" — the 179
@@ -1352,11 +1358,10 @@ const CWV_ROWS = [
   { label: "LCP", name: "Largest contentful paint", key: "lcp", th: "lcp", fmt: formatMs },
   { label: "FCP", name: "First contentful paint", key: "fcp", th: "fcp", fmt: formatMs },
   { label: "INP", name: "Interaction to next paint", key: "inp", th: "inp", fmt: formatMs },
-  // Routed through msRating, not the ported clsRating: clsRating hardcodes the
-  // same 0.1 / 0.25 boundaries THRESHOLDS now owns, and it is the identical
-  // two-boundary comparator, so driving CLS through msRating keeps one source
-  // of truth instead of two copies that can drift apart. Not a replacement
-  // helper — msRating is the ported one.
+  // CLS rates through msRating like every other row. The ported clsRating did
+  // the same two-boundary comparison but hardcoded 0.1 / 0.25 — a second copy
+  // of numbers THRESHOLDS now owns — and had no callers left once this table
+  // used msRating, so it was deleted rather than left to be picked up later.
   // toFixed(3) alone prints this tenant's real 0.0001 as "0.000", which is a
   // measured non-zero shown as no shift at all. Anything below the last
   // displayed digit is labelled as such instead.
@@ -1441,7 +1446,7 @@ const RESOURCE_COLS = [
   { label: "Resource", cell: (r) => {
       const path = r.path || "/";
       return `<span class="path" title="${escHtml(path)}">${escHtml(truncate(path, 60))}</span>` +
-        (r.failures > 0 ? ` <span class="chip" style="color:var(--critical);border-color:color-mix(in srgb, var(--critical) 45%, transparent)">${r.failures.toLocaleString()} failed</span>` : "") +
+        (r.failures > 0 ? ` <span class="chip" style="color:var(--critical);border-color:color-mix(in srgb, var(--critical) 45%, transparent)">${r.failures.toLocaleString()} failed requests</span>` : "") +
         (r.blocking > 0 ? ` <span class="chip">render blocking</span>` : "");
     } },
   { label: "Present in", cell: (r) => coverageCell(r.loads, DATA.loadCount, true) },
@@ -1502,8 +1507,14 @@ const tile = (label, value, sub) =>
   `<div class="metric-tile"><span class="label">${escHtml(label)}</span>` +
   `<p class="value">${value}</p><span class="sub">${sub}</span></div>`;
 const rateTile = (label, count, denom, denomLabel) =>
+  // With no denominator there is no rate, so the sub-label is dropped rather
+  // than reading "75 of — loads" beneath a "—" value. Unreachable in practice:
+  // count and denominator come from the same query row, so a missing file
+  // nulls both and the partial-report banner fires.
   tile(label, count == null || !denom ? NIL : fmtPct(count / denom),
-    count == null ? "not reported" : `${Math.round(count).toLocaleString()} of ${denom == null ? "—" : Math.round(denom).toLocaleString()} ${denomLabel}`);
+    count == null ? "not reported"
+      : !denom ? ""
+      : `${Math.round(count).toLocaleString()} of ${Math.round(denom).toLocaleString()} ${denomLabel}`);
 
 function renderMainThread() {
   const lt = DATA.longTasks, er = DATA.errors;
