@@ -371,7 +371,14 @@
      page boundary, no horizontally-scrolling container silently clipping
      instead of reflowing, and the waterfall (single-load supporting
      evidence, not the report's headline) kept short enough to not run to
-     several pages. */
+     several pages.
+
+     Brief deviation: the brief specified
+     `body { padding: 0; background: #fff; color: #000; }`. Only `padding: 0`
+     is kept — the canvas is already Strato light theme (white background,
+     dark text), so forcing literal #fff/#000 would fight the existing
+     tokens for zero visible change and reintroduce a bare hex this
+     template otherwise avoids. */
   @media print {
     body { padding: 0; }
     .panel { break-inside: avoid; page-break-inside: avoid; }
@@ -661,7 +668,12 @@ const buildWaterfallItems = (reqs, mode) => {
   let visualRowIdx = 0;
   for (const { label, entries } of sections) {
     if (entries.length === 0) continue;
-    items.push({ kind: "header", label });
+    // visualRowIdx is a running counter across sections, assigned in order
+    // below, so it's monotonically increasing within a section: if the
+    // section's first row is already past the print clip cutoff (see
+    // wf-row-print-clip below), every row in it is too, and the header
+    // above them would otherwise print as an orphan with no rows under it.
+    items.push({ kind: "header", label, allRowsClipped: visualRowIdx >= 20 });
     for (const { req, origIdx } of entries) items.push({ kind: "row", req, origIdx, visualRowIdx: visualRowIdx++ });
   }
   return items;
@@ -1119,7 +1131,7 @@ function renderWaterfall() {
 
   for (const item of waterfallItems) {
     if (item.kind === "header") {
-      const secHeader = el("div", "wf-section-header");
+      const secHeader = el("div", `wf-section-header${item.allRowsClipped ? " wf-row-print-clip" : ""}`);
       secHeader.appendChild(el("div", "lbl", escHtml(item.label)));
       secHeader.appendChild(el("div", "rule"));
       body.appendChild(secHeader);
