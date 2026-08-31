@@ -282,11 +282,129 @@
   /* Sampled-load title inside the waterfall panel. v1 rendered this as the page
      <h1>; here the panel <h2> owns the heading, so this is a lead-sized label. */
   .wf-instance-title { font-size: var(--wf-text-lead); font-weight: 600; margin-bottom: 2px; }
+
+  /* ── Aggregate sections ────────────────────────────────────────
+     One table idiom for all five aggregate tables. Deliberately the same
+     row language as the waterfall: 26px-ish rows, a hairline per row rather
+     than zebra, the same hover wash, tabular numerals on every figure. */
+  .panel-note { color: var(--text-subdued); font-size: var(--wf-text-small); margin: -8px 0 var(--dt-space-16); }
+  .panel-note strong { color: var(--text-default); font-variant-numeric: tabular-nums; }
+  .table-scroll { overflow-x: auto; }
+  .agg-table { width: 100%; border-collapse: collapse; font-size: var(--wf-text-small); }
+  .agg-table th {
+    text-align: left; padding: 0 8px 6px; white-space: nowrap;
+    font-size: var(--wf-text-micro); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--text-subdued); border-bottom: 1px solid var(--border-default);
+  }
+  .agg-table td { padding: 5px 8px; border-bottom: 1px solid var(--border-subdued); vertical-align: middle; }
+  .agg-table tbody tr:last-child td { border-bottom: none; }
+  .agg-table tbody tr:hover { background: var(--bg-container-primary); }
+  /* width: 1% shrinks numeric columns to their content, so the slack lands in
+     the label column and the figures stay a single scannable block on the
+     right instead of drifting apart as the viewport widens. */
+  .agg-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; width: 1%; }
+  .agg-table .lead { font-size: var(--wf-text-body); font-weight: 600; }
+  .agg-table .path { font-family: var(--dt-font-mono); color: var(--text-default); white-space: nowrap; }
+  .agg-table .nil { color: var(--text-disabled); }
+
+  /* Coverage meter — the report's one signature device, and the reason v2
+     exists: it turns "loads" from a numeric column you skim past into a bar
+     you scan down. Neutral ink, not a status hue: prevalence is not good or
+     bad, it is how much of the population a row speaks for. The figure is
+     always printed beside the bar, so the bar never carries the value alone. */
+  .cov { display: flex; align-items: center; gap: 8px; min-width: 190px; }
+  .cov-track {
+    position: relative; flex: 1 1 70px; min-width: 56px; height: 9px;
+    border-radius: 5px; background: var(--dt-bg-base);
+    border: 1px solid color-mix(in srgb, var(--dt-text-secondary) 30%, var(--dt-border-default));
+    overflow: hidden;
+  }
+  .cov-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--text-subdued); }
+  .cov-text { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text-default); }
+  .cov-text .of { color: var(--text-subdued); }
+  .chip {
+    display: inline-block; border: 1px solid var(--border-default); border-radius: 3px;
+    padding: 0 4px; font-size: var(--wf-text-micro); font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-subdued);
+    background: var(--bg-surface); white-space: nowrap;
+  }
+  .chip.rare { border-color: color-mix(in srgb, var(--dt-text-secondary) 45%, var(--dt-border-default)); }
+
+  .rating { font-weight: 600; }
+  .rating .word { font-size: var(--wf-text-micro); text-transform: uppercase; letter-spacing: 0.06em; margin-left: 6px; }
+
+  /* TTFB phase bar. Five ordered stages of one duration, so a single-hue
+     sequential ramp keyed to time order, not five categorical hues — there is
+     no five-hue token set here, and stage order is real information. Adjacent
+     steps sit ~1.3:1 apart, so separation comes from the 2px surface gap and
+     the direct-labelled legend, never from hue alone. Every step clears 3:1
+     against the panel surface, so the thinnest segment is still visible. */
+  .ttfb-bar { gap: 2px; height: 20px; border-radius: 4px; background: var(--bg-surface); }
+  .ttfb-legend { gap: 4px 20px; margin-top: 10px; font-size: var(--wf-text-small); }
+  .ttfb-legend-item .k { color: var(--text-subdued); }
+  .ttfb-legend-item .v { font-variant-numeric: tabular-nums; font-weight: 600; }
+
+  .empty-note { color: var(--text-subdued); font-size: var(--wf-text-small); font-style: italic; }
+  .skipped-banner {
+    padding: var(--dt-space-8) var(--dt-space-16); margin-bottom: var(--dt-space-16);
+    border-radius: var(--dt-radius); font-size: var(--wf-text-small);
+    color: var(--warning); background: color-mix(in srgb, var(--warning) 8%, var(--dt-bg-base));
+    border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
+  }
+  .skipped-banner code { font-family: var(--dt-font-mono); }
 </style>
 </head>
 <body>
 <h1>Full Page Analysis — {{PAGE_TITLE}}</h1>
 <p>Generated {{GENERATED_AT}}</p>
+
+<div id="skipped-slot"></div>
+
+<!-- Aggregate sections. Every figure below is cross-session; the waterfall at
+     the foot of the page is the only single-load view in the report. Each
+     renderer writes into its own slot id, matching the waterfall's contract. -->
+<section class="panel" id="cwv-panel">
+  <h2>Core Web Vitals</h2>
+  <p class="panel-note" id="cwv-note"></p>
+  <div class="table-scroll" id="cwv-slot"></div>
+</section>
+
+<section class="panel" id="ttfb-panel">
+  <h2>Time to first byte phases</h2>
+  <p class="panel-note" id="ttfb-note"></p>
+  <div id="ttfb-slot"></div>
+</section>
+
+<section class="panel" id="slowest-panel">
+  <h2>Slowest resources</h2>
+  <p class="panel-note" id="slowest-note"></p>
+  <div class="table-scroll" id="slowest-slot"></div>
+</section>
+
+<section class="panel" id="heaviest-panel">
+  <h2>Heaviest resources</h2>
+  <p class="panel-note" id="heaviest-note"></p>
+  <div class="table-scroll" id="heaviest-slot"></div>
+</section>
+
+<section class="panel" id="thirdparty-panel">
+  <h2>Third-party domains</h2>
+  <p class="panel-note" id="thirdparty-note"></p>
+  <div class="table-scroll" id="thirdparty-slot"></div>
+</section>
+
+<section class="panel" id="mainthread-panel">
+  <h2>Long tasks and errors</h2>
+  <p class="panel-note" id="mainthread-note"></p>
+  <div id="longtasks-slot"></div>
+  <div id="errors-slot"></div>
+</section>
+
+<section class="panel" id="browserdevice-panel">
+  <h2>Browser and device</h2>
+  <p class="panel-note" id="browserdevice-note"></p>
+  <div class="table-scroll" id="browserdevice-slot"></div>
+</section>
 
 <section class="panel" id="waterfall-panel">
   <h2>Resource waterfall</h2>
@@ -1151,7 +1269,296 @@ function updateStickyPills() {
   }
 }
 
+// ═══ Aggregate sections ═══════════════════════════════════════════════
+// Everything below is cross-session. The waterfall above is one sampled load;
+// these panels are the page. Formatting goes through the waterfall's own
+// formatMs / formatBytes / escHtml and its msRating / RATING_COLORS pair, so
+// the two halves of the report speak the same language.
+
+const T = DATA.thresholds;
+// A null here means "the tenant did not report this metric", which is not the
+// same statement as zero. Every value in every aggregate section goes through
+// this, so the two can never be confused.
+const NIL = '<span class="nil">—</span>';
+const fmt = (v, f) => (v == null ? NIL : f(v));
+const fmtInt = (v) => fmt(v, (n) => Math.round(n).toLocaleString());
+// Both tails carry the signal and both round away under Math.round: a 0.4%
+// error rate is not 0%, and 76,783 of 76,962 loads is not "100%" — the 179
+// loads without a long task are the difference between "always" and "nearly
+// always". So the ends keep a decimal place and only the middle rounds whole.
+const fmtPct = (v) => {
+  if (v == null) return NIL;
+  const pct = v * 100;
+  if (pct > 0 && pct < 0.1) return "&lt; 0.1%";
+  if (pct < 10 || (pct > 90 && pct < 100)) return parseFloat(pct.toFixed(1)) + "%";
+  return Math.round(pct) + "%";
+};
+const truncate = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+
+function ratingCell(value, thresholdKey, format) {
+  if (value == null) return NIL;
+  const rating = msRating(value, T[thresholdKey]);
+  const word = { good: "Good", "needs-improvement": "Needs work", poor: "Poor" }[rating];
+  // Never colour alone: the rating word rides alongside the coloured figure.
+  return `<span class="rating" style="color:${RATING_COLORS[rating]}">${escHtml(format(value))}` +
+         `<span class="word">${word}</span></span>`;
+}
+
+// The signature device. `loads` against the page's total load count is the one
+// number that separates a page-wide problem from one unlucky load, so it gets a
+// bar in the second column rather than a digit in a narrow numeric one.
+// `markRare` is on for resources and third parties, where the question the
+// column answers is "does this finding describe the page". It is off for the
+// browser/device split, where the same low share means a small but perfectly
+// real audience segment, not an unreliable measurement.
+function coverageCell(loads, total, markRare) {
+  if (loads == null || !total) return NIL;
+  const share = loads / total;
+  const rare = markRare && share < T.prevalence.rare;
+  return `<div class="cov">` +
+    `<div class="cov-track"><div class="cov-fill" style="width:${(Math.min(share, 1) * 100).toFixed(1)}%"></div></div>` +
+    `<span class="cov-text"><strong>${fmtPct(share)}</strong> ` +
+    `<span class="of">${Math.round(loads).toLocaleString()} of ${Math.round(total).toLocaleString()}</span></span>` +
+    (rare ? `<span class="chip rare" title="Below ${Math.round(T.prevalence.rare * 100)}% of loads — too few to generalise from">rare</span>` : "") +
+    `</div>`;
+}
+
+function aggTable(cols, rows) {
+  const head = cols.map((c) => `<th class="${c.num ? "num" : ""}">${escHtml(c.label)}</th>`).join("");
+  const body = rows.map((r) =>
+    `<tr>${cols.map((c) => `<td class="${c.num ? "num " : ""}${c.cls || ""}">${c.cell(r)}</td>`).join("")}</tr>`
+  ).join("");
+  return `<table class="agg-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+const setSlot = (id, html) => { document.getElementById(id).innerHTML = html; };
+const emptyNote = (why) => `<p class="empty-note">${escHtml(why)}</p>`;
+
+function renderSkipped() {
+  const files = DATA.skipped || [];
+  if (!files.length) return;
+  setSlot("skipped-slot",
+    `<div class="skipped-banner">Partial report — ${files.length} data file${files.length > 1 ? "s were" : " was"} ` +
+    `missing or empty and the matching section${files.length > 1 ? "s are" : " is"} incomplete: ` +
+    files.map((f) => `<code>${escHtml(f)}</code>`).join(", ") + `</div>`);
+}
+
+// ─── 1. Core Web Vitals ───────────────────────────────────────────────
+// A table, not a chart: five metrics on five incompatible scales (ms and an
+// unitless shift score) have no shared axis, and the reader's question is
+// "what is the number and is it acceptable", which is a lookup.
+const CWV_ROWS = [
+  { label: "LCP", name: "Largest contentful paint", key: "lcp", th: "lcpMs", fmt: formatMs },
+  { label: "FCP", name: "First contentful paint", key: "fcp", th: "fcpMs", fmt: formatMs },
+  { label: "INP", name: "Interaction to next paint", key: "inp", th: "inpMs", fmt: formatMs },
+  // clsRating hardcodes the same 0.1 / 0.25 boundaries THRESHOLDS now owns.
+  // msRating is the identical two-boundary comparator, so driving CLS through
+  // it keeps one source of truth instead of two that can drift apart.
+  // toFixed(3) alone prints this tenant's real 0.0001 as "0.000", which is a
+  // measured non-zero shown as no shift at all. Anything below the last
+  // displayed digit is labelled as such instead.
+  { label: "CLS", name: "Cumulative layout shift", key: "cls", th: "clsScore",
+    fmt: (v) => (v > 0 && v < 0.001 ? "< 0.001" : v.toFixed(3)) },
+  { label: "TTFB", name: "Time to first byte", key: "ttfb", th: "ttfbMs", fmt: formatMs },
+];
+function renderCwv() {
+  const c = DATA.cwv;
+  document.getElementById("cwv-note").innerHTML = c.loads == null
+    ? "No page summaries returned for this page."
+    : `Percentiles across <strong>${Math.round(c.loads).toLocaleString()}</strong> page loads. ` +
+      `p75 is the figure Core Web Vitals is assessed on.`;
+  setSlot("cwv-slot", aggTable([
+    { label: "Metric", cell: (r) => `<span class="lead">${escHtml(r.label)}</span> <span class="subdued">${escHtml(r.name)}</span>` },
+    { label: "p50", num: true, cell: (r) => fmt(c[r.key + "P50"], r.fmt) },
+    { label: "p75", num: true, cell: (r) => ratingCell(c[r.key + "P75"], r.th, r.fmt) },
+    { label: "p95", num: true, cell: (r) => ratingCell(c[r.key + "P95"], r.th, r.fmt) },
+  ], CWV_ROWS));
+}
+
+// ─── 2. TTFB phases ───────────────────────────────────────────────────
+const TTFB_PHASES = [
+  { key: "dnsP75", label: "DNS" },
+  { key: "connectionP75", label: "Connection" },
+  { key: "requestP75", label: "Request" },
+  { key: "waitingP75", label: "Waiting" },
+  { key: "cacheP75", label: "Cache" },
+];
+// Single-hue sequential ramp keyed to stage order. Each step clears 3:1 against
+// the panel surface so the thinnest segment stays visible; separation between
+// neighbours comes from the 2px surface gap, not from hue.
+const TTFB_RAMP = [
+  "color-mix(in srgb, var(--dt-primary) 70%, var(--dt-bg-base))",
+  "color-mix(in srgb, var(--dt-primary) 85%, var(--dt-bg-base))",
+  "var(--dt-primary)",
+  "color-mix(in srgb, var(--dt-text-primary) 40%, var(--dt-primary))",
+  "color-mix(in srgb, var(--dt-text-primary) 75%, var(--dt-primary))",
+];
+function renderTtfb() {
+  const p = DATA.ttfbPhases;
+  const present = TTFB_PHASES.map((ph, i) => ({ ...ph, value: p[ph.key], color: TTFB_RAMP[i] }))
+    .filter((ph) => ph.value != null);
+  const note = document.getElementById("ttfb-note");
+  if (!present.length) {
+    note.textContent = "";
+    setSlot("ttfb-slot", emptyNote("No connection-phase timings were reported for this page."));
+    return;
+  }
+  const sum = present.reduce((a, ph) => a + ph.value, 0);
+  const ttfbP75 = DATA.cwv.ttfbP75;
+  // Honesty over tidiness: independent p75s do not add up to the p75 of their
+  // sum, so the bar total is labelled as a sum of phase p75s and the measured
+  // TTFB p75 is printed next to it rather than being implied by the bar.
+  note.innerHTML =
+    `Phase p75s across <strong>${p.loads == null ? "—" : Math.round(p.loads).toLocaleString()}</strong> loads. ` +
+    `Percentiles are computed per phase and do not sum, so the bar totals ` +
+    `<strong>${formatMs(sum)}</strong> against a measured TTFB p75 of ` +
+    `<strong>${ttfbP75 == null ? "—" : formatMs(ttfbP75)}</strong>. Read the segments, not the total.`;
+  const total = sum || 1;
+  setSlot("ttfb-slot",
+    `<div class="ttfb-breakdown">` +
+      `<div class="ttfb-bar" role="img" aria-label="${escHtml(present.map((ph) => `${ph.label} ${formatMs(ph.value)}`).join(", "))}">` +
+      // Zero-length phases are real on fast origins (this tenant reports DNS,
+      // connection and cache all at 0 ms p75). They stay in the legend, where
+      // a sub-millisecond phase is a finding, but they get no segment — a 0 ms
+      // as a 2px sliver would read as a small non-zero one.
+      present.filter((ph) => ph.value > 0).map((ph) =>
+        `<div style="width:${(ph.value / total * 100).toFixed(2)}%;background:${ph.color}" title="${escHtml(ph.label)} ${escHtml(formatMs(ph.value))}"></div>`
+      ).join("") +
+      `</div>` +
+      `<div class="ttfb-legend">` +
+      present.map((ph) =>
+        `<span class="ttfb-legend-item"><span class="swatch" style="background:${ph.color}"></span>` +
+        `<span class="k">${escHtml(ph.label)}</span> <span class="v">${escHtml(formatMs(ph.value))}</span></span>`
+      ).join("") +
+      `</div></div>`);
+}
+
+// ─── 3 & 4. Slowest and heaviest resources ────────────────────────────
+const RESOURCE_COLS = [
+  { label: "Resource", cell: (r) => {
+      const path = r.path || "/";
+      return `<span class="path" title="${escHtml(path)}">${escHtml(truncate(path, 60))}</span>` +
+        (r.failures > 0 ? ` <span class="chip" style="color:var(--critical);border-color:color-mix(in srgb, var(--critical) 45%, transparent)">${r.failures.toLocaleString()} failed</span>` : "") +
+        (r.blocking > 0 ? ` <span class="chip">render blocking</span>` : "");
+    } },
+  { label: "Present in", cell: (r) => coverageCell(r.loads, DATA.loadCount, true) },
+  { label: "Domain", cell: (r) => escHtml(r.domain || "—") },
+  { label: "Type", cell: (r) => escHtml(r.initiatorType || "—") },
+  { label: "p50", num: true, cell: (r) => fmt(r.durationP50, formatMs) },
+  { label: "p75", num: true, cls: "lead", cell: (r) => fmt(r.durationP75, formatMs) },
+  { label: "p95", num: true, cell: (r) => fmt(r.durationP95, formatMs) },
+  { label: "Transfer p75", num: true, cell: (r) => fmt(r.transferP75, formatBytes) },
+];
+// Nulls sort last in both directions — an unreported figure is not a small one.
+const byDesc = (field) => (a, b) =>
+  (b[field] == null ? -Infinity : b[field]) - (a[field] == null ? -Infinity : a[field]);
+
+function renderResourceTable(slotId, noteId, field, blurb) {
+  const rows = [...DATA.resources].sort(byDesc(field)).slice(0, 20);
+  const note = document.getElementById(noteId);
+  if (!rows.length) {
+    note.textContent = "";
+    setSlot(slotId, emptyNote("No resource timings were returned for this page."));
+    return;
+  }
+  note.innerHTML = `${blurb} <strong>Present in</strong> is the share of the page's ` +
+    `${DATA.loadCount == null ? "—" : Math.round(DATA.loadCount).toLocaleString()} loads that requested this resource: ` +
+    `a slow figure over a full bar is a page problem, the same figure over a sliver is a handful of unlucky loads.`;
+  setSlot(slotId, aggTable(RESOURCE_COLS, rows));
+}
+
+// ─── 5. Third parties ─────────────────────────────────────────────────
+function renderThirdParty() {
+  let origin = null;
+  try { origin = new URL(summary.pageUrl).hostname; } catch { /* pageUrl may be a path */ }
+  const rows = DATA.thirdParty.filter((r) => r.domain && r.domain !== origin).sort(byDesc("transferP75"));
+  const note = document.getElementById("thirdparty-note");
+  if (!rows.length) {
+    note.textContent = "";
+    setSlot("thirdparty-slot", emptyNote(origin
+      ? `No requests to domains other than ${origin} were recorded for this page.`
+      : "No third-party requests were recorded for this page."));
+    return;
+  }
+  note.innerHTML = `${rows.length} domain${rows.length > 1 ? "s" : ""} other than ` +
+    `<strong>${escHtml(origin || "the page origin")}</strong>, by transfer size.`;
+  setSlot("thirdparty-slot", aggTable([
+    { label: "Domain", cell: (r) => `<span class="path">${escHtml(r.domain)}</span>` },
+    { label: "Present in", cell: (r) => coverageCell(r.loads, DATA.loadCount, true) },
+    { label: "Requests", num: true, cell: (r) => fmtInt(r.requests) },
+    { label: "Per load", num: true, cell: (r) => (r.loads ? (r.requests / r.loads).toFixed(1) : NIL) },
+    { label: "Duration p75", num: true, cls: "lead", cell: (r) => fmt(r.durationP75, formatMs) },
+    { label: "Transfer p75", num: true, cell: (r) => fmt(r.transferP75, formatBytes) },
+  ], rows));
+}
+
+// ─── 6. Long tasks and errors ─────────────────────────────────────────
+// Stat tiles rather than a chart: each of these is one number with a
+// denominator, which is the definition of a stat tile, not of a plot.
+const tile = (label, value, sub) =>
+  `<div class="metric-tile"><span class="label">${escHtml(label)}</span>` +
+  `<p class="value">${value}</p><span class="sub">${sub}</span></div>`;
+const rateTile = (label, count, denom, denomLabel) =>
+  tile(label, count == null || !denom ? NIL : fmtPct(count / denom),
+    count == null ? "not reported" : `${Math.round(count).toLocaleString()} of ${denom == null ? "—" : Math.round(denom).toLocaleString()} ${denomLabel}`);
+
+function renderMainThread() {
+  const lt = DATA.longTasks, er = DATA.errors;
+  document.getElementById("mainthread-note").innerHTML =
+    `Rates are over each measure's own denominator — long tasks over ` +
+    `<strong>${lt.loads == null ? "—" : Math.round(lt.loads).toLocaleString()}</strong> loads, ` +
+    `errors over <strong>${er.loads == null ? "—" : Math.round(er.loads).toLocaleString()}</strong>.`;
+  setSlot("longtasks-slot", `<div class="metrics-row">` +
+    rateTile("Loads with long tasks", lt.loadsWithLongTasks, lt.loads, "loads") +
+    tile("Long tasks per load", fmtInt(lt.countP75), "p75") +
+    tile("Average long task", fmt(lt.avgDurationP75, formatMs), "p75 of per-load average") +
+    `</div>`);
+  setSlot("errors-slot", `<div class="metrics-row">` +
+    rateTile("Loads with any error", er.loadsWithAnyError, er.loads, "loads") +
+    rateTile("Loads with a JS exception", er.loadsWithException, er.loads, "loads") +
+    rateTile("Loads with a 4xx", er.loadsWith4xx, er.loads, "loads") +
+    rateTile("Loads with a 5xx", er.loadsWith5xx, er.loads, "loads") +
+    tile("Exceptions", fmtInt(er.exceptionTotal), "total across all loads") +
+    tile("4xx responses", fmtInt(er.http4xxTotal), "total across all loads") +
+    tile("5xx responses", fmtInt(er.http5xxTotal), "total across all loads") +
+    `</div>`);
+}
+
+// ─── 7. Browser and device ────────────────────────────────────────────
+function renderBrowserDevice() {
+  const rows = [...DATA.browserDevice].sort(byDesc("loads"));
+  const note = document.getElementById("browserdevice-note");
+  if (!rows.length) {
+    note.textContent = "";
+    setSlot("browserdevice-slot", emptyNote("No browser or device breakdown was returned for this page."));
+    return;
+  }
+  // Share is against the rows' own total, not DATA.loadCount: this query counts
+  // page summaries, which is a different population from hard-navigation loads.
+  const total = rows.reduce((a, r) => a + (r.loads || 0), 0);
+  note.innerHTML = `<strong>${total.toLocaleString()}</strong> loads split by browser and device. ` +
+    `A segment with a materially worse LCP p75 than the bulk of traffic is a targeting problem, not a page-wide one.`;
+  setSlot("browserdevice-slot", aggTable([
+    { label: "Browser", cell: (r) => `<span class="lead">${escHtml(r.browser || "—")}</span>` },
+    { label: "Device", cell: (r) => escHtml(r.device || "—") },
+    { label: "Share of loads", cell: (r) => coverageCell(r.loads, total, false) },
+    { label: "LCP p75", num: true, cell: (r) => ratingCell(r.lcpP75, "lcpMs", formatMs) },
+  ], rows));
+}
+
+function renderAggregates() {
+  renderSkipped();
+  renderCwv();
+  renderTtfb();
+  renderResourceTable("slowest-slot", "slowest-note", "durationP75", "Top 20 by p75 duration.");
+  renderResourceTable("heaviest-slot", "heaviest-note", "transferP75", "Top 20 by p75 transfer size.");
+  renderThirdParty();
+  renderMainThread();
+  renderBrowserDevice();
+}
+
 function renderAll() {
+  renderAggregates();
   renderControls();
   renderWaterfall();
 }
