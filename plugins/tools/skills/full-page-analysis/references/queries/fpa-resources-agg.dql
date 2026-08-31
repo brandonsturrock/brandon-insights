@@ -1,0 +1,23 @@
+fetch user.events, from: {{.timeframe}}
+| filter frontend.name == "{{.frontend}}"
+| filter characteristics.has_request == true
+| join [
+    fetch user.events, from: {{.timeframe}}
+    | filter frontend.name == "{{.frontend}}"
+    | filter characteristics.has_user_action == true
+    | filter user_action.type == "hard_navigation"
+    | filter page.detected_name == "{{.page}}"
+    | summarize count(), by: {user_action.instance_id}
+  ], on: {user_action.instance_id}, prefix: "nav."
+| summarize
+    loads = countDistinctExact(user_action.instance_id),
+    requests = count(),
+    duration_p50 = percentile(toLong(duration), 50) / 1000000,
+    duration_p75 = percentile(toLong(duration), 75) / 1000000,
+    duration_p95 = percentile(toLong(duration), 95) / 1000000,
+    transfer_p75 = percentile(toLong(performance.transfer_size), 75),
+    blocking = countIf(performance.render_blocking_status == "blocking"),
+    failures = countIf(characteristics.has_failed_request == true),
+    by: {url.path, url.domain, performance.initiator_type}
+| sort loads desc
+| limit 100

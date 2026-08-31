@@ -1,0 +1,27 @@
+fetch user.events, from: {{.timeframe}}
+| filter frontend.name == "{{.frontend}}"
+| filter page.detected_name == "{{.page}}"
+| filter characteristics.has_user_action == true
+| filter user_action.type == "hard_navigation"
+| filter browser.name == "{{.browser}}"
+| filter lcp.status == "reported"
+| fieldsAdd lcp_ms = toLong(lcp.render_time)
+| filter lcp_ms >= {{.low_bound}} AND lcp_ms <= {{.high_bound}}
+| fields user_action.instance_id, view.instance_id, dt.rum.session.id, lcp_ms,
+         lcp.url, lcp.ui_element.tag_name,
+         ttfb.value, browser.name, browser.version,
+         device.type, os.name, timestamp
+| join [
+    fetch user.events, from: {{.timeframe}}
+    | filter frontend.name == "{{.frontend}}"
+    | filter characteristics.has_page_summary == true
+    | summarize count(), by: {view.instance_id, dt.rum.session.id}
+  ], on: {view.instance_id, dt.rum.session.id}, prefix: "page_summary."
+| join [
+    fetch user.events, from: {{.timeframe}}
+    | filter frontend.name == "{{.frontend}}"
+    | filter characteristics.has_request == true
+    | summarize count(), by: {user_action.instance_id, dt.rum.session.id}
+  ], on: {user_action.instance_id, dt.rum.session.id}, prefix: "requests."
+| sort lcp_ms asc
+| limit 1

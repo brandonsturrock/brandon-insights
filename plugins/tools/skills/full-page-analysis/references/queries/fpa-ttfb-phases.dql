@@ -1,0 +1,20 @@
+fetch user.events, from: {{.timeframe}}
+| filter frontend.name == "{{.frontend}}"
+| filter characteristics.has_page_summary == true
+| filter dt.rum.user_type == "real_user"
+| filter ttfb.status == "reported"
+| join [
+    fetch user.events, from: {{.timeframe}}
+    | filter frontend.name == "{{.frontend}}"
+    | filter characteristics.has_user_action == true
+    | filter user_action.type == "hard_navigation"
+    | filter page.detected_name == "{{.page}}"
+    | summarize count(), by: {view.instance_id, dt.rum.session.id}
+  ], on: {view.instance_id, dt.rum.session.id}, prefix: "nav."
+| summarize
+    loads = count(),
+    dns_p75 = percentile(toLong(ttfb.dns_duration), 75),
+    connection_p75 = percentile(toLong(ttfb.connection_duration), 75),
+    waiting_p75 = percentile(toLong(ttfb.waiting_duration), 75),
+    request_p75 = percentile(toLong(ttfb.request_duration), 75),
+    cache_p75 = percentile(toLong(ttfb.cache_duration), 75)

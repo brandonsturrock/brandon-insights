@@ -1,0 +1,6 @@
+fetch user.events, from: {{.timeframe}}
+| filter isNotNull(frontend.name)
+| summarize hard_navs = countIf(user_action.type == "hard_navigation"), by: {frontend.name}
+| filter hard_navs > 0
+| sort hard_navs desc
+| limit 30

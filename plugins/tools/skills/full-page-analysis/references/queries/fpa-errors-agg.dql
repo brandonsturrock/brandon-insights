@@ -1,0 +1,23 @@
+fetch user.events, from: {{.timeframe}}
+| filter frontend.name == "{{.frontend}}"
+| filter characteristics.has_page_summary == true
+| filter dt.rum.user_type == "real_user"
+| join [
+    fetch user.events, from: {{.timeframe}}
+    | filter frontend.name == "{{.frontend}}"
+    | filter characteristics.has_user_action == true
+    | filter user_action.type == "hard_navigation"
+    | filter page.detected_name == "{{.page}}"
+    | summarize count(), by: {view.instance_id, dt.rum.session.id}
+  ], on: {view.instance_id, dt.rum.session.id}, prefix: "nav."
+| summarize
+    loads = count(),
+    loads_with_any_error = countIf(toLong(error.exception_count) > 0
+                                or toLong(error.http_4xx_count) > 0
+                                or toLong(error.http_5xx_count) > 0),
+    loads_with_exception = countIf(toLong(error.exception_count) > 0),
+    loads_with_4xx = countIf(toLong(error.http_4xx_count) > 0),
+    loads_with_5xx = countIf(toLong(error.http_5xx_count) > 0),
+    exception_total = sum(toLong(error.exception_count)),
+    http_4xx_total = sum(toLong(error.http_4xx_count)),
+    http_5xx_total = sum(toLong(error.http_5xx_count))

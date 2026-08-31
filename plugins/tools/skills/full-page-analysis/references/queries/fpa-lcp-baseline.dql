@@ -1,0 +1,11 @@
+fetch user.events, from: {{.timeframe}}
+| filter frontend.name == "{{.frontend}}"
+| filter page.detected_name == "{{.page}}"
+| filter characteristics.has_user_action == true
+| filter user_action.type == "hard_navigation"
+| filter lcp.status == "reported"
+| summarize
+    p50_lcp = percentile(toLong(lcp.render_time), 50),
+    p75_lcp = percentile(toLong(lcp.render_time), 75),
+    p95_lcp = percentile(toLong(lcp.render_time), 95),
+    hard_navs = count()

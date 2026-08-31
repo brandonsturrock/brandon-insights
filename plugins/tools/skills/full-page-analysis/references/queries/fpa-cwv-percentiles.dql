@@ -1,0 +1,25 @@
+fetch user.events, from: {{.timeframe}}
+| filter frontend.name == "{{.frontend}}"
+| filter characteristics.has_page_summary == true
+| filter dt.rum.user_type == "real_user"
+| join [
+    fetch user.events, from: {{.timeframe}}
+    | filter frontend.name == "{{.frontend}}"
+    | filter characteristics.has_user_action == true
+    | filter user_action.type == "hard_navigation"
+    | filter page.detected_name == "{{.page}}"
+    | summarize count(), by: {view.instance_id, dt.rum.session.id}
+  ], on: {view.instance_id, dt.rum.session.id}, prefix: "nav."
+| fieldsAdd
+    lcp_ms = if(lcp.status == "reported", toLong(web_vitals.largest_contentful_paint) / 1000000, else: null),
+    fcp_ms = if(fcp.status == "reported", toLong(web_vitals.first_contentful_paint) / 1000000, else: null),
+    inp_ms = if(inp.status == "reported", toLong(web_vitals.interaction_to_next_paint) / 1000000, else: null),
+    cls_val = if(cls.status == "reported", toDouble(web_vitals.cumulative_layout_shift), else: null),
+    ttfb_ms = if(ttfb.status == "reported", toLong(ttfb.value), else: null)
+| summarize
+    loads = count(),
+    lcp_p50 = percentile(lcp_ms, 50), lcp_p75 = percentile(lcp_ms, 75), lcp_p95 = percentile(lcp_ms, 95),
+    fcp_p50 = percentile(fcp_ms, 50), fcp_p75 = percentile(fcp_ms, 75), fcp_p95 = percentile(fcp_ms, 95),
+    inp_p50 = percentile(inp_ms, 50), inp_p75 = percentile(inp_ms, 75), inp_p95 = percentile(inp_ms, 95),
+    cls_p50 = percentile(cls_val, 50), cls_p75 = percentile(cls_val, 75), cls_p95 = percentile(cls_val, 95),
+    ttfb_p50 = percentile(ttfb_ms, 50), ttfb_p75 = percentile(ttfb_ms, 75), ttfb_p95 = percentile(ttfb_ms, 95)

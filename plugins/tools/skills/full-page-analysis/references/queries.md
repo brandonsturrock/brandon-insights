@@ -1,5 +1,17 @@
 # Query file → output filename contract
 
+<!--
+Data-model probes resolved against `demo live` on 2026-08-31 (do not re-probe):
+- CLS on `user.events` is UNSCALED — `percentile(toDouble(web_vitals.cumulative_layout_shift), 75)`
+  over 41,917 easyTravel page summaries returned p75 = 0.0001, max = 0.9971, already a 0-1 score.
+  Do not divide by 10000. (Note: sibling skill `monthly-report` divides this same field by 10000
+  in `cm-cwv-tier.dql` and `cm-top-pages.dql` — that understates every CLS figure there by four
+  orders of magnitude. Out of scope for this branch; flagged for the maintainer.)
+- `duration` on `user.events` is NANOSECONDS — user action instance `552c90689fb8da5e` reports
+  `duration = 1439000000`, matching Dynatrace's built-in waterfall rendering of `1.44 s` for the
+  same action. The `/ 1000000` divisor used throughout these queries is correct.
+-->
+
 `build-report.mjs` reads the `--data` directory by these exact filenames.
 Run each query as:
 
@@ -13,3 +25,26 @@ Run each query as:
 | `fpa-instance-requests.dql` | `timeframe`, `ua_instance` | `instance-requests.json` |
 | `fpa-instance-exceptions.dql` | `timeframe`, `ua_instance` | `instance-exceptions.json` |
 | `fpa-instance-action.dql` | `timeframe`, `ua_instance` | `instance-action.json` |
+
+## Selection (run interactively by SKILL.md, not consumed by build-report.mjs)
+
+| Query file | Parameters |
+|---|---|
+| `fpa-frontends.dql` | `timeframe` |
+| `fpa-pages.dql` | `timeframe`, `frontend` |
+| `fpa-lcp-baseline.dql` | `timeframe`, `frontend`, `page` |
+| `fpa-top-browser.dql` | `timeframe`, `frontend`, `page` |
+| `fpa-select-instance.dql` | `timeframe`, `frontend`, `page`, `browser`, `low_bound`, `high_bound` |
+
+## Aggregate
+
+| Query file | Parameters | Output filename |
+|---|---|---|
+| `fpa-load-count.dql` | `timeframe`, `frontend`, `page` | `load-count.json` |
+| `fpa-cwv-percentiles.dql` | `timeframe`, `frontend`, `page` | `cwv-percentiles.json` |
+| `fpa-ttfb-phases.dql` | `timeframe`, `frontend`, `page` | `ttfb-phases.json` |
+| `fpa-resources-agg.dql` | `timeframe`, `frontend`, `page` | `resources-agg.json` |
+| `fpa-thirdparty-agg.dql` | `timeframe`, `frontend`, `page` | `thirdparty-agg.json` |
+| `fpa-longtasks-agg.dql` | `timeframe`, `frontend`, `page` | `longtasks-agg.json` |
+| `fpa-errors-agg.dql` | `timeframe`, `frontend`, `page` | `errors-agg.json` |
+| `fpa-browser-device.dql` | `timeframe`, `frontend`, `page` | `browser-device.json` |

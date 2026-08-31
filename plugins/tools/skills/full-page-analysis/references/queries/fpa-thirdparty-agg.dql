@@ -1,0 +1,24 @@
+fetch user.events, from: {{.timeframe}}
+| filter frontend.name == "{{.frontend}}"
+| filter characteristics.has_request == true
+| join [
+    fetch user.events, from: {{.timeframe}}
+    | filter frontend.name == "{{.frontend}}"
+    | filter characteristics.has_user_action == true
+    | filter user_action.type == "hard_navigation"
+    | filter page.detected_name == "{{.page}}"
+    | summarize count(), by: {user_action.instance_id}
+  ], on: {user_action.instance_id}, prefix: "nav."
+| summarize
+    per_load_duration = sum(toLong(duration)) / 1000000,
+    per_load_transfer = sum(toLong(performance.transfer_size)),
+    per_load_requests = count(),
+    by: {url.domain, user_action.instance_id}
+| summarize
+    loads = count(),
+    requests = sum(per_load_requests),
+    duration_p75 = percentile(per_load_duration, 75),
+    transfer_p75 = percentile(per_load_transfer, 75),
+    by: {url.domain}
+| sort duration_p75 desc
+| limit 40

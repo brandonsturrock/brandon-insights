@@ -1,0 +1,9 @@
+fetch user.events, from: {{.timeframe}}
+| filter frontend.name == "{{.frontend}}"
+| filter page.detected_name == "{{.page}}"
+| filter characteristics.has_user_action == true
+| filter user_action.type == "hard_navigation"
+| filter lcp.status == "reported"
+| summarize loads = count(), by: {browser.name}
+| sort loads desc
+| limit 1

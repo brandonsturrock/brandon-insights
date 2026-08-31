@@ -1,0 +1,6 @@
+fetch user.events, from: {{.timeframe}}
+| filter frontend.name == "{{.frontend}}"
+| filter characteristics.has_user_action == true
+| filter user_action.type == "hard_navigation"
+| filter page.detected_name == "{{.page}}"
+| summarize loads = countDistinctExact(user_action.instance_id)
