@@ -58,6 +58,15 @@ const raw = {
 };
 const data = { instance: normalizeRaw(raw) };
 
+const actionRow = loadRecords(args.data, "instance-action.json")[0] || {};
+data.instance.action = {
+  name: actionRow["user_action.name"] ?? null,
+  type: actionRow["user_action.type"] ?? null,
+  durationMs: actionRow.duration != null ? Number(actionRow.duration) / 1e6 : null,
+  startAbsoluteMs: actionRow.start_time ? Date.parse(actionRow.start_time) : null,
+  endAbsoluteMs: actionRow.end_time ? Date.parse(actionRow.end_time) : null,
+};
+
 const template = fs.readFileSync(path.join(SKILL_ROOT, "assets", "report.html.tmpl"), "utf8");
 const tokens = fs.readFileSync(path.join(SKILL_ROOT, "assets", "strato-tokens.css"), "utf8");
 const chartJs = fs

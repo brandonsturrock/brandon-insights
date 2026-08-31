@@ -12,3 +12,4 @@ Run each query as:
 | `fpa-instance-summary.dql` | `timeframe`, `view_instance` | `instance-summary.json` |
 | `fpa-instance-requests.dql` | `timeframe`, `ua_instance` | `instance-requests.json` |
 | `fpa-instance-exceptions.dql` | `timeframe`, `ua_instance` | `instance-exceptions.json` |
+| `fpa-instance-action.dql` | `timeframe`, `ua_instance` | `instance-action.json` |
