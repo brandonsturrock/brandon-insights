@@ -1559,22 +1559,20 @@ Create `scripts/lib/findings.mjs`:
 // Every rule must cite the numbers it fired on in `evidence` — a finding
 // without numbers is not actionable and does not belong here.
 
-export const THRESHOLDS = {
-  lcp:  { good: 2500, poor: 4000 },
-  fcp:  { good: 1800, poor: 3000 },
-  inp:  { good: 200,  poor: 500 },
-  cls:  { good: 0.1,  poor: 0.25 },
-  ttfb: { good: 800,  poor: 1800 },
+// THRESHOLDS already exists — Task 6 created it. Do NOT redefine it; ADD the
+// four rule-only keys below to the existing object, leaving the web-vital
+// entries and `prevalence` exactly as Task 6 left them:
+//
+//   lcp/fcp/inp/ttfb/cls: { good, poor }
+//   prevalence: { widespread: 0.5, rare: 0.05 }
+//
+// Rules read `THRESHOLDS.prevalence.widespread`, NOT a bare `THRESHOLDS.prevalence`.
   resourceSlowMs: 500,
   thirdPartySlowMs: 200,
-  // A resource matters only if it appears in most loads. Below this share of
-  // page loads it is noise, not a page-wide problem.
-  prevalence: 0.5,
   // A browser/device segment is an outlier if its LCP p75 exceeds the blended
   // p75 by this factor and it carries at least this share of loads.
   segmentRatio: 1.5,
   segmentMinShare: 0.05,
-};
 
 const num = (v) => (typeof v === "number" && !Number.isNaN(v) ? v : null);
 const pct = (n, d) => (d ? Math.round((n / d) * 100) : 0);
@@ -1631,7 +1629,7 @@ export function computeFindings(data) {
     });
   }
 
-  const prevalent = (r) => pageLoads > 0 && r.loads / pageLoads >= THRESHOLDS.prevalence;
+  const prevalent = (r) => pageLoads > 0 && r.loads / pageLoads >= THRESHOLDS.prevalence.widespread;
 
   const blockers = (data.resources || [])
     .filter((r) => r.blocking > 0 && prevalent(r))
@@ -1642,7 +1640,7 @@ export function computeFindings(data) {
       id: "render-blocking",
       severity: "high",
       title: "Render-blocking resources on most loads",
-      evidence: `${blockers.length} render-blocking resource(s) appear in at least ${Math.round(THRESHOLDS.prevalence * 100)}% of ${pageLoads} loads. Slowest: ` +
+      evidence: `${blockers.length} render-blocking resource(s) appear in at least ${Math.round(THRESHOLDS.prevalence.widespread * 100)}% of ${pageLoads} loads. Slowest: ` +
         top.map((r) => `${r.domain}${r.path} (p75 ${Math.round(num(r.durationP75) ?? 0)}ms, ${r.loads} loads)`).join("; ") + ".",
     });
   }
