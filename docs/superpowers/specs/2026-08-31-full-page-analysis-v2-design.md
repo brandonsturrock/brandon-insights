@@ -48,7 +48,7 @@ template in `assets/`, and the existing `render-pdf.sh` / `render-pdf.ps1`
 Chrome-headless PDF path.
 
 The W3C resource-timing normalization from v1 (`normalizeRaw()`, lines
-275–530 of `assets/template.html`) is ported rather than rewritten, then
+275–363 of `assets/template.html`) is ported rather than rewritten, then
 validated against ground truth before anything is built on top of it. This
 turns the correctness risk into a gate instead of a rewrite.
 
@@ -81,8 +81,9 @@ full-page-analysis/
     render-pdf.ps1
 ```
 
-Findings rules stay inside `build-report.mjs` rather than a separate module
-until that file becomes unwieldy. `normalize.mjs` is split out because it is
+Findings rules live in `scripts/lib/findings.mjs` rather than inside
+`build-report.mjs`: they need their own test target, and `build-report.mjs` is
+I/O-bound glue that is awkward to unit test. `normalize.mjs` is split out because it is
 the unit under test and must be runnable headless.
 
 ## Data flow
@@ -124,6 +125,20 @@ instance:
 - **Long tasks aggregate** — count and duration percentiles across sessions.
 - **Errors aggregate** — HTTP 4xx/5xx and exception rates across sessions.
 - **Browser and device split** — so a p75 driven by one browser is visible.
+
+**Page scoping.** v1 only ever filters on `page.detected_name` after
+`characteristics.has_user_action == true`, and the sibling `monthly-report`
+groups page summaries by a different field, `page.name`. Since there is no
+evidence that request or page-summary events carry `page.detected_name`, each
+aggregate instead joins to the page's hard-navigation user actions, reusing the
+join shape v1 already proves works. This costs a subquery per aggregate.
+
+**Unit hazards.** Two units are unsettled in this repo and are resolved by a
+probe against a live tenant before any aggregate query is committed: whether
+`web_vitals.cumulative_layout_shift` on the event needs the ×10,000 scaling the
+sibling skill applies (v1 says no), and whether `duration` on `user.events` is
+nanoseconds or milliseconds (v1 sidesteps the field entirely). Guessing either
+wrong silently corrupts every number in the report.
 
 A representative instance near p75 LCP is still selected using v1's ±15%
 range filter with a ±25% fallback. Its waterfall is labelled explicitly in

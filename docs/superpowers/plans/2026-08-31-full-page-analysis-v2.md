@@ -103,7 +103,9 @@ assert.equal(out.summary.inpMs, null);
 assert.equal(out.summary.ttfbMs, 420);
 assert.equal(out.summary.ttfbDnsMs, 12);
 
-// RELATIVE timings: fetch_start is small relative to start_time, left as-is
+// RELATIVE timings: fetch_start (5) is far below start_time (2e9), so isAbs is
+// false and the values pass through untouched. This branch is the whole reason
+// the Phase 1 gate exists — do not let both fixture requests take the same path.
 const rel = out.requests.find((r) => r.urlPath === "/relative.js");
 assert.equal(rel.fetchStartNs, 5);
 assert.equal(rel.responseEndNs, 180);
@@ -180,7 +182,7 @@ Create `assets/fixtures/instance-synthetic.json`:
       "http.response.status_code": 200,
       "http.request.method": "GET",
       "performance.render_blocking_status": "blocking",
-      "performance.start_time": "0",
+      "performance.start_time": "2000000000",
       "performance.fetch_start": "5",
       "performance.response_end": "180",
       "characteristics.has_w3c_resource_timings": true
@@ -224,11 +226,10 @@ Expected: FAIL — `Cannot find module '.../scripts/lib/normalize.mjs'`.
 mkdir -p scripts/lib
 ```
 
-Copy lines 275–363 of `assets/template.html` — the whole `function normalizeRaw(raw) { ... }` body, from `function normalizeRaw` through its closing `}` — into `scripts/lib/normalize.mjs`. Make exactly three changes and nothing else:
+Copy lines 275–363 of `assets/template.html` — the whole `function normalizeRaw(raw) { ... }` body, from `function normalizeRaw` through its closing `}` — into `scripts/lib/normalize.mjs`. Make exactly two changes and nothing else:
 
 1. Prefix the function with `export`, so the first line reads `export function normalizeRaw(raw) {`.
-2. Add `"use strict";` is unnecessary in ESM — omit it if you copied it in.
-3. Change `raw.requests.map(...)` to `(raw.requests || []).map(...)` so a missing key throws a clear assertion failure rather than a TypeError.
+2. Change `raw.requests.map(...)` to `(raw.requests || []).map(...)`, so an instance whose request query returned nothing renders an empty waterfall instead of throwing a TypeError.
 
 Do not rename variables, reorder fields, or "clean up" the logic. This is a verbatim port; behavioural changes come only from the Phase 1 gate, and they arrive as tested fixes.
 
@@ -271,7 +272,23 @@ tar xzf dynatrace-strato-design-tokens-*.tgz
 find package -name '*.css' -o -name '*.json' | head -20
 ```
 
-Read the light-theme and dark-theme values for these Strato roles:
+**The role names below are a starting guess, not verified.** Only
+`Colors.Text.Primary.Default` and `Colors.Background.Container.Success.Default`
+are attested anywhere in this repo (`dt-ui-wizard/references/foundations.md:84`);
+the rest were inferred from the `Category.Role.Semantic.State` naming convention
+documented on the same line. So: first list what the package actually exports —
+
+```bash
+grep -rhoE '"[A-Za-z]+\.[A-Za-z.]+"' package/ | sort -u | head -60
+```
+
+— then map real exported paths onto the CSS property names below, which are
+fixed. Where the guessed role does not exist, substitute the nearest real one and
+record the substitution in a comment. If `npm pack` fails because the package is
+private or unpublished, **stop and ask the maintainer for the token values**; do
+not proceed by inventing hex.
+
+Guessed mapping, to be corrected against the real export list:
 
 | Strato role | CSS custom property |
 |---|---|
@@ -286,7 +303,8 @@ Read the light-theme and dark-theme values for these Strato roles:
 | `Colors.Text.Success.Default` | `--dt-success` |
 | `Colors.Text.Primary.Accent` | `--dt-primary` |
 
-If a role name has drifted in the installed package version, pick the nearest equivalent and record the substitution in a comment in the CSS file. Do not invent hex values — every value in this file must be traceable to the package.
+Do not invent hex values — every value in this file must be traceable to a role
+the package actually exports.
 
 - [ ] **Step 2: Write the stylesheet**
 
@@ -308,7 +326,9 @@ Create `assets/strato-tokens.css` with the extracted values. Structure it exactl
   --dt-success:            /* Colors.Text.Success.Default */;
   --dt-primary:            /* Colors.Text.Primary.Accent */;
 
-  --dt-font-sans: "Bitstream Vera Sans", "DejaVu Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Use the font stack the package's typography tokens specify. The stack below
+     is a placeholder — replace it with the real one before committing. */
+  --dt-font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
   --dt-font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
 
   --dt-radius: 4px;
@@ -482,8 +502,12 @@ function parseArgs(argv) {
 // dtctl -o json --agent --spill=never emits rows under result.records when
 // result.kind === "records". Accept a bare array too — the envelope shape is
 // not pinned 1:1 anywhere. Same defensive parse as monthly-report.
+// Missing or empty files are tolerated and reported, not fatal: SKILL.md
+// backgrounds every dtctl invocation, and one failure must not lose the report.
+export const skipped = [];
 function loadRecords(dataDir, filename) {
   const p = path.join(dataDir, filename);
+  if (!fs.existsSync(p) || fs.statSync(p).size === 0) { skipped.push(filename); return []; }
   const parsed = JSON.parse(fs.readFileSync(p, "utf8"));
   if (Array.isArray(parsed)) return parsed;
   const result = parsed.result ?? parsed;
@@ -510,8 +534,10 @@ const chartJs = fs
   .readFileSync(path.join(SKILL_ROOT, "assets", "chart.umd.min.js"), "utf8")
   .replace(/\/\/# sourceMappingURL=\S+/g, "");
 
+const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
 let html = template
-  .split("{{PAGE_TITLE}}").join(args["page-title"])
+  .split("{{PAGE_TITLE}}").join(esc(args["page-title"]))
   .split("{{GENERATED_AT}}").join(new Date().toISOString().slice(0, 10))
   .split("{{STRATO_TOKENS}}").join(tokens)
   .replace("{{DATA_JSON}}", () =>
@@ -554,8 +580,22 @@ Create `assets/report.html.tmpl`. Its head is:
 <section class="panel" id="waterfall-panel">
   <h2>Resource waterfall</h2>
   <p class="example-note">Single example load — not a page-wide measurement.</p>
-  <div id="waterfall"></div>
+  <!-- Slot ids are a hard contract with the ported renderers: renderControls
+       writes to #controls-slot, renderWaterfall to #waterfall-slot,
+       #longtask-labels-slot, #legend-slot and #lcp-slot, and the hover handlers
+       to #tooltip, #line-tooltip and #ex-tooltip. Renaming any of them breaks
+       the port silently. #metrics-slot and #findings-slot are deliberately
+       absent — Phase 2 and Phase 3 replace those two panels. -->
+  <div id="warn-banner-slot"></div>
+  <div id="controls-slot"></div>
+  <div id="waterfall-slot"></div>
+  <div id="longtask-labels-slot"></div>
+  <div id="legend-slot"></div>
+  <div id="lcp-slot"></div>
 </section>
+<div id="tooltip" class="tooltip"></div>
+<div id="line-tooltip" class="tooltip"></div>
+<div id="ex-tooltip" class="tooltip"></div>
 
 <script src="chart.umd.min.js"></script>
 <script>
@@ -566,12 +606,29 @@ const { summary, requests, exceptions } = DATA.instance;
 </html>
 ```
 
-Then port the waterfall rendering from `assets/template.html` lines 364–1317 into the second `<script>` block, below the `DATA` destructure. Port these top-level units, in this order, unchanged apart from what is listed below: the formatting helpers (`formatMs`, `formatBytes`, `escHtml`), the resource type and colour resolution (`RESOURCE_COLORS`, `EXT_TYPE_MAP`, `typeFromExtension`, `resolveType`), `positionTooltip`, `hideTooltip`, `buildResourceTooltipHtml`, `attachBarHover`, `attachLineHover`, `attachExceptionHover`, `renderControls`, `renderWaterfall`, `updateStickyPills`, and `renderAll`. Skip `renderMetricsPanel` and `renderFindings` — Phase 2 and Phase 3 replace both with aggregate-driven equivalents.
+Port from `assets/template.html` in two pieces. Do not hand-pick functions — the
+renderers depend on helpers (`el`, `resourceColors`, `resourceLabel`,
+`isCacheLike`, `buildPhaseMarkers`, `groupPhaseMarkers`, `buildTicks`,
+`lcpMatchesRequest`, `buildWaterfallItems`, `clsRating`, `msRating`), on the
+mutable `state` object at line 858, and on the bootstrap block at lines
+1307–1314 that creates `#sticky-pills` and attaches the scroll and resize
+listeners. Omitting any of them yields a blank page.
 
-Two required changes during the port:
+1. **CSS.** Copy lines 6–248 (the whole first `<style>` block) into a third
+   `<style>` element, after the Strato tokens and the layout styles above, so
+   the tooltip, pill, and waterfall rules the ported code relies on are present.
+2. **JavaScript.** Copy lines 364–1314 into the second `<script>` block, below
+   the `DATA` destructure, **omitting exactly two spans**: the
+   `(function renderMetricsPanel() { ... })();` IIFE at lines 532–627 and the
+   `(function renderFindings() { ... })();` IIFE at lines 628–679. Phase 2 and
+   Phase 3 replace both with aggregate-driven equivalents. Keep everything else,
+   including `clsRating`, `msRating`, and `RATING_COLORS` at lines 528–530 —
+   Task 6 reuses them for the Core Web Vitals table.
 
-1. Delete the `const _RAW = JSON.parse(document.getElementById("wf-data").textContent); const DATA = _RAW.__raw ? normalizeRaw(...) : _RAW;` lines. Normalization now happens in Node, and the template receives already-normalized data.
-2. Replace the hardcoded hex colours in the *chrome* — panel backgrounds, borders, body text, gridlines — with the `var(--dt-*)` properties from Task 2. Leave `RESOURCE_COLORS` and `STALL_COLOR` as literal hex: they are a categorical data palette, not UI chrome, and changing them is a separate visual decision for the maintainer at the gate.
+Then make two changes:
+
+1. Delete the `const _RAW = JSON.parse(document.getElementById("wf-data").textContent); const DATA = _RAW.__raw ? normalizeRaw(...) : _RAW;` lines at 365–367. Normalization now happens in Node, and the template receives already-normalized data. The `<script id="wf-data">` element goes away with them.
+2. In the copied CSS block, redefine the v1 custom properties it uses — `--text-default`, `--text-subdued`, `--border-subdued`, `--good`, `--warning`, `--critical` — in terms of the Task 2 tokens (e.g. `--text-default: var(--dt-text-primary);`) rather than editing each rule. Leave `RESOURCE_COLORS` and `STALL_COLOR` as literal hex: they are a categorical data palette, not UI chrome, and restyling them is a separate visual decision for the maintainer at the gate.
 
 Copy Chart.js in:
 
@@ -599,7 +656,7 @@ node scripts/build-report.mjs --data /tmp/fpa-synthetic --page-title "/" --out /
 Expected: `Wrote /tmp/fpa-synthetic/report.html`. Then:
 
 ```bash
-grep -c "chart.umd.min.js" /tmp/fpa-synthetic/report.html
+grep -c "chart.umd.min.js" /tmp/fpa-synthetic/report.html || true
 ```
 
 Expected: `0` — the `<script src=...>` tag was replaced by the inlined library, so no external reference remains.
@@ -658,11 +715,31 @@ open /tmp/fpa-real/report.html
 
 - [ ] **Step 3: Hand the gate to the maintainer**
 
-Tell the maintainer: the rendered waterfall is at `/tmp/fpa-real/report.html`, for instance `UA_ID`. Ask them to open the same instance in the built-in Dynatrace waterfall and report, per resource, any disagreement in: bar start offset, bar total width, and the widths of the DNS / connect / TLS / request / response segments within the bar. **Stop and wait.** Do not proceed on the assumption that it matches.
+Tell the maintainer: the rendered waterfall is at `/tmp/fpa-real/report.html`, for
+instance `UA_ID`. Ask them to open the same instance in the built-in Dynatrace
+waterfall and compare, for the **ten slowest resources**:
+
+1. bar start offset relative to page start,
+2. bar total width,
+3. the per-phase segment widths within the bar (DNS, connect, TLS, request,
+   response) — **only if the built-in view exposes them**; if it does not, say so
+   and compare items 1 and 2 alone.
+
+**Tolerance: report anything off by more than 5 ms or 2% of the bar width,
+whichever is larger.** Rounding differences below that are not findings.
+
+**Stop and wait.** Do not proceed on the assumption that it matches.
 
 - [ ] **Step 4: Turn each reported discrepancy into a failing test**
 
-For every discrepancy the maintainer reports, add an assertion to `scripts/test-normalize.mjs` describing the *correct* value, sourced from the built-in waterfall. Sanitize and check in the captured payload as `assets/fixtures/instance-real.json` in the same `{ summary, requests, exceptions }` shape as the synthetic fixture — strip any hostnames, URLs, or query strings the maintainer flags as sensitive, keeping the timing fields untouched.
+For every discrepancy the maintainer reports, add an assertion to `scripts/test-normalize.mjs` describing the *correct* value, sourced from the built-in waterfall. Then build a **derived** fixture rather than committing the capture. This skill
+ships in a public marketplace plugin, so a real customer instance must not land
+in git. Write `assets/fixtures/instance-real.json` in the same
+`{ summary, requests, exceptions }` shape, keeping every timing field byte-for-byte
+from the capture and replacing every hostname, path, and query string with
+`example.com` equivalents. Have the maintainer confirm the redaction before you
+`git add` it. If any timing value is itself identifying, drop that request rather
+than keeping it.
 
 ```bash
 node scripts/test-normalize.mjs
@@ -671,6 +748,13 @@ node scripts/test-normalize.mjs
 Expected: FAIL on the new assertions.
 
 - [ ] **Step 5: Fix `normalize.mjs` until the tests pass**
+
+The likely culprits, in order: the `isAbs` heuristic
+(`fetchRaw > 0 && fetchRaw >= startNs - 1_000_000`) misclassifying a request, so
+every phase within one bar is offset; `norm()` returning `null` for a legitimate
+negative that should clamp to 0; and `nsToMs` treating a real `0` as
+"not reported". Check which of the three explains the reported deltas before
+editing anything.
 
 ```bash
 node scripts/test-normalize.mjs
@@ -696,6 +780,8 @@ git commit -m "fix(full-page-analysis): validate resource timings against built-
 **Files:**
 - Create: `references/queries/fpa-frontends.dql`
 - Create: `references/queries/fpa-pages.dql`
+- Create: `references/queries/fpa-lcp-baseline.dql`
+- Create: `references/queries/fpa-top-browser.dql`
 - Create: `references/queries/fpa-select-instance.dql`
 - Create: `references/queries/fpa-cwv-percentiles.dql`
 - Create: `references/queries/fpa-ttfb-phases.dql`
@@ -710,7 +796,57 @@ git commit -m "fix(full-page-analysis): validate resource timings against built-
 - Consumes: nothing from earlier tasks.
 - Produces: the output filenames listed in the table below; Task 6 reads exactly those names.
 
-- [ ] **Step 1: Write the selection queries**
+- [ ] **Step 1: Probe the data model before writing any aggregate query**
+
+Two units are genuinely unsettled in this repo and both silently corrupt every
+number downstream if guessed wrong. Resolve them against a live tenant first,
+using a frontend and page the maintainer names, and record the answers as a
+comment at the top of `references/queries.md`.
+
+**CLS scale.** `monthly-report/references/queries/cm-cwv-tier.dql` divides
+`web_vitals.cumulative_layout_shift` by 10000. v1 does not: `normalizeRaw`
+(`assets/template.html:296`) reads the field raw and `clsRating`
+(`template.html:528`) compares it directly to `0.1`. One of them is wrong, and
+commit `be4caf2` was itself a CLS-scaling fix, so this is live ground.
+
+```bash
+dtctl query -o json --agent --spill=never -f - <<'DQL' | grep '^{'
+fetch user.events, from: now()-24h
+| filter frontend.name == "FRONTEND"
+| filter characteristics.has_page_summary == true
+| filter cls.status == "reported"
+| summarize raw_p75 = percentile(toDouble(web_vitals.cumulative_layout_shift), 75), n = count()
+DQL
+```
+
+A `raw_p75` in the 0–1 range means the field is already a CLS score: use it
+unscaled. A value in the thousands means it needs `/ 10000`. Whichever way it
+falls, if it contradicts `cm-cwv-tier.dql`, tell the maintainer — the sibling
+skill has the same bug and should be fixed separately.
+
+**`duration` units.** `duration` on `user.events` is a DQL duration type;
+Dynatrace RUM docs describe these as nanoseconds. v1 sidesteps the field
+entirely, computing `durationMs` from the ISO `start_time`/`end_time` pair
+(`template.html:328`), so it offers no evidence either way.
+
+```bash
+dtctl query -o json --agent --spill=never -f - <<'DQL' | grep '^{'
+fetch user.events, from: now()-24h
+| filter frontend.name == "FRONTEND"
+| filter characteristics.has_request == true
+| fieldsAdd iso_ms = (toLong(end_time) - toLong(start_time)) / 1000000
+| fields duration, iso_ms
+| limit 5
+DQL
+```
+
+Compare `duration` against `iso_ms` on the same rows. If they agree, `duration`
+is already milliseconds; if `duration` is ~10⁶× larger, divide by `1000000`
+everywhere it is used. **Every percentile over `duration` in the queries below
+is written assuming nanoseconds — `/ 1000000`. If the probe says otherwise,
+remove the divisor from all of them.**
+
+- [ ] **Step 2: Write the selection queries**
 
 `references/queries/fpa-frontends.dql`:
 
@@ -735,6 +871,41 @@ fetch user.events, from: {{.timeframe}}
 | filterOut isNull(page.detected_name)
 | sort hard_navs desc
 | limit 20
+```
+
+`references/queries/fpa-lcp-baseline.dql` — supplies the p75 that
+`fpa-select-instance.dql`'s `low_bound` and `high_bound` are computed from. It
+must use `lcp.render_time` over hard-navigation events, matching the population
+`fpa-select-instance.dql` filters — **not** `fpa-cwv-percentiles.dql`'s
+`lcp_p75`, which is a different field over a different event type and would
+produce a window that matches nothing:
+
+```
+fetch user.events, from: {{.timeframe}}
+| filter frontend.name == "{{.frontend}}"
+| filter page.detected_name == "{{.page}}"
+| filter characteristics.has_user_action == true
+| filter user_action.type == "hard_navigation"
+| filter lcp.status == "reported"
+| summarize
+    p50_lcp = percentile(toLong(lcp.render_time), 50),
+    p75_lcp = percentile(toLong(lcp.render_time), 75),
+    p95_lcp = percentile(toLong(lcp.render_time), 95),
+    hard_navs = count()
+```
+
+`references/queries/fpa-top-browser.dql` — supplies `{{.browser}}`:
+
+```
+fetch user.events, from: {{.timeframe}}
+| filter frontend.name == "{{.frontend}}"
+| filter page.detected_name == "{{.page}}"
+| filter characteristics.has_user_action == true
+| filter user_action.type == "hard_navigation"
+| filter lcp.status == "reported"
+| summarize loads = count(), by: {browser.name}
+| sort loads desc
+| limit 1
 ```
 
 `references/queries/fpa-select-instance.dql` — `abs()` is not usable here: DQL returns null for arithmetic on string-typed numeric fields, so the near-p75 window is expressed as an explicit range. The two joins guarantee the returned instance has both a linked page summary and at least one request, which removes the need for a separate validation query.
@@ -769,22 +940,52 @@ fetch user.events, from: {{.timeframe}}
 | limit 1
 ```
 
-- [ ] **Step 2: Write the aggregate queries**
+- [ ] **Step 3: Write the aggregate queries**
 
-`fpa-cwv-percentiles.dql` — nanosecond web vitals are divided by 1e6; CLS is divided by 10000, matching `monthly-report/references/queries/cm-cwv-tier.dql`:
+**Page scoping.** v1 only ever filters on `page.detected_name` after
+`characteristics.has_user_action == true` (SKILL.md steps 2, 3, 4a, 4b), and
+`monthly-report` groups page summaries by a *different* field, `page.name`
+(`cm-top-pages.dql`). There is no evidence that request or page-summary events
+carry `page.detected_name` at all, and if they do not, every aggregate below
+returns zero rows. Rather than bet on a field name, each aggregate joins to the
+page's hard-navigation user actions — reusing the exact join shape v1 already
+proves works in `fpa-select-instance.dql`. Requests join on
+`user_action.instance_id`; page summaries join on
+`{view.instance_id, dt.rum.session.id}`.
+
+This costs a second subquery per aggregate. On a high-traffic page over 7 days
+that may be slow; if a query times out, narrow `{{.timeframe}}` rather than
+dropping the join.
+
+`fpa-cwv-percentiles.dql` — nanosecond web vitals are divided by 1e6. **CLS is
+not scaled**: v1 reads the event field raw (`template.html:296`, `528`). Apply
+the Step 1 probe's answer if it says otherwise.
+
+Each metric is guarded by its own `*.status == "reported"` check via `if(...)`,
+because an unreported metric is stored as `0` and would otherwise drag the
+percentile down. INP in particular is unreported on any load without an
+interaction, so an unguarded `inp_p75` sits near zero and the `slow-inp` rule
+never fires. `percentile()` skips nulls.
 
 ```
 fetch user.events, from: {{.timeframe}}
 | filter frontend.name == "{{.frontend}}"
-| filter page.detected_name == "{{.page}}"
 | filter characteristics.has_page_summary == true
 | filter dt.rum.user_type == "real_user"
+| join [
+    fetch user.events, from: {{.timeframe}}
+    | filter frontend.name == "{{.frontend}}"
+    | filter characteristics.has_user_action == true
+    | filter user_action.type == "hard_navigation"
+    | filter page.detected_name == "{{.page}}"
+    | summarize count(), by: {view.instance_id, dt.rum.session.id}
+  ], on: {view.instance_id, dt.rum.session.id}, prefix: "nav."
 | fieldsAdd
-    lcp_ms = toLong(web_vitals.largest_contentful_paint) / 1000000,
-    fcp_ms = toLong(web_vitals.first_contentful_paint) / 1000000,
-    inp_ms = toLong(web_vitals.interaction_to_next_paint) / 1000000,
-    cls_val = toDouble(web_vitals.cumulative_layout_shift) / 10000,
-    ttfb_ms = toLong(ttfb.value)
+    lcp_ms = if(lcp.status == "reported", toLong(web_vitals.largest_contentful_paint) / 1000000, else: null),
+    fcp_ms = if(fcp.status == "reported", toLong(web_vitals.first_contentful_paint) / 1000000, else: null),
+    inp_ms = if(inp.status == "reported", toLong(web_vitals.interaction_to_next_paint) / 1000000, else: null),
+    cls_val = if(cls.status == "reported", toDouble(web_vitals.cumulative_layout_shift), else: null),
+    ttfb_ms = if(ttfb.status == "reported", toLong(ttfb.value), else: null)
 | summarize
     loads = count(),
     lcp_p50 = percentile(lcp_ms, 50), lcp_p75 = percentile(lcp_ms, 75), lcp_p95 = percentile(lcp_ms, 95),
@@ -799,9 +1000,17 @@ fetch user.events, from: {{.timeframe}}
 ```
 fetch user.events, from: {{.timeframe}}
 | filter frontend.name == "{{.frontend}}"
-| filter page.detected_name == "{{.page}}"
 | filter characteristics.has_page_summary == true
+| filter dt.rum.user_type == "real_user"
 | filter ttfb.status == "reported"
+| join [
+    fetch user.events, from: {{.timeframe}}
+    | filter frontend.name == "{{.frontend}}"
+    | filter characteristics.has_user_action == true
+    | filter user_action.type == "hard_navigation"
+    | filter page.detected_name == "{{.page}}"
+    | summarize count(), by: {view.instance_id, dt.rum.session.id}
+  ], on: {view.instance_id, dt.rum.session.id}, prefix: "nav."
 | summarize
     loads = count(),
     dns_p75 = percentile(toLong(ttfb.dns_duration), 75),
@@ -811,39 +1020,72 @@ fetch user.events, from: {{.timeframe}}
     cache_p75 = percentile(toLong(ttfb.cache_duration), 75)
 ```
 
-`fpa-resources-agg.dql` — this is the core of the aggregate work. `sessions` is the count of distinct page loads that fetched the URL, which is what makes "slow in one unlucky load" distinguishable from "slow for everyone":
+`fpa-resources-agg.dql` — the core of the aggregate work. `loads` is the count of
+distinct page loads that fetched the resource, which is what makes "slow in one
+unlucky load" distinguishable from "slow for everyone".
+
+Two deliberate choices. Grouping is by **`url.path`**, not `url.full`: hashed and
+cache-busted filenames would otherwise each get their own row with `loads = 1`,
+and the `prevalence` rule in Task 7 would then discard every one of them —
+producing an empty findings section on exactly the pages that need it. And the
+sort is by `loads desc`, not `duration_p75 desc`, so the 100-row cut keeps the
+resources that appear on most loads rather than a tail of singletons; Task 7
+re-sorts by duration in memory.
 
 ```
 fetch user.events, from: {{.timeframe}}
 | filter frontend.name == "{{.frontend}}"
-| filter page.detected_name == "{{.page}}"
 | filter characteristics.has_request == true
+| join [
+    fetch user.events, from: {{.timeframe}}
+    | filter frontend.name == "{{.frontend}}"
+    | filter characteristics.has_user_action == true
+    | filter user_action.type == "hard_navigation"
+    | filter page.detected_name == "{{.page}}"
+    | summarize count(), by: {user_action.instance_id}
+  ], on: {user_action.instance_id}, prefix: "nav."
 | summarize
-    sessions = countDistinctExact(user_action.instance_id),
+    loads = countDistinctExact(user_action.instance_id),
     requests = count(),
-    duration_p50 = percentile(toLong(duration), 50),
-    duration_p75 = percentile(toLong(duration), 75),
-    duration_p95 = percentile(toLong(duration), 95),
+    duration_p50 = percentile(toLong(duration), 50) / 1000000,
+    duration_p75 = percentile(toLong(duration), 75) / 1000000,
+    duration_p95 = percentile(toLong(duration), 95) / 1000000,
     transfer_p75 = percentile(toLong(performance.transfer_size), 75),
     blocking = countIf(performance.render_blocking_status == "blocking"),
     failures = countIf(characteristics.has_failed_request == true),
-    by: {url.full, url.domain, performance.initiator_type}
-| sort duration_p75 desc
+    by: {url.path, url.domain, performance.initiator_type}
+| sort loads desc
 | limit 100
 ```
 
-`fpa-thirdparty-agg.dql`:
+`fpa-thirdparty-agg.dql` — the useful figure per domain is what that domain costs
+a *single load*, so this sums per load first and takes the percentile of those
+sums. Taking the percentile of individual request durations instead would
+understate a domain serving 30 small files, which is the common third-party
+shape:
 
 ```
 fetch user.events, from: {{.timeframe}}
 | filter frontend.name == "{{.frontend}}"
-| filter page.detected_name == "{{.page}}"
 | filter characteristics.has_request == true
+| join [
+    fetch user.events, from: {{.timeframe}}
+    | filter frontend.name == "{{.frontend}}"
+    | filter characteristics.has_user_action == true
+    | filter user_action.type == "hard_navigation"
+    | filter page.detected_name == "{{.page}}"
+    | summarize count(), by: {user_action.instance_id}
+  ], on: {user_action.instance_id}, prefix: "nav."
 | summarize
-    sessions = countDistinctExact(user_action.instance_id),
-    requests = count(),
-    duration_p75 = percentile(toLong(duration), 75),
-    transfer_p75 = percentile(toLong(performance.transfer_size), 75),
+    per_load_duration = sum(toLong(duration)) / 1000000,
+    per_load_transfer = sum(toLong(performance.transfer_size)),
+    per_load_requests = count(),
+    by: {url.domain, user_action.instance_id}
+| summarize
+    loads = count(),
+    requests = sum(per_load_requests),
+    duration_p75 = percentile(per_load_duration, 75),
+    transfer_p75 = percentile(per_load_transfer, 75),
     by: {url.domain}
 | sort duration_p75 desc
 | limit 40
@@ -854,8 +1096,16 @@ fetch user.events, from: {{.timeframe}}
 ```
 fetch user.events, from: {{.timeframe}}
 | filter frontend.name == "{{.frontend}}"
-| filter page.detected_name == "{{.page}}"
 | filter characteristics.has_page_summary == true
+| filter dt.rum.user_type == "real_user"
+| join [
+    fetch user.events, from: {{.timeframe}}
+    | filter frontend.name == "{{.frontend}}"
+    | filter characteristics.has_user_action == true
+    | filter user_action.type == "hard_navigation"
+    | filter page.detected_name == "{{.page}}"
+    | summarize count(), by: {view.instance_id, dt.rum.session.id}
+  ], on: {view.instance_id, dt.rum.session.id}, prefix: "nav."
 | summarize
     loads = count(),
     loads_with_long_tasks = countIf(toLong(long_task.all.count) > 0),
@@ -868,10 +1118,21 @@ fetch user.events, from: {{.timeframe}}
 ```
 fetch user.events, from: {{.timeframe}}
 | filter frontend.name == "{{.frontend}}"
-| filter page.detected_name == "{{.page}}"
 | filter characteristics.has_page_summary == true
+| filter dt.rum.user_type == "real_user"
+| join [
+    fetch user.events, from: {{.timeframe}}
+    | filter frontend.name == "{{.frontend}}"
+    | filter characteristics.has_user_action == true
+    | filter user_action.type == "hard_navigation"
+    | filter page.detected_name == "{{.page}}"
+    | summarize count(), by: {view.instance_id, dt.rum.session.id}
+  ], on: {view.instance_id, dt.rum.session.id}, prefix: "nav."
 | summarize
     loads = count(),
+    loads_with_any_error = countIf(toLong(error.exception_count) > 0
+                                or toLong(error.http_4xx_count) > 0
+                                or toLong(error.http_5xx_count) > 0),
     loads_with_exception = countIf(toLong(error.exception_count) > 0),
     loads_with_4xx = countIf(toLong(error.http_4xx_count) > 0),
     loads_with_5xx = countIf(toLong(error.http_5xx_count) > 0),
@@ -880,23 +1141,49 @@ fetch user.events, from: {{.timeframe}}
     http_5xx_total = sum(toLong(error.http_5xx_count))
 ```
 
+`fpa-load-count.dql` — the denominator for every request-scoped rule. Without it
+Task 7 would divide a distinct-`user_action.instance_id` count from the request
+queries by a page-summary `count()` from the CWV query, which are different
+populations and can yield a ratio above 1:
+
+```
+fetch user.events, from: {{.timeframe}}
+| filter frontend.name == "{{.frontend}}"
+| filter characteristics.has_user_action == true
+| filter user_action.type == "hard_navigation"
+| filter page.detected_name == "{{.page}}"
+| summarize loads = countDistinctExact(user_action.instance_id)
+```
+
 `fpa-browser-device.dql` — this exists so a p75 driven by one browser is visible rather than hidden in the blend:
 
 ```
 fetch user.events, from: {{.timeframe}}
 | filter frontend.name == "{{.frontend}}"
-| filter page.detected_name == "{{.page}}"
 | filter characteristics.has_page_summary == true
-| fieldsAdd lcp_ms = toLong(web_vitals.largest_contentful_paint) / 1000000
+| filter dt.rum.user_type == "real_user"
+| join [
+    fetch user.events, from: {{.timeframe}}
+    | filter frontend.name == "{{.frontend}}"
+    | filter characteristics.has_user_action == true
+    | filter user_action.type == "hard_navigation"
+    | filter page.detected_name == "{{.page}}"
+    | summarize count(), by: {view.instance_id, dt.rum.session.id}
+  ], on: {view.instance_id, dt.rum.session.id}, prefix: "nav."
+| fieldsAdd lcp_ms = if(lcp.status == "reported", toLong(web_vitals.largest_contentful_paint) / 1000000, else: null)
 | summarize
     loads = count(),
     lcp_p75 = percentile(lcp_ms, 75),
     by: {browser.name, device.type}
 | sort loads desc
-| limit 20
+| limit 50
 ```
 
-- [ ] **Step 3: Extend the filename contract**
+`limit 50` rather than 20: Task 7 computes each segment's share of loads from the
+sum of the rows it receives, so a truncated list inflates every share. 50 covers
+the realistic browser × device cross-product with room to spare.
+
+- [ ] **Step 4: Extend the filename contract**
 
 Append to `references/queries.md`:
 
@@ -907,12 +1194,15 @@ Append to `references/queries.md`:
 |---|---|
 | `fpa-frontends.dql` | `timeframe` |
 | `fpa-pages.dql` | `timeframe`, `frontend` |
+| `fpa-lcp-baseline.dql` | `timeframe`, `frontend`, `page` |
+| `fpa-top-browser.dql` | `timeframe`, `frontend`, `page` |
 | `fpa-select-instance.dql` | `timeframe`, `frontend`, `page`, `browser`, `low_bound`, `high_bound` |
 
 ## Aggregate
 
 | Query file | Parameters | Output filename |
 |---|---|---|
+| `fpa-load-count.dql` | `timeframe`, `frontend`, `page` | `load-count.json` |
 | `fpa-cwv-percentiles.dql` | `timeframe`, `frontend`, `page` | `cwv-percentiles.json` |
 | `fpa-ttfb-phases.dql` | `timeframe`, `frontend`, `page` | `ttfb-phases.json` |
 | `fpa-resources-agg.dql` | `timeframe`, `frontend`, `page` | `resources-agg.json` |
@@ -922,12 +1212,12 @@ Append to `references/queries.md`:
 | `fpa-browser-device.dql` | `timeframe`, `frontend`, `page` | `browser-device.json` |
 ```
 
-- [ ] **Step 4: Verify each query parses against a live tenant**
+- [ ] **Step 5: Verify each query parses against a live tenant**
 
 For each of the seven aggregate queries, using a frontend and page the maintainer names:
 
 ```bash
-for q in cwv-percentiles ttfb-phases resources-agg thirdparty-agg longtasks-agg errors-agg browser-device; do
+for q in load-count cwv-percentiles ttfb-phases resources-agg thirdparty-agg longtasks-agg errors-agg browser-device; do
   echo "--- $q"
   dtctl query -f "references/queries/fpa-$q.dql" \
     --set timeframe='now()-7d' --set frontend='FRONTEND' --set page='PAGE' \
@@ -936,9 +1226,13 @@ for q in cwv-percentiles ttfb-phases resources-agg thirdparty-agg longtasks-agg 
 done
 ```
 
-Expected: each prints a JSON envelope, none prints a DQL parse error. Fix any query that errors before committing. If `countDistinctExact` is rejected on the tenant's DQL version, substitute `countDistinct` and note the change in `references/queries.md`.
+Expected: each prints a JSON envelope with at least one record, and none prints a
+DQL parse error. **A query that parses but returns zero records is a failure
+here, not a pass** — it almost certainly means the nav join found nothing, i.e.
+`page.detected_name` does not hold the value you passed. Diagnose by running the
+join's inner subquery alone before touching the outer query. Fix any query that errors before committing. If `countDistinctExact` is rejected on the tenant's DQL version, substitute `countDistinct` and note the change in `references/queries.md`.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add references/queries references/queries.md
@@ -964,13 +1258,14 @@ DATA = {
          inpP50, inpP75, inpP95, clsP50, clsP75, clsP95,
          ttfbP50, ttfbP75, ttfbP95 },
   ttfbPhases: { loads, dnsP75, connectionP75, waitingP75, requestP75, cacheP75 },
-  resources: [{ url, domain, initiatorType, sessions, requests,
+  loadCount: <number>,                            // distinct hard-navigation loads
+  resources: [{ path, domain, initiatorType, loads, requests,
                 durationP50, durationP75, durationP95, transferP75,
                 blocking, failures }],
-  thirdParty: [{ domain, sessions, requests, durationP75, transferP75 }],
+  thirdParty: [{ domain, loads, requests, durationP75, transferP75 }],
   longTasks: { loads, loadsWithLongTasks, countP75, avgDurationP75 },
-  errors: { loads, loadsWithException, loadsWith4xx, loadsWith5xx,
-            exceptionTotal, http4xxTotal, http5xxTotal },
+  errors: { loads, loadsWithAnyError, loadsWithException, loadsWith4xx,
+            loadsWith5xx, exceptionTotal, http4xxTotal, http5xxTotal },
   browserDevice: [{ browser, device, loads, lcpP75 }],
 }
 ```
@@ -982,6 +1277,7 @@ In `scripts/build-report.mjs`, replace the `const data = { instance: normalizeRa
 ```js
 const first = (rows) => rows[0] || {};
 
+const loadCountRow = first(loadRecords(args.data, "load-count.json"));
 const cwvRow = first(loadRecords(args.data, "cwv-percentiles.json"));
 const ttfbRow = first(loadRecords(args.data, "ttfb-phases.json"));
 const longTaskRow = first(loadRecords(args.data, "longtasks-agg.json"));
@@ -989,6 +1285,9 @@ const errorRow = first(loadRecords(args.data, "errors-agg.json"));
 
 const data = {
   instance: normalizeRaw(raw),
+  // Denominator for every request-scoped rule. Distinct hard-navigation loads
+  // for the page — NOT the page-summary count in `cwv.loads`.
+  loadCount: loadCountRow.loads ?? null,
   cwv: {
     loads: cwvRow.loads ?? null,
     lcpP50: cwvRow.lcp_p50 ?? null, lcpP75: cwvRow.lcp_p75 ?? null, lcpP95: cwvRow.lcp_p95 ?? null,
@@ -1006,10 +1305,10 @@ const data = {
     cacheP75: ttfbRow.cache_p75 ?? null,
   },
   resources: loadRecords(args.data, "resources-agg.json").map((r) => ({
-    url: r["url.full"],
+    path: r["url.path"],
     domain: r["url.domain"],
     initiatorType: r["performance.initiator_type"],
-    sessions: r.sessions ?? 0,
+    loads: r.loads ?? 0,
     requests: r.requests ?? 0,
     durationP50: r.duration_p50 ?? null,
     durationP75: r.duration_p75 ?? null,
@@ -1020,7 +1319,7 @@ const data = {
   })),
   thirdParty: loadRecords(args.data, "thirdparty-agg.json").map((r) => ({
     domain: r["url.domain"],
-    sessions: r.sessions ?? 0,
+    loads: r.loads ?? 0,
     requests: r.requests ?? 0,
     durationP75: r.duration_p75 ?? null,
     transferP75: r.transfer_p75 ?? null,
@@ -1033,6 +1332,7 @@ const data = {
   },
   errors: {
     loads: errorRow.loads ?? null,
+    loadsWithAnyError: errorRow.loads_with_any_error ?? null,
     loadsWithException: errorRow.loads_with_exception ?? null,
     loadsWith4xx: errorRow.loads_with_4xx ?? null,
     loadsWith5xx: errorRow.loads_with_5xx ?? null,
@@ -1051,13 +1351,24 @@ const data = {
 
 `??` is used rather than `||` throughout so a legitimate zero is not coerced to null.
 
+After `data` is assembled, surface any files that were missing or empty rather
+than letting a section silently render as blank:
+
+```js
+if (skipped.length) console.warn(`Skipped missing/empty data files: ${skipped.join(", ")}`);
+data.skipped = skipped;
+```
+
+Render `data.skipped` as a warning banner at the top of the report so a partial
+run is never mistaken for a complete one.
+
 - [ ] **Step 2: Add the aggregate sections to the template**
 
 In `assets/report.html.tmpl`, insert these sections above `#waterfall-panel`, and add a render function for each at the bottom of the script block. The sections, in order:
 
 1. **Core Web Vitals** — a table of LCP / FCP / INP / CLS / TTFB rows with p50, p75, p95 columns. Colour the p75 cell with `var(--dt-success)`, `var(--dt-warning)`, or `var(--dt-critical)` per the thresholds in Task 7's `THRESHOLDS` constant. Show `DATA.cwv.loads` as the sample size in the heading.
 2. **TTFB phases** — a horizontal stacked bar of `dnsP75`, `connectionP75`, `waitingP75`, `requestP75`, `cacheP75`, with a labelled legend and the total.
-3. **Slowest resources** — `DATA.resources` sorted by `durationP75` desc, first 20 rows. Columns: URL (truncated to 60 chars, full URL in the `title` attribute), type, sessions, p50 / p75 / p95 duration, p75 transfer. Render `sessions` prominently — it is what separates a page-wide problem from one unlucky load.
+3. **Slowest resources** — `DATA.resources` sorted by `durationP75` desc, first 20 rows. Columns: path (truncated to 60 chars, full value in the `title` attribute), domain, type, loads, p50 / p75 / p95 duration, p75 transfer. Render `loads` — and `loads / DATA.loadCount` as a percentage — prominently: that ratio is what separates a page-wide problem from one unlucky load, and it is the whole reason v2 exists.
 4. **Heaviest resources** — the same array sorted by `transferP75` desc, first 20 rows.
 5. **Third parties** — `DATA.thirdParty` as a table, excluding the row whose domain matches the origin of `DATA.instance.summary.pageUrl`.
 6. **Long tasks and errors** — two small stat panels from `DATA.longTasks` and `DATA.errors`, each expressed as a rate over `loads` as well as a raw count.
@@ -1074,10 +1385,11 @@ const fs=require("fs");
 const w=(n,v)=>fs.writeFileSync("/tmp/fpa-agg/"+n,JSON.stringify({result:{kind:"records",records:v}}));
 w("cwv-percentiles.json",[{loads:1200,lcp_p50:1800,lcp_p75:3100,lcp_p95:6200,fcp_p50:900,fcp_p75:1400,fcp_p95:2600,inp_p50:80,inp_p75:190,inp_p95:520,cls_p50:0.01,cls_p75:0.08,cls_p95:0.31,ttfb_p50:300,ttfb_p75:900,ttfb_p95:1800}]);
 w("ttfb-phases.json",[{loads:1200,dns_p75:20,connection_p75:60,waiting_p75:700,request_p75:100,cache_p75:20}]);
-w("resources-agg.json",[{"url.full":"https://example.com/app.js","url.domain":"example.com","performance.initiator_type":"script",sessions:1190,requests:1190,duration_p50:400,duration_p75:820,duration_p95:1900,transfer_p75:240000,blocking:1190,failures:0}]);
-w("thirdparty-agg.json",[{"url.domain":"cdn.example.net",sessions:1100,requests:2200,duration_p75:310,transfer_p75:90000}]);
+w("load-count.json",[{loads:1200}]);
+w("resources-agg.json",[{"url.path":"/app.js","url.domain":"example.com","performance.initiator_type":"script",loads:1190,requests:1190,duration_p50:400,duration_p75:820,duration_p95:1900,transfer_p75:240000,blocking:1190,failures:0}]);
+w("thirdparty-agg.json",[{"url.domain":"cdn.example.net",loads:1100,requests:2200,duration_p75:310,transfer_p75:90000}]);
 w("longtasks-agg.json",[{loads:1200,loads_with_long_tasks:840,count_p75:3,avg_duration_p75:140}]);
-w("errors-agg.json",[{loads:1200,loads_with_exception:60,loads_with_4xx:12,loads_with_5xx:0,exception_total:75,http_4xx_total:14,http_5xx_total:0}]);
+w("errors-agg.json",[{loads:1200,loads_with_any_error:70,loads_with_exception:60,loads_with_4xx:12,loads_with_5xx:0,exception_total:75,http_4xx_total:14,http_5xx_total:0}]);
 w("browser-device.json",[{"browser.name":"Chrome","device.type":"desktop",loads:900,lcp_p75:2600},{"browser.name":"Safari","device.type":"mobile",loads:300,lcp_p75:5200}]);
 '
 node scripts/build-report.mjs --data /tmp/fpa-agg --page-title "/" --out /tmp/fpa-agg/report.html
@@ -1121,12 +1433,13 @@ import { computeFindings, THRESHOLDS } from "./lib/findings.mjs";
 
 const base = {
   instance: { summary: { pageUrl: "https://example.com/", lcpElementType: "IMG", lcpElementUrl: "https://example.com/hero.jpg" }, requests: [], exceptions: [] },
+  loadCount: 1000,
   cwv: { loads: 1000, lcpP75: 1800, inpP75: 100, clsP75: 0.02, ttfbP75: 300 },
   ttfbPhases: { loads: 1000, dnsP75: 10, connectionP75: 20, waitingP75: 200, requestP75: 50, cacheP75: 20 },
   resources: [],
   thirdParty: [],
   longTasks: { loads: 1000, loadsWithLongTasks: 0, countP75: 0, avgDurationP75: null },
-  errors: { loads: 1000, loadsWithException: 0, loadsWith4xx: 0, loadsWith5xx: 0, exceptionTotal: 0, http4xxTotal: 0, http5xxTotal: 0 },
+  errors: { loads: 1000, loadsWithAnyError: 0, loadsWithException: 0, loadsWith4xx: 0, loadsWith5xx: 0, exceptionTotal: 0, http4xxTotal: 0, http5xxTotal: 0 },
   browserDevice: [{ browser: "Chrome", device: "desktop", loads: 1000, lcpP75: 1800 }],
 };
 const ids = (d) => computeFindings(d).map((f) => f.id);
@@ -1136,16 +1449,16 @@ assert.deepEqual(ids(base), []);
 
 // thresholds are the documented Core Web Vitals values
 assert.equal(THRESHOLDS.lcp.poor, 4000);
-assert.equal(THRESHOLDS.ttfb.poor, 800);
+assert.equal(THRESHOLDS.ttfb.good, 800);
 
 // TTFB over 800ms fires
 assert.ok(ids({ ...base, cwv: { ...base.cwv, ttfbP75: 950 } }).includes("slow-ttfb"));
 
-// a resource blocking in most sessions fires; one blocking in a handful does not
-const blocking = (sessions) => ({
+// a resource blocking on most loads fires; one blocking on a handful does not
+const blocking = (loads) => ({
   ...base,
-  resources: [{ url: "https://example.com/a.css", domain: "example.com", initiatorType: "link",
-                sessions, requests: sessions, durationP75: 600, transferP75: 20000, blocking: sessions, failures: 0 }],
+  resources: [{ path: "/a.css", domain: "example.com", initiatorType: "link",
+                loads, requests: loads, durationP75: 600, transferP75: 20000, blocking: loads, failures: 0 }],
 });
 assert.ok(ids(blocking(900)).includes("render-blocking"));
 assert.ok(!ids(blocking(5)).includes("render-blocking"));
@@ -1212,7 +1525,11 @@ const pct = (n, d) => (d ? Math.round((n / d) * 100) : 0);
 
 export function computeFindings(data) {
   const out = [];
-  const loads = num(data.cwv?.loads) || 0;
+  // Three different populations, three different denominators. Mixing them
+  // produces ratios above 1 and silently wrong percentages.
+  const cwvLoads = num(data.cwv?.loads) || 0;        // page-summary events
+  const pageLoads = num(data.loadCount) || 0;        // distinct hard navigations
+  const loads = cwvLoads;                            // CWV rules only
 
   const ttfb = num(data.cwv?.ttfbP75);
   if (ttfb != null && ttfb > THRESHOLDS.ttfb.good) {
@@ -1258,7 +1575,7 @@ export function computeFindings(data) {
     });
   }
 
-  const prevalent = (r) => loads > 0 && r.sessions / loads >= THRESHOLDS.prevalence;
+  const prevalent = (r) => pageLoads > 0 && r.loads / pageLoads >= THRESHOLDS.prevalence;
 
   const blockers = (data.resources || [])
     .filter((r) => r.blocking > 0 && prevalent(r))
@@ -1269,8 +1586,8 @@ export function computeFindings(data) {
       id: "render-blocking",
       severity: "high",
       title: "Render-blocking resources on most loads",
-      evidence: `${blockers.length} render-blocking resource(s) appear in at least ${Math.round(THRESHOLDS.prevalence * 100)}% of loads. Slowest: ` +
-        top.map((r) => `${r.url} (p75 ${Math.round(num(r.durationP75) ?? 0)}ms, ${r.sessions} sessions)`).join("; ") + ".",
+      evidence: `${blockers.length} render-blocking resource(s) appear in at least ${Math.round(THRESHOLDS.prevalence * 100)}% of ${pageLoads} loads. Slowest: ` +
+        top.map((r) => `${r.domain}${r.path} (p75 ${Math.round(num(r.durationP75) ?? 0)}ms, ${r.loads} loads)`).join("; ") + ".",
     });
   }
 
@@ -1283,7 +1600,7 @@ export function computeFindings(data) {
       severity: "medium",
       title: "Consistently slow resources",
       evidence: `${slow.length} resource(s) exceed ${THRESHOLDS.resourceSlowMs}ms at p75 on most loads. Slowest: ` +
-        slow.slice(0, 5).map((r) => `${r.url} (p75 ${Math.round(num(r.durationP75) ?? 0)}ms, ${r.sessions} sessions)`).join("; ") + ".",
+        slow.slice(0, 5).map((r) => `${r.domain}${r.path} (p75 ${Math.round(num(r.durationP75) ?? 0)}ms, ${r.loads} loads)`).join("; ") + ".",
     });
   }
 
@@ -1305,23 +1622,27 @@ export function computeFindings(data) {
   }
 
   const lt = data.longTasks || {};
-  if (num(lt.loadsWithLongTasks) && loads > 0 && lt.loadsWithLongTasks / loads > 0.25) {
+  const ltLoads = num(lt.loads) || 0;
+  if (num(lt.loadsWithLongTasks) && ltLoads > 0 && lt.loadsWithLongTasks / ltLoads > 0.25) {
     out.push({
       id: "long-tasks",
       severity: "medium",
       title: "Main thread blocked by long tasks",
-      evidence: `${lt.loadsWithLongTasks} of ${loads} loads (${pct(lt.loadsWithLongTasks, loads)}%) had long tasks; p75 count ${num(lt.countP75) ?? 0}, p75 average duration ${Math.round(num(lt.avgDurationP75) ?? 0)}ms.`,
+      evidence: `${lt.loadsWithLongTasks} of ${ltLoads} loads (${pct(lt.loadsWithLongTasks, ltLoads)}%) had long tasks; p75 count ${num(lt.countP75) ?? 0}, p75 average duration ${Math.round(num(lt.avgDurationP75) ?? 0)}ms.`,
     });
   }
 
   const err = data.errors || {};
-  const failing = (num(err.loadsWithException) ?? 0) + (num(err.loadsWith4xx) ?? 0) + (num(err.loadsWith5xx) ?? 0);
-  if (failing > 0 && loads > 0 && failing / loads > 0.05) {
+  const errLoads = num(err.loads) || 0;
+  // loads_with_any_error, not the sum of the three counters — a load with both a
+  // JS exception and a 4xx would otherwise be counted twice.
+  const failing = num(err.loadsWithAnyError) ?? 0;
+  if (failing > 0 && errLoads > 0 && failing / errLoads > 0.05) {
     out.push({
       id: "errors",
       severity: (num(err.loadsWith5xx) ?? 0) > 0 ? "high" : "medium",
       title: "Errors on a meaningful share of loads",
-      evidence: `${pct(num(err.loadsWithException) ?? 0, loads)}% of loads had a JS exception, ${pct(num(err.loadsWith4xx) ?? 0, loads)}% a 4xx, ${pct(num(err.loadsWith5xx) ?? 0, loads)}% a 5xx, across ${loads} loads.`,
+      evidence: `${pct(failing, errLoads)}% of ${errLoads} loads had at least one error — ${pct(num(err.loadsWithException) ?? 0, errLoads)}% a JS exception, ${pct(num(err.loadsWith4xx) ?? 0, errLoads)}% a 4xx, ${pct(num(err.loadsWith5xx) ?? 0, errLoads)}% a 5xx.`,
     });
   }
 
@@ -1366,7 +1687,7 @@ In `scripts/build-report.mjs`:
 import { computeFindings } from "./lib/findings.mjs";
 ```
 
-After `data` is assembled, add `data.findings = computeFindings(data);`. Then accept an optional `--findings <file.md>` flag: when present, read the markdown, convert it with the same `extractMarkdownSection` / `markdownToHtml` pair used by `monthly-report/scripts/build-report.mjs` (copy those two functions verbatim), and substitute the result into a `{{ANALYST_NOTES}}` placeholder. When absent, substitute an empty string.
+After `data` is assembled, add `data.findings = computeFindings(data);`. Then accept an optional `--findings <file.md>` flag: when present, read the markdown, convert it with the same helpers used by `monthly-report/scripts/build-report.mjs` — copy **three** functions verbatim: `extractMarkdownSection`, `markdownToHtml`, and `escapeHtml`, which `markdownToHtml` calls, and substitute the result into a `{{ANALYST_NOTES}}` placeholder. When absent, substitute an empty string.
 
 In `assets/report.html.tmpl`, add above the Core Web Vitals section:
 
@@ -1405,7 +1726,13 @@ node scripts/build-report.mjs --data /tmp/fpa-agg --page-title "/" --out /tmp/fp
 open /tmp/fpa-agg/report.html
 ```
 
-Expected: the findings panel lists `slow-ttfb`, `slow-lcp`, `layout-shift`, `render-blocking`, `slow-third-party`, `long-tasks`, `errors`, and `segment-outlier` from the Task 6 synthetic data, high severity first. The analyst notes area is empty and editable.
+Expected: the findings panel lists exactly `slow-ttfb`, `slow-lcp`,
+`render-blocking`, `slow-third-party`, `long-tasks`, `errors`, and
+`segment-outlier`, high severity first. `layout-shift` must **not** appear — the
+synthetic `cls_p75` is 0.08, below the 0.1 good threshold, and no rule reads
+p95. `slow-inp` must not appear either, for the same reason (190 < 200). If
+either shows up, the rule is wrong, not the fixture. The analyst notes area is
+empty and editable.
 
 - [ ] **Step 8: Commit**
 
@@ -1448,8 +1775,10 @@ Append to the second `<style>` block in `assets/report.html.tmpl`:
   /* The waterfall is wide and interactive; in print it is clipped to the top
      rows and its controls and tooltips are dropped. See the spec's
      "PDF constraints" section. */
-  #waterfall-controls, #waterfall-tooltip, .sticky-pills { display: none !important; }
-  #waterfall .wf-row:nth-child(n+21) { display: none; }
+  /* Ids below are v1's, verified against assets/template.html: controls at 868,
+     the three tooltips at 676-678, the pills container at 1308-1309. */
+  #controls-slot, #tooltip, #line-tooltip, #ex-tooltip, .sticky-pills { display: none !important; }
+  #waterfall-slot > *:nth-child(n+21) { display: none; }
   #waterfall-panel::after {
     content: "Waterfall clipped to the 20 slowest resources for print. See the HTML report for the full interactive view.";
     display: block; margin-top: 8px; font-size: 11px; color: #555;
@@ -1457,7 +1786,10 @@ Append to the second `<style>` block in `assets/report.html.tmpl`:
 }
 ```
 
-If the ported waterfall markup does not use `.wf-row` for its per-resource rows, use whatever class it does use, and update the selector rather than the markup.
+`#waterfall-slot > *:nth-child(n+21)` assumes `renderWaterfall` appends one child
+element per resource row. Confirm that against the ported `buildWaterfallItems`
+output before trusting the clip; if rows are nested one level deeper, add the
+extra level to the selector rather than changing the markup.
 
 - [ ] **Step 3: Add the save bar**
 
