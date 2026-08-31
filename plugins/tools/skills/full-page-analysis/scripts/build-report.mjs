@@ -29,17 +29,23 @@ function parseArgs(argv) {
 // Missing or empty files are tolerated and reported, not fatal: SKILL.md
 // backgrounds every dtctl invocation, and one failure must not lose the report.
 export const skipped = [];
-function loadRecords(dataDir, filename) {
+export function loadRecords(dataDir, filename) {
   const p = path.join(dataDir, filename);
   if (!fs.existsSync(p) || fs.statSync(p).size === 0) { skipped.push(filename); return []; }
   const parsed = JSON.parse(fs.readFileSync(p, "utf8"));
   if (Array.isArray(parsed)) return parsed;
   const result = parsed.result ?? parsed;
   if (result && Array.isArray(result.records)) return result.records;
+  // A query that legitimately matches zero rows still comes back as
+  // kind: "records" but with records: null (not []). Zero exceptions on a
+  // page load is the common case, not a malformed response.
+  if (result && result.kind === "records" && result.records == null) return [];
   if (Array.isArray(result)) return result;
   throw new Error(`Unexpected JSON envelope shape in ${filename} (kind=${result && result.kind})`);
 }
 
+const isMain = import.meta.url === `file://${process.argv[1]}`;
+if (isMain) {
 const args = parseArgs(process.argv.slice(2));
 if (!args.data) { console.error("Missing --data <dir>"); process.exit(1); }
 if (!args.out) { console.error("Missing --out <report.html>"); process.exit(1); }
@@ -72,3 +78,4 @@ const outPath = args.out.replace(/^~/, process.env.HOME || "");
 fs.mkdirSync(path.dirname(path.resolve(outPath)), { recursive: true });
 fs.writeFileSync(outPath, html);
 console.log(`Wrote ${outPath}`);
+}
