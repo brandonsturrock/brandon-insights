@@ -1,6 +1,6 @@
 ---
 name: full-page-analysis
-version: 1.1.1
+version: 2.0.0
 description: Full page performance analysis for a Dynatrace RUM page — p75 LCP stats, TTFB breakdown, render-blocking resources, slow/heavy resources, third-party audit, long tasks, errors, prioritized recommendations, saved markdown report, and an interactive resource waterfall HTML. Combines rum-lcp-analysis and dt-waterfall into a single end-to-end flow. Use when the user wants a complete picture of a page's load performance.
 ---
 
@@ -179,436 +179,225 @@ After switch or add, confirm the active context with `dtctl config current-conte
 before continuing.
 
 ---
+## --no-preview flag
+
+If the user invokes this skill with `--no-preview`, skip Step 7 entirely —
+do not open the browser and do not ask the `AskUserQuestion`. Proceed
+directly from Step 6 to Step 8 using the HTML built in Step 6 as the source.
+
+---
+
+## Data model
+
+Anchor: **hard navigation user action**. Two IDs flow from the selected
+instance: `user_action.instance_id` (`ua_instance`) scopes requests,
+exceptions, and the action-duration query; `view.instance_id`
+(`view_instance`) scopes the page summary (CWV metrics).
+
+All query files live in `references/queries/` inside the skill base
+directory (`<SKILL_BASE_DIR>`). `references/queries.md` is the authoritative
+contract for every parameter name and output filename — consult it if
+anything below is unclear or out of date.
+
+---
 
 ## Step 0 — Mode selection
 
 After the context check, use `AskUserQuestion` to ask how to proceed:
 
-- **I have an instance ID** — user provides a known `user_action.instance_id`; skip to Step 0A
-- **Find one for me** — run the normal frontend → page → representative instance flow; continue to Step 0B
+- **I have an instance ID** — user provides a known `user_action.instance_id`;
+  skip to Step 1
+- **Find one for me** — run the normal frontend → page → representative
+  instance flow; continue to Step 2
 
 ---
 
-## Step 0A — Instance ID path (skip if "Find one for me" chosen)
+## Step 1 — Instance ID path (skip if "Find one for me" chosen)
 
 Ask the user for their `user_action.instance_id`. Set `UA_INSTANCE_ID`.
 
-### Resolve instance metadata with timeframe expansion
+Run `fpa-resolve-instance.dql` with `timeframe=now()-7d`,
+`ua_instance=UA_INSTANCE_ID`. If 0 records returned, retry with
+`timeframe=now()-30d`.
 
-Try last 7 days first:
+If still 0 records, run `fpa-resolve-instance-type.dql` with the same
+params to check whether the instance exists at all but is the wrong type:
 
-```dql
-fetch user.events, from: now()-7d
-| filter user_action.instance_id == "UA_INSTANCE_ID"
-| filter characteristics.has_user_action == true
-| filter user_action.type == "hard_navigation"
-| fields view.instance_id, frontend.name, page.detected_name,
-         lcp.render_time, lcp.url, lcp.ui_element.tag_name,
-         browser.name, browser.version, device.type, os.name,
-         ttfb.value, timestamp
-| limit 1
-```
+- If this returns a record: tell the user **"This instance is a
+  `{user_action.type}` event, not a hard navigation. This skill only
+  supports hard navigation instances."** Then return to Step 0.
+- If this also returns 0 records: tell the user the instance ID was not
+  found in the last 30 days, then return to Step 0.
 
-If 0 records returned, expand to last 30 days:
+Set `TF` to whichever window returned results. Extract and set from the
+returned record: `VIEW_INSTANCE_ID` (`view.instance_id`), `FRONTEND`
+(`frontend.name`), `PAGE` (`page.detected_name`), and browser/device
+metadata for later use in the report.
 
-```dql
-fetch user.events, from: now()-30d
-| filter user_action.instance_id == "UA_INSTANCE_ID"
-| filter characteristics.has_user_action == true
-| filter user_action.type == "hard_navigation"
-| fields view.instance_id, frontend.name, page.detected_name,
-         lcp.render_time, lcp.url, lcp.ui_element.tag_name,
-         browser.name, browser.version, device.type, os.name,
-         ttfb.value, timestamp
-| limit 1
-```
+Tell the user: instance found, timeframe used, frontend, page name, and
+instance LCP value.
 
-If still 0 records, check whether the instance exists at all but is the wrong type:
-
-```dql
-fetch user.events, from: now()-30d
-| filter user_action.instance_id == "UA_INSTANCE_ID"
-| filter characteristics.has_user_action == true
-| fields user_action.type
-| limit 1
-```
-
-- If this returns a record: tell the user **"This instance is a `{user_action.type}` event, not a hard navigation. This skill only supports hard navigation instances."** Then return to Step 0 and ask them to choose again (Find one for me / I have an instance ID).
-- If this also returns 0 records: tell the user the instance ID was not found in the last 30 days, then return to Step 0.
-
-Set `TF` to whichever window returned results (`now()-7d` or `now()-30d`).
-
-Extract and set from the returned record:
-- `VIEW_INSTANCE_ID` from `view.instance_id`
-- `FRONTEND` from `frontend.name`
-- `PAGE` from `page.detected_name`
-- browser/device metadata for later use in the report
-
-Tell the user: instance found, timeframe used, frontend, page name, and instance LCP value.
-
-**Continue directly to Step 4c.** Skip Steps 0B, 1, 1b, 2, 3, 4a, 4b entirely.
+**Continue directly to Step 4.** Skip Steps 2 and 3.
 
 ---
 
-## Step 0B — Timeframe (normal path only)
+## Step 2 — Selection path: frontend and page (skip if instance ID given)
 
-Use **last 7 days** (`from: now()-7d`) unless the user specifies otherwise.
-Substitute `TF` for the chosen `from:` expression throughout.
+Use **last 7 days** (`timeframe=now()-7d`) unless the user specifies
+otherwise. Set `TF` to the chosen value and use it for every query below.
 
----
+Run `fpa-frontends.dql` with `timeframe=TF`. Use `AskUserQuestion` to let the
+user pick one `frontend.name`. Show **at most 3 results at a time** plus a
+4th option `"Show more..."`. If the user picks "Show more...", advance the
+window by 3 and ask again (results 4–6 + "Show more..." if more remain, or
+the remainder without "Show more..." if ≤ 3 left). Pass options in **exactly
+the order the query returned them** (highest `hard_navs` first). Include the
+count in each option label, e.g. `"My Frontend (12,450 hard navigations)"`.
+Set `FRONTEND`.
 
-## Step 1 — Pick a frontend
-
-```dql
-fetch user.events, from: TF
-| filter isNotNull(frontend.name)
-| summarize hard_navs = countIf(user_action.type == "hard_navigation"), by: {frontend.name}
-| filter hard_navs > 0
-| sort hard_navs desc
-| limit 30
-```
-
-Use `AskUserQuestion` to let the user pick one `frontend.name`. Show **at most 3
-results at a time** plus a 4th option `"Show more..."`. If the user picks "Show
-more...", advance the window by 3 and ask again (e.g. results 4–6 + "Show
-more..." if more remain, or results 4–N without "Show more..." if ≤ 3 left).
-Pass options in **exactly the order the query returned them** (highest hard_navs
-first). Include the count in each option label, e.g.
-`"My Frontend (12,450 hard navigations)"`. Set `FRONTEND`.
+Run `fpa-pages.dql` with `timeframe=TF`, `frontend=FRONTEND`. Same paging
+rules (3 + "Show more...", exact query order, counts in labels, e.g.
+`"/ (3,210 hard navigations)"`). Set `PAGE`.
 
 ---
 
-## Step 2 — Pick a page
+## Step 3 — Selection path: representative instance
 
-```dql
-fetch user.events, from: TF
-| filter frontend.name == "FRONTEND"
-| filter characteristics.has_user_action == true
-| filter user_action.type == "hard_navigation"
-| filter lcp.status == "reported"
-| summarize hard_navs = count(), by: {page.detected_name}
-| filterOut isNull(page.detected_name)
-| sort hard_navs desc
-| limit 20
-```
+Run `fpa-lcp-baseline.dql` with `timeframe=TF`, `frontend=FRONTEND`,
+`page=PAGE`. This returns `p50_lcp`, `p75_lcp`, `p95_lcp`, `hard_navs`. State
+these to the user with status labels (LCP thresholds: ≤2500ms good,
+2501–4000ms needs improvement, >4000ms poor).
 
-Use `AskUserQuestion` to let the user pick one `page.detected_name`. Show **at
-most 3 results at a time** plus a 4th option `"Show more..."`. If the user picks
-"Show more...", advance the window by 3 and ask again. Pass options in **exactly
-the order the query returned them** (highest hard_navs first). Include the count
-in each option label, e.g. `"/ (3,210 hard navigations)"`. Set `PAGE`.
+Run `fpa-top-browser.dql` with the same params. Set `BROWSER` to the
+returned `browser.name`.
 
----
+Compute the selection window from `p75_lcp`:
+- `low_bound = round(p75_lcp * 0.85)`
+- `high_bound = round(p75_lcp * 1.15)`
 
-## Step 3 — p75 LCP + volume baseline
+Run `fpa-select-instance.dql` with `timeframe=TF`, `frontend=FRONTEND`,
+`page=PAGE`, `browser=BROWSER`, `low_bound`, `high_bound`. This join only
+returns instances with both a linked page_summary and at least one request —
+no separate validation step needed.
 
-```dql
-fetch user.events, from: TF
-| filter frontend.name == "FRONTEND"
-| filter page.detected_name == "PAGE"
-| filter characteristics.has_user_action == true
-| filter user_action.type == "hard_navigation"
-| filter lcp.status == "reported"
-| summarize
-    p75_lcp = percentile(lcp.render_time, 75),
-    p50_lcp = percentile(lcp.render_time, 50),
-    p95_lcp = percentile(lcp.render_time, 95),
-    count   = count()
-```
+- If 0 rows returned: widen to `low_bound = round(p75_lcp * 0.75)`,
+  `high_bound = round(p75_lcp * 1.25)` and retry once.
+- If still 0: tell the user no instance with linked page_summary and
+  requests was found near p75 for this browser. Ask whether to try a
+  different browser or continue without a representative instance.
 
-`lcp.render_time` is in milliseconds. LCP thresholds:
-- ≤ 2500 ms → good
-- 2501–4000 ms → needs improvement
-- > 4000 ms → poor
-
-State p75/p50/p95 and status before continuing.
+Set `UA_INSTANCE_ID` from `user_action.instance_id` and `VIEW_INSTANCE_ID`
+from `view.instance_id`.
 
 ---
 
-## Step 4 — Select a representative instance
+## Step 4 — Run the data queries
 
-### 4a — Most common browser
-
-```dql
-fetch user.events, from: TF
-| filter frontend.name == "FRONTEND"
-| filter page.detected_name == "PAGE"
-| filter characteristics.has_user_action == true
-| filter user_action.type == "hard_navigation"
-| filter lcp.status == "reported"
-| summarize count(), by: {browser.name}
-| sort `count()` desc
-| limit 1
-```
-
-Set `BROWSER` to the top `browser.name`.
-
-### 4b — Instance closest to p75 LCP with linked page_summary and requests
-
-**Do NOT use `abs()`** — DQL returns null for arithmetic on string-typed numeric
-fields. Use a ±15% range filter; widen to ±25% if no rows return.
-
-The join ensures only instances that have **both** a linked page_summary and at
-least one request are returned — no separate validation step needed.
-
-```dql
-fetch user.events, from: TF
-| filter frontend.name == "FRONTEND"
-| filter page.detected_name == "PAGE"
-| filter characteristics.has_user_action == true
-| filter user_action.type == "hard_navigation"
-| filter browser.name == "BROWSER"
-| filter lcp.status == "reported"
-| fieldsAdd lcp_ms = toLong(lcp.render_time)
-| filter lcp_ms >= LOW_BOUND AND lcp_ms <= HIGH_BOUND
-| fields user_action.instance_id, view.instance_id, dt.rum.session.id, lcp_ms,
-         lcp.url, lcp.ui_element.tag_name,
-         ttfb.value, browser.name, browser.version,
-         device.type, os.name, timestamp
-| join [
-    fetch user.events, from: TF
-    | filter frontend.name == "FRONTEND"
-    | filter characteristics.has_page_summary == true
-    | summarize count(), by: {view.instance_id, dt.rum.session.id}
-], on: {view.instance_id, dt.rum.session.id}, prefix: "page_summary."
-| join [
-    fetch user.events, from: TF
-    | filter frontend.name == "FRONTEND"
-    | filter characteristics.has_request == true
-    | summarize count(), by: {user_action.instance_id, dt.rum.session.id}
-], on: {user_action.instance_id, dt.rum.session.id}, prefix: "requests."
-| sort lcp_ms asc
-| limit 1
-```
-
-Replace `LOW_BOUND` with `round(P75_LCP_MS * 0.85)` and `HIGH_BOUND` with
-`round(P75_LCP_MS * 1.15)`.
-
-- If 0 rows returned: widen to ±25% and retry once.
-- If still 0: tell the user no instance with linked page_summary and requests was
-  found near p75 for this browser. Ask whether to try a different browser or continue
-  without a representative instance.
-
-Set `UA_INSTANCE_ID` and `VIEW_INSTANCE_ID`.
-
----
-
-## Step 5 — Page summary details
-
-```dql
-fetch user.events, from: TF
-| filter view.instance_id == toUid("VIEW_INSTANCE_ID")
-| filter characteristics.has_page_summary == true
-| fields
-    performance.time_origin, client_start_time,
-    ttfb.value, ttfb.status,
-    ttfb.dns_duration, ttfb.connection_duration,
-    ttfb.waiting_duration, ttfb.request_duration, ttfb.cache_duration,
-    web_vitals.largest_contentful_paint, lcp.status,
-    web_vitals.first_contentful_paint, fcp.status,
-    web_vitals.first_paint, fp.status,
-    web_vitals.cumulative_layout_shift, cls.status,
-    web_vitals.interaction_to_next_paint, inp.status,
-    fid.status,
-    lcp.url, lcp.ui_element.tag_name,
-    page.url.full, page.title, browser.name, browser.version,
-    device.type, os.name, navigation.type, frontend.name,
-    long_task.all.count, long_task.all.avg_duration, long_task.all.slowest_occurrences,
-    error.exception_count, error.http_4xx_count, error.http_5xx_count
-| limit 1
-```
-
-If `performance.time_origin` and `client_start_time` are both missing, tell the
-user the page summary is incomplete and ask them to pick a different instance.
-
----
-
-## Step 6 — Request waterfall
-
-`sort` must come **before** `fields` — otherwise `start_time` is dropped and sort
-fails with FIELD_DOES_NOT_EXIST.
-
-```dql
-fetch user.events, from: TF
-| filter user_action.instance_id == "UA_INSTANCE_ID"
-| filter characteristics.has_request == true
-| sort start_time asc
-| limit 500
-| fields
-    url.full, url.domain, url.path, url.provider,
-    performance.initiator_type,
-    start_time, end_time, duration,
-    performance.transfer_size, performance.encoded_body_size, performance.decoded_body_size,
-    http.response.status_code, http.request.method,
-    performance.render_blocking_status,
-    performance.delivery_type,
-    performance.next_hop_protocol,
-    performance.worker_start,
-    performance.redirect_start, performance.redirect_end,
-    performance.domain_lookup_start, performance.domain_lookup_end,
-    performance.connect_start, performance.connect_end,
-    performance.secure_connection_start,
-    performance.request_start,
-    performance.response_start, performance.response_end,
-    performance.load_event_start, performance.load_event_end,
-    performance.dom_complete,
-    performance.dom_content_loaded_event_start, performance.dom_content_loaded_event_end,
-    performance.fetch_start, performance.start_time,
-    performance.incomplete_reason,
-    characteristics.has_w3c_resource_timings,
-    characteristics.has_w3c_navigation_timings,
-    characteristics.has_failed_request,
-    characteristics.has_csp_violation,
-    characteristics.has_pending_request
-```
-
----
-
-## Step 7 — Exception events
-
-```dql
-fetch user.events, from: TF
-| filter user_action.instance_id == "UA_INSTANCE_ID"
-| filter characteristics.has_exception == true
-| fields start_time, error.display_name
-| limit 200
-```
-
----
-
-## Step 8 — Analysis
-
-Using data from Steps 3–7, produce a structured diagnosis.
-
-### LCP Summary
-- p75 / p50 / p95 in ms, each with status label
-- LCP element: tag name + URL (`lcp.ui_element.tag_name`, `lcp.url`)
-- Instance LCP value and proximity to p75
-
-### TTFB Breakdown
-| Phase | ms |
-|---|---|
-| DNS | `ttfb.dns_duration` |
-| Connection | `ttfb.connection_duration` |
-| Waiting (TTFB) | `ttfb.waiting_duration` |
-| Request | `ttfb.request_duration` |
-| Cache | `ttfb.cache_duration` |
-
-Flag if TTFB > 800 ms.
-
-### Render-Blocking Resources
-All resources where `performance.render_blocking_status == "blocking"`, sorted by
-duration desc. Total blocking ms.
-
-### Top Slow Resources (by duration)
-Top 10 by duration. Columns: URL (60 chars), initiator type, duration ms, transfer
-size KB, status code. Flag any > 500 ms.
-
-### Top Heavy Resources (by transfer size)
-Top 10 by transfer size KB. Flag uncompressed responses where `encoded_body_size ≈
-decoded_body_size` on resources > 50 KB.
-
-### Third-Party Resources
-Group by `url.domain`. For each non-origin domain: domain, request count, total
-duration ms, total transfer size KB. Sort by total duration desc. Flag > 200 ms.
-
-### Long Tasks
-If `long_task.all.count > 0`: count, avg duration, slowest occurrences. Flag any
-overlapping with the LCP window (0 → LCP ms).
-
-### Errors
-- HTTP 4xx / 5xx / exception counts from Step 5
-- List failed requests (`characteristics.has_failed_request == true`)
-
-### Recommendations
-Prioritized list, each tied to a specific finding:
-
-1. **TTFB > 800 ms** → "Reduce server response time. DNS: Xms, wait: Xms. Investigate CDN, server processing, DB latency."
-2. **Render-blocking resources** → "Defer N render-blocking resources (Xms total). Use `<link rel=preload>` for late-discovered LCP resource."
-3. **LCP element is `<img>` or `<image>`** → "Add `fetchpriority='high'`. Ensure not lazy-loaded."
-4. **LCP element is background CSS image** → "Move to `<img>` for earlier browser discovery."
-5. **LCP element > 200 KB** → "Compress/resize LCP resource. Current: X KB."
-6. **Large uncompressed resources** → "Enable gzip/Brotli for [list]."
-7. **Slow third-party domains > 200 ms** → "Audit scripts from [domains]. Use `async`/`defer` or load after LCP."
-8. **Long tasks during LCP window** → "Reduce main-thread blocking. N tasks, avg Xms. Consider code-splitting."
-9. **High 4xx/5xx count** → "N failed requests may delay interactivity. Check: [URLs]."
-
-Only include recommendations with evidence from the data. Add impact label (High / Medium / Low).
-
----
-
-## Step 9 — Save markdown report
-
-Derive slug from `PAGE` (replace `/`, `.`, spaces with `-`, strip leading dashes).
-
-Write Step 8 output to:
-
-```
-~/Downloads/full-page-analysis-{slug}-{YYYY-MM-DD}.md
-```
-
-Front-matter block:
-
-```markdown
-# Full Page Analysis — {PAGE}
-**Frontend:** {FRONTEND}
-**UA Instance:** {UA_INSTANCE_ID}
-**Browser:** {browser.name} {browser.version}, {device.type}, {os.name}
-**Analyzed:** {YYYY-MM-DD}
-**p75 LCP:** {value} ms ({status})
-```
-
-Append full Step 8 output below it. Tell the user the file path.
-
----
-
-## Step 10 — Build interactive waterfall HTML
-
-**No field mapping required.** Pass raw DQL records directly with `__raw: true` —
-the template's `normalizeRaw()` function handles all field conversion, W3C timing
-normalization, and unit translations at render time.
-
-### Save query outputs to temp files
-
-Run Steps 5, 6, and 7 queries saving output to temp files (skip if already done
-during those steps):
+Derive `SLUG` from `PAGE` (replace `/`, `.`, spaces with `-`, strip leading
+dashes; use `home` if `PAGE` is `/`). Create the data directory:
 
 ```bash
-dtctl query -f - -o json <<'DQL' > /tmp/wf_summary.json
-# paste Step 5 query here
-DQL
-
-dtctl query -f - -o json <<'DQL' > /tmp/wf_requests.json
-# paste Step 6 query here
-DQL
-
-dtctl query -f - -o json <<'DQL' > /tmp/wf_exceptions.json
-# paste Step 7 query here
-DQL
+mkdir -p /tmp/fpa-SLUG
 ```
 
-Replace `SKILL_ROOT` with the absolute path to this skill's directory (the folder containing `scripts/` and `assets/`), `PAGE_TITLE` with the page name, and `OUTPUT_PATH` with the desired output file path.
+Run each of the 12 queries below (the four "Instance-scoped" plus eight
+"Aggregate" rows in `references/queries.md` — that file is authoritative
+for parameter names and output filenames; the list here is a pointer, not a
+copy) as:
 
 ```bash
-node SKILL_ROOT/scripts/build-waterfall.mjs \
-  --summary /tmp/wf_summary.json \
-  --requests /tmp/wf_requests.json \
-  --exceptions /tmp/wf_exceptions.json \
-  --page-title "PAGE_TITLE" \
-  --out OUTPUT_PATH
+dtctl query -f <SKILL_BASE_DIR>/references/queries/<file>.dql --set <params> -o json --agent --spill=never | grep '^{' > /tmp/fpa-SLUG/<output>.json
 ```
 
-If Node.js is not available, tell the user to run this skill with `--install`
-first to set up the required dependencies.
+The four instance-scoped queries take `timeframe=TF` plus `view_instance` or
+`ua_instance` as `queries.md` specifies per file. The eight aggregate
+queries all take `timeframe=TF`, `frontend=FRONTEND`, `page=PAGE`.
+
+Background all 12 `dtctl query` invocations with `&`, then `wait` for them
+all before proceeding.
+
+- `--spill=never` forces rows inline (`result.kind == "records"`). If
+  `dtctl` ever spills anyway, branch on `result.kind` per the dtctl skill
+  and `dtctl inspect` the file instead of re-querying.
+- `| grep '^{'` strips any warning lines `dtctl` emits on stdout before the
+  JSON envelope — the envelope is always a single line starting with `{`.
 
 ---
 
-Write output to:
+## Step 5 — Author findings
+
+Follow `<SKILL_BASE_DIR>/references/findings-prompt.md` for exact
+instructions on reading the computed findings and writing analyst-notes
+prose. Write the result to:
 
 ```
-~/Downloads/full-page-analysis-{slug}-{YYYY-MM-DD}.html
+/tmp/fpa-SLUG/findings.md
 ```
 
-Open: `open ~/Downloads/full-page-analysis-{slug}-{YYYY-MM-DD}.html`
+The required heading is `## Analyst notes`. Note that `findings-prompt.md`
+expects you to read the computed findings from the **rendered HTML** (Step
+6), not from the raw query JSON — the raw counters are unparsed strings
+until `build-report.mjs` coerces them. Run Step 6 once with an empty or
+placeholder findings file first if you need to see `DATA.findings` before
+writing prose, then rerun Step 6 after writing `findings.md`.
 
-Tell the user both output file paths when done.
+---
+
+## Step 6 — Build the report
+
+```bash
+node <SKILL_BASE_DIR>/scripts/build-report.mjs \
+  --data /tmp/fpa-SLUG \
+  --findings /tmp/fpa-SLUG/findings.md \
+  --page-title "PAGE" \
+  --out ~/Downloads/full-page-analysis-SLUG-YYYY-MM-DD.html
+```
+
+This reads the canonical JSON filenames from the data directory, applies
+the unit conversions and finding rules in `scripts/lib/normalize.mjs` and
+`scripts/lib/findings.mjs`, and renders the standalone HTML report (KPI
+cards, tables, computed findings, analyst notes, resource waterfall) with
+Chart.js and the Strato tokens inlined. If `--findings` is omitted the
+analyst-notes panel is left blank; do not omit it once Step 5 is done.
+
+The HTML is written directly to `~/Downloads/` — there is no separate
+`/tmp` intermediate for this artifact.
+
+---
+
+## Step 7 — Preview
+
+**Skip this entire step if `--no-preview` was passed.** Proceed directly to
+Step 8.
+
+Open the HTML for the user to review:
+
+**macOS:**
+```bash
+open ~/Downloads/full-page-analysis-SLUG-YYYY-MM-DD.html
+```
+
+**Windows:**
+```powershell
+Start-Process ~/Downloads/full-page-analysis-SLUG-YYYY-MM-DD.html
+```
+
+Then use `AskUserQuestion`:
+- **Looks good — build the PDF** — proceed to Step 8
+- **Revise analyst notes** — edit `/tmp/fpa-SLUG/findings.md`, rerun Step 6
+  (this overwrites the same `~/Downloads/...html` file), and reopen
+
+---
+
+## Step 8 — Convert to PDF
+
+```bash
+bash <SKILL_BASE_DIR>/assets/render-pdf.sh \
+  ~/Downloads/full-page-analysis-SLUG-YYYY-MM-DD.html \
+  ~/Downloads/full-page-analysis-SLUG-YYYY-MM-DD.pdf
+```
+
+**Windows** (PowerShell): use `assets/render-pdf.ps1` with the same two
+arguments.
+
+Tell the user the absolute paths to both files in `~/Downloads/`.

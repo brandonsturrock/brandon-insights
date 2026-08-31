@@ -48,6 +48,16 @@ Run each query as:
 | `fpa-lcp-baseline.dql` | `timeframe`, `frontend`, `page` |
 | `fpa-top-browser.dql` | `timeframe`, `frontend`, `page` |
 | `fpa-select-instance.dql` | `timeframe`, `frontend`, `page`, `browser`, `low_bound`, `high_bound` |
+| `fpa-resolve-instance.dql` | `timeframe`, `ua_instance` |
+| `fpa-resolve-instance-type.dql` | `timeframe`, `ua_instance` |
+
+`fpa-resolve-instance.dql` and `fpa-resolve-instance-type.dql` are used only
+by the "I have an instance ID" entry point (added in the SKILL.md rewrite
+that added Task 9's end-to-end run, to keep that path DQL-free too): the
+former resolves `view.instance_id`, `frontend.name`, `page.detected_name`,
+and browser/device metadata from a known `user_action.instance_id`; the
+latter is the fallback wrong-type check when the first returns no rows in
+either the 7-day or 30-day window.
 
 ## Aggregate
 

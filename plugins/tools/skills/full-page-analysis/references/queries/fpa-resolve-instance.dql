@@ -1,0 +1,9 @@
+fetch user.events, from: {{.timeframe}}
+| filter user_action.instance_id == "{{.ua_instance}}"
+| filter characteristics.has_user_action == true
+| filter user_action.type == "hard_navigation"
+| fields view.instance_id, frontend.name, page.detected_name,
+         lcp.render_time, lcp.url, lcp.ui_element.tag_name,
+         browser.name, browser.version, device.type, os.name,
+         ttfb.value, timestamp
+| limit 1
