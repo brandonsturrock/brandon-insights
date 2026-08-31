@@ -632,8 +632,11 @@ listeners. Omitting any of them yields a blank page.
    the tooltip, pill, and waterfall rules the ported code relies on are present.
 2. **JavaScript.** Copy lines 364–1314 into the second `<script>` block, below
    the `DATA` destructure, **omitting exactly two spans**: the
-   `(function renderMetricsPanel() { ... })();` IIFE at lines 532–627 and the
-   `(function renderFindings() { ... })();` IIFE at lines 628–679. Phase 2 and
+   `(function renderMetricsPanel() { ... })();` IIFE at lines 532–625 and the
+   `(function renderFindings() { ... })();` IIFE at lines 628–673. Cut on the
+   real `})();` boundaries, not on these numbers if they disagree: lines 675–677
+   define `ttEl`, `lineTtEl` and `exTtEl`, and an over-long cut deletes them,
+   breaking every tooltip. Phase 2 and
    Phase 3 replace both with aggregate-driven equivalents. Keep everything else,
    including `clsRating`, `msRating`, and `RATING_COLORS` at lines 528–530 —
    Task 6 reuses them for the Core Web Vitals table.
@@ -1903,6 +1906,115 @@ git commit -m "feat(full-page-analysis): v2 — aggregate analysis, Strato water
 ```
 
 ---
+
+---
+
+## Task 10: Action duration bar
+
+**Executed out of numeric order — immediately after Task 4, before Task 5.** It is
+numbered 10 only so the brief-extraction tooling can address it. Task 9 must
+include its query in the SKILL.md orchestration.
+
+Added after the Phase 1 gate, at the maintainer's request. Dynatrace's own
+waterfall opens with a single bar spanning the whole user action — "Load
+/orange-booking-review.jsf, 1.44 s" — and every resource row nests beneath it.
+Ours starts straight at the resource rows, so there is nothing showing the
+end-to-end envelope the requests sit inside.
+
+**Files:**
+- Create: `references/queries/fpa-instance-action.dql`
+- Modify: `references/queries.md`
+- Modify: `scripts/build-report.mjs`
+- Modify: `assets/report.html.tmpl`
+
+**Interfaces:**
+- Consumes: `normalizeRaw` output (Task 1); the slot contract and ported renderers (Task 3).
+- Produces: `data.instance.action = { name, type, durationMs, startAbsoluteMs, endAbsoluteMs }`.
+
+- [ ] **Step 1: Write the query**
+
+`duration` on the user action event is **nanoseconds** — verified against a live
+tenant on 2026-08-31: instance `552c90689fb8da5e` returns `1439000000`, and the
+built-in waterfall renders that same action as `1.44 s`.
+
+`references/queries/fpa-instance-action.dql`:
+
+```
+fetch user.events, from: {{.timeframe}}
+| filter user_action.instance_id == "{{.ua_instance}}"
+| filter characteristics.has_user_action == true
+| fields user_action.name, user_action.type, duration, start_time, end_time
+| limit 1
+```
+
+Add to the instance-scoped table in `references/queries.md`:
+
+| Query file | Parameters | Output filename |
+|---|---|---|
+| `fpa-instance-action.dql` | `timeframe`, `ua_instance` | `instance-action.json` |
+
+- [ ] **Step 2: Load it**
+
+In `scripts/build-report.mjs`, load `instance-action.json` and attach the result
+to the normalized instance object:
+
+```js
+const actionRow = loadRecords(args.data, "instance-action.json")[0] || {};
+data.instance.action = {
+  name: actionRow["user_action.name"] ?? null,
+  type: actionRow["user_action.type"] ?? null,
+  durationMs: actionRow.duration != null ? Number(actionRow.duration) / 1e6 : null,
+  startAbsoluteMs: actionRow.start_time ? Date.parse(actionRow.start_time) : null,
+  endAbsoluteMs: actionRow.end_time ? Date.parse(actionRow.end_time) : null,
+};
+```
+
+`loadRecords` already returns `[]` for a missing file, so an absent action file
+degrades to a null action rather than throwing.
+
+- [ ] **Step 3: Render the bar**
+
+Render one row above the resource rows, inside `#waterfall-slot`, spanning the
+action's extent on the same time axis the resource bars use. It must:
+
+- share the resource rows' x-scale exactly, so it reads as an envelope around
+  them rather than a second, unrelated chart;
+- be visually distinct from a resource bar — it is not a request. Use
+  `var(--dt-primary)`, the brand accent, which is currently reserved for emphasis
+  and unused in the waterfall body;
+- label with `user_action.name` and the formatted duration, via the existing
+  `formatMs` helper;
+- render nothing at all when `data.instance.action.durationMs` is null.
+
+Note the action's `start_time` and the page summary's `performance.time_origin`
+are not identical — on the validated instance they differ by about 6 ms. Position
+the bar on the same origin the resource bars are positioned against, so any offset
+is visible rather than silently absorbed.
+
+- [ ] **Step 4: Verify against the captured instance**
+
+```bash
+dtctl query -f references/queries/fpa-instance-action.dql \
+  --set timeframe='now()-7d' --set ua_instance='552c90689fb8da5e' \
+  -o json --agent --spill=never | grep '^{' > /tmp/fpa-real/instance-action.json
+node scripts/build-report.mjs --data /tmp/fpa-real --page-title "REAL" --out /tmp/fpa-real/report.html
+```
+
+Expected: a bar labelled `Load /orange-booking-review.jsf` reading `1.44 s`, its
+right edge at or beyond the last resource bar's right edge. If the action bar ends
+before a resource does, the axis or the origin is wrong — that is a bug, not a
+rendering preference.
+
+Also confirm the null path: build from a data directory with no
+`instance-action.json` and check the report renders without the bar and without
+errors.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add references/queries/fpa-instance-action.dql references/queries.md scripts/build-report.mjs assets/report.html.tmpl
+git commit -m "feat(full-page-analysis): add user action duration bar to the waterfall"
+```
 
 ## Deferred
 
