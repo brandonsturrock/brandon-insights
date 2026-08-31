@@ -29,6 +29,8 @@ export const THRESHOLDS = {
   // Rule-only thresholds (Task 7). Not consumed by the template.
   resourceSlowMs: 500,
   thirdPartySlowMs: 200,
+  // Share of loads with any error before the `errors` rule fires at all.
+  errorRate: 0.05,
   // A browser/device segment is an outlier if its LCP p75 exceeds the blended
   // p75 by this factor and it carries at least this share of loads.
   segmentRatio: 1.5,
@@ -155,7 +157,7 @@ export function computeFindings(data) {
       severity: "medium",
       title: "Slow third-party domains",
       evidence: thirdParty.slice(0, 5)
-        .map((d) => `${d.domain} (p75 ${Math.round(num(d.durationP75) ?? 0)}ms, ${d.loads} of ${pageLoads} loads)`)
+        .map((d) => `${d.domain} (p75 total per load ${Math.round(num(d.durationP75) ?? 0)}ms, ${d.loads} of ${pageLoads} loads)`)
         .join("; ") + ".",
     });
   }
@@ -176,7 +178,7 @@ export function computeFindings(data) {
   // loads_with_any_error, not the sum of the three counters — a load with both a
   // JS exception and a 4xx would otherwise be counted twice.
   const failing = num(err.loadsWithAnyError) ?? 0;
-  if (failing > 0 && errLoads > 0 && failing / errLoads > 0.05) {
+  if (failing > 0 && errLoads > 0 && failing / errLoads > THRESHOLDS.errorRate) {
     // A single 5xx in 77,000 loads is not a high-severity signal — require the
     // same 1% share used nowhere else as a magic number, chosen because it is
     // an order of magnitude below the 5% gate that fires this rule at all, so

@@ -1,14 +1,14 @@
 ---
 name: full-page-analysis
 version: 2.0.0
-description: Full page performance analysis for a Dynatrace RUM page — p75 LCP stats, TTFB breakdown, render-blocking resources, slow/heavy resources, third-party audit, long tasks, errors, prioritized recommendations, saved markdown report, and an interactive resource waterfall HTML. Combines rum-lcp-analysis and dt-waterfall into a single end-to-end flow. Use when the user wants a complete picture of a page's load performance.
+description: Full page performance analysis for a Dynatrace RUM page — p75 LCP stats, TTFB breakdown, render-blocking resources, slow/heavy resources, third-party audit, long tasks, errors, and a self-contained HTML/PDF report with an interactive resource waterfall. Use when the user wants a complete picture of a page's load performance.
 ---
 
 # Full Page Analysis
 
 End-to-end RUM page performance analysis: LCP percentiles → representative instance
-selection → full CWV/TTFB/request diagnosis → saved markdown report → interactive
-waterfall HTML.
+selection → full CWV/TTFB/request diagnosis → self-contained HTML report (with
+interactive resource waterfall) → optional PDF export.
 
 Uses `dtctl query` for all data access.
 

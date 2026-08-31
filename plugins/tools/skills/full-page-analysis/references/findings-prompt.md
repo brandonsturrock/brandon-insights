@@ -98,9 +98,13 @@ page-wide problem and one unlucky load:
   mark a row "rare." Distinct from `widespread`: this is the tables'
   labelling threshold, not a findings gate.
 - `resourceSlowMs` (**500**) — the p75 duration a resource must clear, on
-  top of being widespread, for `slow-resources`. Also the duration floor for
-  `render-blocking`.
+  top of being widespread, for `slow-resources`. `render-blocking` has no
+  duration floor — a resource blocking on most of its own requests fires
+  regardless of how fast it is; this threshold only raises its severity to
+  "high" once its p75 duration clears it.
 - `thirdPartySlowMs` (**200**) — same idea for `slow-third-party`.
+- `errorRate` (**0.05**) — share of loads with at least one error before
+  `errors` fires at all.
 - `segmentRatio` (**1.5**) / `segmentMinShare` (**0.05**) — a browser/device
   segment fires `segment-outlier` only if its LCP p75 is at least 1.5x the
   blended p75 *and* it carries at least 5% of loads.

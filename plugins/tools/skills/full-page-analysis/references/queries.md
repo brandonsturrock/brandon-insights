@@ -13,16 +13,27 @@ Data-model probes resolved against `demo live` on 2026-08-31 (do not re-probe):
 
 All eight aggregate queries (load-count, cwv-percentiles, ttfb-phases, resources-agg,
 thirdparty-agg, longtasks-agg, errors-agg, browser-device) filter
-`dt.rum.user_type == "real_user"`, on the outer fetch and, where present, the inner
-nav-join subquery too. Request events on `www.easytravel.com` carry substantial
-robot/synthetic traffic (111,562 `robot` request events vs 2,591,562 `real_user` over
-24h) — leaving it unfiltered inflates the resource-prevalence denominator with
-synthetic loads and produces an unexplained mismatch between request-scoped and
-page-summary-scoped `loads` figures in the same report. The five selection queries
-(`fpa-frontends`, `fpa-pages`, `fpa-lcp-baseline`, `fpa-top-browser`,
-`fpa-select-instance`) do NOT filter on `dt.rum.user_type` — they mirror v1's behavior
-exactly, and the instance-selection path is already validated against the built-in
-waterfall, so their population was left untouched.
+`dt.rum.user_type == "real_user"` on their own fetch. The five page-summary
+aggregates (cwv-percentiles, ttfb-phases, longtasks-agg, errors-agg, browser-device)
+used to also join to a hard-navigation subquery on `{view.instance_id,
+dt.rum.session.id}` to scope the page-summary population to the given page; that
+join was removed (page-summary events already carry `page.detected_name`, and on
+some frontends — Astroshop confirmed — the join key mismatches between a page
+summary and the hard navigation that produced it, dropping the population to a
+near-empty, unrepresentative sample). All five now filter
+`page.detected_name == "{{.page}}"` directly, alongside their own
+`dt.rum.user_type == "real_user"` filter. resources-agg and thirdparty-agg keep
+their join, on `user_action.instance_id`, which does not have this problem.
+Request events on `www.easytravel.com` carry substantial robot/synthetic traffic
+(111,562 `robot` request events vs 2,591,562 `real_user` over 24h) — leaving it
+unfiltered inflates the resource-prevalence denominator with synthetic loads and
+produces an unexplained mismatch between request-scoped and page-summary-scoped
+`loads` figures in the same report. `fpa-lcp-baseline` and `fpa-top-browser` also
+filter `dt.rum.user_type == "real_user"` (added so the quoted baseline and the
+representative-browser pick agree with the rest of the report's real-user
+population). `fpa-frontends`, `fpa-pages`, and `fpa-select-instance` do NOT filter
+on `dt.rum.user_type` — the instance-selection path is already validated against
+the built-in waterfall, so their population was left untouched.
 -->
 
 `build-report.mjs` reads the `--data` directory by these exact filenames.

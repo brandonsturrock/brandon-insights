@@ -527,7 +527,6 @@
 <div id="line-tooltip" class="tooltip"></div>
 <div id="ex-tooltip" class="tooltip"></div>
 
-<script src="chart.umd.min.js"></script>
 <script>
 const DATA = {{DATA_JSON}};
 const { summary, requests, exceptions, action } = DATA.instance;
@@ -1513,7 +1512,7 @@ function renderCwv() {
     { label: "Metric", cell: (r) => `<span class="lead">${escHtml(r.label)}</span> <span class="subdued">${escHtml(r.name)}</span>` },
     { label: "p50", num: true, cell: (r) => fmt(c[r.key + "P50"], r.fmt) },
     { label: "p75", num: true, cell: (r) => ratingCell(c[r.key + "P75"], r.th, r.fmt) },
-    { label: "p95", num: true, cell: (r) => ratingCell(c[r.key + "P95"], r.th, r.fmt) },
+    { label: "p95", num: true, cell: (r) => fmt(c[r.key + "P95"], r.fmt) },
   ], CWV_ROWS));
 }
 
@@ -1613,23 +1612,30 @@ function renderResourceTable(slotId, noteId, field, blurb) {
 function renderThirdParty() {
   let origin = null;
   try { origin = new URL(summary.pageUrl).hostname; } catch { /* pageUrl may be a path */ }
-  const rows = DATA.thirdParty.filter((r) => r.domain && r.domain !== origin).sort(byDesc("transferP75"));
   const note = document.getElementById("thirdparty-note");
+  // Without an origin, "third party" cannot be told apart from "first party" —
+  // mirrors computeFindings' suppression of slow-third-party in findings.mjs:
+  // an empty note beats a table where the filter matches everything, including
+  // the page's own domain.
+  if (!origin) {
+    note.textContent = "";
+    setSlot("thirdparty-slot", emptyNote("Third-party domains could not be determined because the page's own URL was not available (instance summary missing)."));
+    return;
+  }
+  const rows = DATA.thirdParty.filter((r) => r.domain && r.domain !== origin).sort(byDesc("transferP75"));
   if (!rows.length) {
     note.textContent = "";
-    setSlot("thirdparty-slot", emptyNote(origin
-      ? `No requests to domains other than ${origin} were recorded for this page.`
-      : "No third-party requests were recorded for this page."));
+    setSlot("thirdparty-slot", emptyNote(`No requests to domains other than ${origin} were recorded for this page.`));
     return;
   }
   note.innerHTML = `${rows.length} domain${rows.length > 1 ? "s" : ""} other than ` +
-    `<strong>${escHtml(origin || "the page origin")}</strong>, by transfer size.`;
+    `<strong>${escHtml(origin)}</strong>, by transfer size.`;
   setSlot("thirdparty-slot", aggTable([
     { label: "Domain", cell: (r) => `<span class="path">${escHtml(r.domain)}</span>` },
     { label: "Present in", cell: (r) => coverageCell(r.loads, DATA.loadCount, true) },
     { label: "Requests", num: true, cell: (r) => fmtInt(r.requests) },
     { label: "Per load", num: true, cell: (r) => (r.loads ? (r.requests / r.loads).toFixed(1) : NIL) },
-    { label: "Duration p75", num: true, cls: "lead", cell: (r) => fmt(r.durationP75, formatMs) },
+    { label: "Total per load p75", num: true, cls: "lead", cell: (r) => fmt(r.durationP75, formatMs) },
     { label: "Transfer p75", num: true, cell: (r) => fmt(r.transferP75, formatBytes) },
   ], rows));
 }

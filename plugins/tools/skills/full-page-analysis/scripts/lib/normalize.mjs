@@ -49,6 +49,11 @@ export function normalizeRaw(raw) {
     ['performance.request_start','requestStartNs'],['performance.response_start','responseStartNs'],
     ['performance.response_end','responseEndNs'],['performance.fetch_start','fetchStartNs'],
     ['performance.start_time','startTimeNs'],
+    ['performance.dom_complete','domCompleteNs'],
+    ['performance.dom_content_loaded_event_start','domContentLoadedEventStartNs'],
+    ['performance.dom_content_loaded_event_end','domContentLoadedEventEndNs'],
+    ['performance.load_event_start','loadEventStartNs'],
+    ['performance.load_event_end','loadEventEndNs'],
   ];
   const requests = (raw.requests || []).map(r => {
     const startMs = parseIso(r['start_time']), endMs = parseIso(r['end_time']);

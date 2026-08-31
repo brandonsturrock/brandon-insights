@@ -76,7 +76,6 @@ full-page-analysis/
     test-normalize.mjs      assert-based, runs against a checked-in fixture
   assets/
     report.html.tmpl        Strato-styled; aggregate sections + waterfall section
-    chart.umd.min.js
     render-pdf.sh
     render-pdf.ps1
 ```

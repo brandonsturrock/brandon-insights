@@ -2,14 +2,7 @@ fetch user.events, from: {{.timeframe}}
 | filter frontend.name == "{{.frontend}}"
 | filter characteristics.has_page_summary == true
 | filter dt.rum.user_type == "real_user"
-| join [
-    fetch user.events, from: {{.timeframe}}
-    | filter frontend.name == "{{.frontend}}"
-    | filter characteristics.has_user_action == true
-    | filter user_action.type == "hard_navigation"
-    | filter page.detected_name == "{{.page}}"
-    | summarize count(), by: {view.instance_id, dt.rum.session.id}
-  ], on: {view.instance_id, dt.rum.session.id}, prefix: "nav."
+| filter page.detected_name == "{{.page}}"
 | fieldsAdd lcp_ms = if(lcp.status == "reported", toLong(web_vitals.largest_contentful_paint) / 1000000, else: null)
 | summarize
     loads = count(),

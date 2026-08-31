@@ -210,9 +210,6 @@ const analystNotesHtml = args.findings
 
 const template = fs.readFileSync(path.join(SKILL_ROOT, "assets", "report.html.tmpl"), "utf8");
 const tokens = fs.readFileSync(path.join(SKILL_ROOT, "assets", "strato-tokens.css"), "utf8");
-const chartJs = fs
-  .readFileSync(path.join(SKILL_ROOT, "assets", "chart.umd.min.js"), "utf8")
-  .replace(/\/\/# sourceMappingURL=\S+/g, "");
 
 const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
@@ -222,8 +219,7 @@ let html = template
   .split("{{STRATO_TOKENS}}").join(tokens)
   .split("{{ANALYST_NOTES}}").join(analystNotesHtml)
   .replace("{{DATA_JSON}}", () =>
-    JSON.stringify(data).replace(/<\/script>/g, "<\\/script>"))
-  .replace('<script src="chart.umd.min.js"></script>', `<script>${chartJs}</script>`);
+    JSON.stringify(data).replace(/<\/script>/g, "<\\/script>"));
 
 // Mirrors monthly-report: the analyst-notes area stays editable in the
 // browser after the file is opened, same as every other exec-body block.

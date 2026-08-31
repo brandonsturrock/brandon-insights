@@ -74,4 +74,14 @@ assert.equal(real.requests[0].startTimeNs, 0); // absolute branch: rebased to 0
 assert.equal(real.requests[1].startTimeNs, 674399993); // relative branch: untouched
 assert.equal(real.requests[1].fetchStartNs, 0);
 
+// Processing / DOMContentLoaded / Load event fields (fix round: selected by
+// fpa-instance-requests.dql and read by the template, but missing from
+// TIMING_KEYS so the tooltip rows could never render). Index 0's start_time
+// is 0, so the absolute rebase is a no-op here.
+assert.equal(real.requests[0].domCompleteNs, 1420500000);
+assert.equal(real.requests[0].domContentLoadedEventStartNs, 1259500000);
+assert.equal(real.requests[0].domContentLoadedEventEndNs, 1314399993);
+assert.equal(real.requests[0].loadEventStartNs, 1437799987);
+assert.equal(real.requests[0].loadEventEndNs, 1439099990);
+
 console.log("test-normalize: all assertions passed");
