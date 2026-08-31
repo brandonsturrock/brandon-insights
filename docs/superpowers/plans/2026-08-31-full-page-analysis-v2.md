@@ -812,12 +812,29 @@ git commit -m "fix(full-page-analysis): validate resource timings against built-
 - Consumes: nothing from earlier tasks.
 - Produces: the output filenames listed in the table below; Task 6 reads exactly those names.
 
-- [ ] **Step 1: Probe the data model before writing any aggregate query**
+- [ ] **Step 1: Record the resolved data-model probes** — ALREADY ANSWERED, do not re-probe
 
-Two units are genuinely unsettled in this repo and both silently corrupt every
-number downstream if guessed wrong. Resolve them against a live tenant first,
-using a frontend and page the maintainer names, and record the answers as a
-comment at the top of `references/queries.md`.
+Both units were resolved against the `demo live` tenant on 2026-08-31. The
+queries below are already written to match. Your only job in this step is to
+record both answers as a comment at the top of `references/queries.md`, so the
+next person does not have to rediscover them.
+
+**CLS is UNSCALED — do not divide by 10000.** Over 41,917 easyTravel page
+summaries, `percentile(toDouble(web_vitals.cumulative_layout_shift), 75)` = 0.0001
+and `max(...)` = 0.9971 — already a 0-1 CLS score. v1's raw read
+(`assets/template.html:296`, `528`) was correct.
+
+Consequence worth recording: the sibling `monthly-report` skill divides this same
+field by 10000 in `cm-cwv-tier.dql` and `cm-top-pages.dql`, which on this evidence
+understates every CLS figure there by four orders of magnitude. That is a bug in
+another skill, out of scope for this branch — note it and move on.
+
+**`duration` is NANOSECONDS — the `/ 1000000` in the queries below is correct.**
+User action instance `552c90689fb8da5e` reports `duration = 1439000000`, and
+Dynatrace's built-in waterfall renders that same action as `1.44 s`.
+
+The original probe text follows, retained only so the method is reproducible if
+either answer is ever doubted:
 
 **CLS scale.** `monthly-report/references/queries/cm-cwv-tier.dql` divides
 `web_vitals.cumulative_layout_shift` by 10000. v1 does not: `normalizeRaw`
