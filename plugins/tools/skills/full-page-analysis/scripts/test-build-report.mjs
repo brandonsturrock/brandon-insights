@@ -30,5 +30,11 @@ assert.deepEqual(loadRecords(dir, "empty.json"), []);
 write("malformed.json", JSON.stringify({ result: { kind: "error", message: "boom" } }));
 assert.throws(() => loadRecords(dir, "malformed.json"), /Unexpected JSON envelope shape/);
 
+// kind: "records" with no records key at all (undefined, not JSON null) is
+// still a malformed envelope and must throw, not be swallowed by the
+// null-records branch above.
+write("missing-records-key.json", JSON.stringify({ result: { kind: "records" } }));
+assert.throws(() => loadRecords(dir, "missing-records-key.json"), /Unexpected JSON envelope shape/);
+
 fs.rmSync(dir, { recursive: true, force: true });
 console.log("test-build-report.mjs: all assertions passed");

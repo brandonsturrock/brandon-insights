@@ -39,7 +39,7 @@ export function loadRecords(dataDir, filename) {
   // A query that legitimately matches zero rows still comes back as
   // kind: "records" but with records: null (not []). Zero exceptions on a
   // page load is the common case, not a malformed response.
-  if (result && result.kind === "records" && result.records == null) return [];
+  if (result && result.kind === "records" && result.records === null) return [];
   if (Array.isArray(result)) return result;
   throw new Error(`Unexpected JSON envelope shape in ${filename} (kind=${result && result.kind})`);
 }
