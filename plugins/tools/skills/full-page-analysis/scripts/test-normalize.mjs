@@ -47,4 +47,31 @@ assert.equal(out.exceptions.length, 1);
 assert.equal(out.exceptions[0].displayName, "TypeError: x is undefined");
 assert.equal(out.exceptions[0].startAbsoluteMs, Date.parse("2026-08-01T10:00:03.000Z"));
 
+// --- Ground truth: real captured instance 552c90689fb8da5e, verified
+// against Dynatrace's built-in waterfall (no discrepancies reported). ---
+const realRaw = fixture("instance-real.json");
+const real = normalizeRaw(realRaw);
+
+assert.equal(real.requests.length, 25);
+assert.equal(real.exceptions.length, 0);
+
+// First request (index 0, the navigation record): start_time is 0 and
+// fetch_start (699996) is > 0 and >= start_time - 1ms, so isAbs is true and
+// startTimeNs/fetchStartNs are rebased onto start_time.
+assert.equal(real.requests[0].fetchStartNs, 699996);
+assert.equal(real.requests[0].responseEndNs, 24099990);
+
+// LCP reported at 1209899000 ns -> 1209.899 ms; TTFB is already in ms.
+assert.equal(real.summary.lcpMs, 1209.899);
+assert.equal(real.summary.ttfbMs, 19.79998779296875);
+
+// isAbs branch coverage against real data, not just the synthetic
+// approximation: index 0 is the only absolute-branch request in this
+// capture (fetch_start > 0 and >= start_time - 1ms, so startTimeNs is
+// rebased to 0); index 1 is a relative request (fetch_start 0, start_time
+// 674399993, both pass through untouched).
+assert.equal(real.requests[0].startTimeNs, 0); // absolute branch: rebased to 0
+assert.equal(real.requests[1].startTimeNs, 674399993); // relative branch: untouched
+assert.equal(real.requests[1].fetchStartNs, 0);
+
 console.log("test-normalize: all assertions passed");
