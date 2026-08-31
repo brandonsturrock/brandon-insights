@@ -356,6 +356,23 @@
     border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
   }
   .skipped-banner code { font-family: var(--dt-font-mono); }
+
+  /* Findings panel. One row per rule result: a severity chip (reuses .chip,
+     coloured inline per finding since severity is data, not a fixed class),
+     the title, and the evidence sentence — no new hue set, just the three
+     tokens the brief names, already vetted at these same weights by the CWV
+     rating pairs and the skipped-file banner elsewhere in this template. */
+  .finding-row { display: flex; gap: 10px; align-items: baseline; padding: 7px 0; border-bottom: 1px solid var(--border-subdued); }
+  .finding-row:last-child { border-bottom: none; }
+  .finding-chip { flex: 0 0 auto; }
+  .finding-title { font-weight: 600; margin-right: 6px; }
+  .finding-evidence { color: var(--text-subdued); }
+  /* Analyst notes: plain prose written by a later agent, edited in place. */
+  .exec-body { font-size: var(--wf-text-body); line-height: 1.55; color: var(--text-default); }
+  .exec-body ul { margin: 0; padding-left: 18px; }
+  .exec-body li { margin-bottom: 4px; }
+  .exec-body p { margin: 0 0 8px; }
+  .exec-body[contenteditable="true"]:focus { outline: 1px dashed var(--border-default); outline-offset: 4px; }
 </style>
 </head>
 <body>
@@ -367,6 +384,13 @@
 <!-- Aggregate sections. Every figure below is cross-session; the waterfall at
      the foot of the page is the only single-load view in the report. Each
      renderer writes into its own slot id, matching the waterfall's contract. -->
+<section class="panel" id="findings-panel">
+  <h2>Findings</h2>
+  <div id="computed-findings"></div>
+  <h2>Analyst notes</h2>
+  <div class="exec-body">{{ANALYST_NOTES}}</div>
+</section>
+
 <section class="panel" id="cwv-panel">
   <h2>Core Web Vitals</h2>
   <p class="panel-note" id="cwv-note"></p>
@@ -1350,6 +1374,27 @@ function renderSkipped() {
     files.map((f) => `<code>${escHtml(f)}</code>`).join(", ") + `</div>`);
 }
 
+// ─── 0. Findings ───────────────────────────────────────────────────────
+// One row per computeFindings() result, high severity first (already sorted
+// by the rule module). The chip's color is the only variable part — the
+// three tokens named for it, inline, since severity is data and not a fixed
+// CSS class.
+const SEVERITY_COLOR = { high: "var(--dt-critical)", medium: "var(--dt-warning)", low: "var(--dt-text-secondary)" };
+function renderFindings() {
+  const findings = DATA.findings || [];
+  if (!findings.length) {
+    setSlot("computed-findings", emptyNote("No deterministic findings fired for this page."));
+    return;
+  }
+  setSlot("computed-findings", findings.map((f) =>
+    `<div class="finding-row">` +
+    `<span class="chip finding-chip" style="color:${SEVERITY_COLOR[f.severity]};border-color:${SEVERITY_COLOR[f.severity]}">${escHtml(f.severity)}</span>` +
+    `<span><span class="finding-title">${escHtml(f.title)}</span>` +
+    `<span class="finding-evidence">${escHtml(f.evidence)}</span></span>` +
+    `</div>`
+  ).join(""));
+}
+
 // ─── 1. Core Web Vitals ───────────────────────────────────────────────
 // A table, not a chart: five metrics on five incompatible scales (ms and an
 // unitless shift score) have no shared axis, and the reader's question is
@@ -1562,6 +1607,7 @@ function renderBrowserDevice() {
 
 function renderAggregates() {
   renderSkipped();
+  renderFindings();
   renderCwv();
   renderTtfb();
   renderResourceTable("slowest-slot", "slowest-note", "durationP75", "Top 20 by p75 duration.");

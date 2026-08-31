@@ -10,10 +10,53 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { normalizeRaw } from "./lib/normalize.mjs";
-import { THRESHOLDS } from "./lib/findings.mjs";
+import { THRESHOLDS, computeFindings } from "./lib/findings.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SKILL_ROOT = path.dirname(__dirname);
+
+// ── analyst notes markdown -> HTML ─────────────────────────────────────
+// Copied verbatim from monthly-report/scripts/build-report.mjs so both
+// skills parse the "## heading" analyst-notes convention identically.
+// Mirrors the original app's extractMarkdownSection: split on "## " headings,
+// case-insensitive substring match against a keyword.
+function extractMarkdownSection(markdown, keyword) {
+  const lines = markdown.split(/\r?\n/);
+  const headingIdx = lines.findIndex(
+    (l) => /^##\s+/.test(l) && l.slice(2).trim().toLowerCase().includes(keyword.toLowerCase())
+  );
+  if (headingIdx === -1) return "";
+  let end = lines.length;
+  for (let i = headingIdx + 1; i < lines.length; i++) {
+    if (/^##\s+/.test(lines[i])) { end = i; break; }
+  }
+  return lines.slice(headingIdx + 1, end).join("\n").trim();
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+}
+
+// Minimal markdown -> HTML: bullet lists + plain paragraphs, nothing exotic
+// (matches what findings-prompt.md actually produces).
+function markdownToHtml(body) {
+  if (!body.trim()) return "";
+  const lines = body.split(/\r?\n/).filter((l) => l.trim() !== "");
+  let html = "";
+  let inList = false;
+  for (const line of lines) {
+    const bullet = line.match(/^-\s+(.*)$/);
+    if (bullet) {
+      if (!inList) { html += "<ul>"; inList = true; }
+      html += `<li>${escapeHtml(bullet[1])}</li>`;
+    } else {
+      if (inList) { html += "</ul>"; inList = false; }
+      html += `<p>${escapeHtml(line)}</p>`;
+    }
+  }
+  if (inList) html += "</ul>";
+  return html;
+}
 
 function parseArgs(argv) {
   const out = {};
@@ -159,6 +202,11 @@ data.instance.action = {
 // file looks exactly like a healthy zero once it reaches the template.
 if (skipped.length) console.warn(`Skipped missing/empty data files: ${skipped.join(", ")}`);
 data.skipped = skipped;
+data.findings = computeFindings(data);
+
+const analystNotesHtml = args.findings
+  ? markdownToHtml(extractMarkdownSection(fs.readFileSync(args.findings, "utf8"), "analyst notes"))
+  : "";
 
 const template = fs.readFileSync(path.join(SKILL_ROOT, "assets", "report.html.tmpl"), "utf8");
 const tokens = fs.readFileSync(path.join(SKILL_ROOT, "assets", "strato-tokens.css"), "utf8");
@@ -172,9 +220,14 @@ let html = template
   .split("{{PAGE_TITLE}}").join(esc(args["page-title"]))
   .split("{{GENERATED_AT}}").join(new Date().toISOString().slice(0, 10))
   .split("{{STRATO_TOKENS}}").join(tokens)
+  .split("{{ANALYST_NOTES}}").join(analystNotesHtml)
   .replace("{{DATA_JSON}}", () =>
     JSON.stringify(data).replace(/<\/script>/g, "<\\/script>"))
   .replace('<script src="chart.umd.min.js"></script>', `<script>${chartJs}</script>`);
+
+// Mirrors monthly-report: the analyst-notes area stays editable in the
+// browser after the file is opened, same as every other exec-body block.
+html = html.replace(/class="exec-body"/g, 'class="exec-body" contenteditable="true" spellcheck="false"');
 
 const outPath = args.out.replace(/^~/, process.env.HOME || "");
 fs.mkdirSync(path.dirname(path.resolve(outPath)), { recursive: true });
