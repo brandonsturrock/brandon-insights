@@ -40,9 +40,21 @@
      the first panel below — so it gets room to be the thing you land on. */
   .doc-title { margin: 0 0 var(--dt-space-32); }
   .doc-kind { margin: 0 0 5px; font-size: var(--wf-text-small); color: var(--text-subdued); }
-  h1 { font-size: 27px; line-height: 1.2; letter-spacing: -.01em; margin: 0; }
-  .doc-page { margin: 7px 0 0; font-size: var(--wf-text-body); color: var(--text-subdued); }
-  .doc-page .id { font-family: var(--dt-font-mono); color: var(--text-default); }
+  /* Application › page, both at display size. The report is about one page of
+     one application and neither half is subordinate, so the two carry equal
+     weight and are separated by hue and face rather than by size: the
+     application recedes to the subdued ink, the page holds the full-strength
+     ink and is set in mono because it is a literal path. Sizing the page down
+     to a caption — the first attempt — made the subject of the report the
+     smallest text in its own title. */
+  h1 { font-size: 27px; line-height: 1.25; letter-spacing: -.01em; margin: 0;
+    display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 2px; }
+  .h-app { color: var(--text-subdued); font-weight: 600; }
+  .h-sep { color: var(--text-subdued); font-weight: 400; margin: 0 10px; }
+  /* Mono runs optically larger than the sans at the same nominal size, so the
+     page steps down 3px to sit level with the application beside it. */
+  .h-page { font-family: var(--dt-font-mono); font-size: 24px; font-weight: 700;
+    color: var(--dt-text-primary); overflow-wrap: anywhere; }
 
   /* Report context: what was measured, and which single load the waterfall
      came from. A definition grid rather than a sentence, because these are
@@ -643,8 +655,7 @@
      prose type reads as punctuation rather than a value. -->
 <div class="doc-title">
   <p class="doc-kind">Full page analysis</p>
-  <h1>{{APPLICATION}}</h1>
-  <p class="doc-page">Page <span class="id">{{PAGE_TITLE}}</span></p>
+  <h1><span class="h-app">{{APPLICATION}}</span><span class="h-sep" aria-hidden="true">›</span><span class="h-page">{{PAGE_TITLE}}</span></h1>
 </div>
 
 <div id="skipped-slot"></div>
