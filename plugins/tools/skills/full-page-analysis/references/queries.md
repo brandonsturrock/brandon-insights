@@ -35,6 +35,21 @@ population). `fpa-frontends`, `fpa-pages`, and `fpa-select-instance` do NOT filt
 on `dt.rum.user_type` — the instance-selection path is already validated against
 the built-in waterfall, so their population was left untouched.
 
+fpa-select-instance requires the instance's navigation document request to be
+present and not failed (`navs > 0 AND bad_navs == 0`), which keeps error pages —
+a 403 or 500 served as the document — out of the sample; such a load has a real
+LCP and a linked page_summary, so nothing else rejects it, but its waterfall
+describes the error page rather than the page under analysis. The test counts
+*failed* navigations and requires zero, rather than counting successful ones and
+requiring at least one, because `http.response.status_code` is null on
+navigation requests on some frontends (all 52,237 on
+`www.angular.easytravel.com`, versus fully populated on Astroshop). Under a
+count-the-good-ones test those nulls fail the comparison and the filter empties
+the entire frontend; counting failures instead makes null mean "not known to
+have failed", which is the safe default. `characteristics.has_failed_request` is
+checked alongside the status code: it is null on success and true on failure, and
+catches network-level failures that never produce a status code at all.
+
 thirdparty-agg filters `url.provider == "third_party"`. Without it the query
 grouped by `url.domain` alone, so the page's own domain appeared in the
 third-party table — and since the table sorts by `duration_p75`, first party
