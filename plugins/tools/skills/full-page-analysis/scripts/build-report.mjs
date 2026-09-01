@@ -236,7 +236,7 @@ html = html.replace(/class="exec-body"/g, 'class="exec-body" contenteditable="tr
 const outPath = args.out.replace(/^~/, process.env.HOME || "");
 const reportFilename = path.basename(outPath);
 html = html.replace("</body>", `<style>
-  #dt-save-bar{position:fixed;bottom:20px;right:20px;z-index:9999;display:flex;align-items:center;gap:12px;background:var(--dt-bg-container);border:1px solid var(--dt-primary);border-radius:10px;padding:10px 18px;box-shadow:0 4px 20px rgba(0,0,0,.25);font-family:var(--dt-font-sans);font-size:13px;color:var(--dt-text-primary)}
+  #dt-save-bar{position:fixed;bottom:20px;right:20px;z-index:9999;display:flex;align-items:center;gap:12px;background:var(--dt-bg-container);border:1px solid var(--dt-primary);border-radius:10px;padding:10px 18px;box-shadow:var(--dt-shadow-overlay);font-family:var(--dt-font-sans);font-size:13px;color:var(--dt-text-primary)}
   #dt-save-bar button{background:var(--dt-primary);color:#fff;border:none;border-radius:6px;padding:7px 16px;cursor:pointer;font-size:13px;font-weight:600}
   #dt-save-bar button:hover{background:color-mix(in srgb, var(--dt-primary) 85%, white)}
   @media print{#dt-save-bar{display:none!important}}

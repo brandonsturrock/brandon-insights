@@ -199,17 +199,6 @@
   .cell-timeline { flex: 1; position: relative; height: 100%; overflow: hidden; }
   .bar { position: absolute; top: 4px; bottom: 4px; min-width: 2px; cursor: crosshair; }
 
-  /* The action bar is the envelope the resource rows sit inside, not a
-     request — lighter fill + outline in the brand accent (unused elsewhere
-     in the waterfall body) keeps it from outweighing the rows beneath it. */
-  .wf-action-row { background: var(--bg-surface); border-bottom: 2px solid var(--border-default); font-weight: 600; }
-  .wf-action-row .cell-label .url { color: var(--text-default); }
-  .action-bar {
-    top: 7px; bottom: 7px; border-radius: 3px;
-    background: color-mix(in srgb, var(--dt-primary) 20%, transparent);
-    border: 1px solid var(--dt-primary);
-    box-sizing: border-box;
-  }
   .stall-tick { position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: #8B96A5; pointer-events: none; }
   .stall-dash { position: absolute; left: 2px; right: 0; top: 50%; height: 0; border-top: 1px solid #8B96A5; pointer-events: none; }
 
@@ -959,9 +948,10 @@ function renderWaterfall() {
 
   const resourceOriginMs = navRequest?.startAbsoluteMs ?? summary.performanceTimeOriginMs;
 
-  // Action end goes into the same maxMs the resource bars scale against —
-  // this is what guarantees the action bar's right edge lands at or beyond
-  // the last resource bar's, rather than a coincidence of the data.
+  // Action end goes into the same maxMs the resource bars scale against, so the
+  // axis always covers the full user action even if the last resource finishes
+  // earlier. The action is no longer drawn as its own row — the navigation
+  // request's Processing segment already shows the same end-to-end span.
   const hasAction = action && action.durationMs != null && action.startAbsoluteMs != null;
   const actionEndRelMs = hasAction
     ? (action.endAbsoluteMs ?? action.startAbsoluteMs + action.durationMs) - resourceOriginMs
@@ -1031,27 +1021,6 @@ function renderWaterfall() {
     gridOverlay.appendChild(line);
   }
   body.appendChild(gridOverlay);
-
-  if (hasAction) {
-    const relStartMs = action.startAbsoluteMs - resourceOriginMs;
-    const startPct = (relStartMs / maxMs) * 100;
-    const widthPct = Math.max((actionEndRelMs - relStartMs) / maxMs * 100, 0.15);
-
-    const actionRow = el("div", "wf-row wf-action-row");
-    const labelCell = el("div", "cell-label");
-    labelCell.title = action.name || "";
-    labelCell.appendChild(el("span", "url", escHtml(action.name || "User action")));
-    actionRow.appendChild(labelCell);
-    actionRow.appendChild(el("div", "cell-type"));
-    actionRow.appendChild(el("div", "cell-dur", formatMs(action.durationMs)));
-    const timelineCell = el("div", "cell-timeline");
-    const actionBar = el("div", "bar action-bar");
-    actionBar.style.left = startPct + "%";
-    actionBar.style.width = widthPct + "%";
-    timelineCell.appendChild(actionBar);
-    actionRow.appendChild(timelineCell);
-    body.appendChild(actionRow);
-  }
 
   const longTasks = (summary.longTaskOccurrences || []).filter((lt) => lt.startMs < maxMs && lt.startMs + lt.durationMs > 0);
   if (state.showLongTasks && longTasks.length > 0) {

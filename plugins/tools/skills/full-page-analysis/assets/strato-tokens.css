@@ -22,6 +22,10 @@
   /* Borders.Radius.Container.Default — the base container radius Strato components use. */
   --dt-radius: 9px;
 
+  /* Not a Strato role: a local composite for the floating save bar. Kept here
+     so the one place that needs an elevation shadow is theme-swappable. */
+  --dt-shadow-overlay: 0 4px 20px rgba(0, 0, 0, .25);
+
   /* Spacings.Size8 / Size16 / Size32 — confirmed 1:1 in px against variables.css. */
   --dt-space-8: 8px;
   --dt-space-16: 16px;

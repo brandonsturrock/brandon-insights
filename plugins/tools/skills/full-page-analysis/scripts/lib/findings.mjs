@@ -35,6 +35,11 @@ export const THRESHOLDS = {
   // p75 by this factor and it carries at least this share of loads.
   segmentRatio: 1.5,
   segmentMinShare: 0.05,
+  // Share of loads that must carry a long task before the long-task rule fires.
+  longTaskLoadShare: 0.25,
+  // Share of erroring loads that must be 5xx before the errors rule escalates
+  // from medium to high — a server-side fault is actionable, a 404 usually is not.
+  error5xxShare: 0.01,
 };
 
 // Deterministic finding rules. Pure functions, no I/O.
@@ -164,7 +169,7 @@ export function computeFindings(data) {
 
   const lt = data.longTasks || {};
   const ltLoads = num(lt.loads) || 0;
-  if (num(lt.loadsWithLongTasks) && ltLoads > 0 && lt.loadsWithLongTasks / ltLoads > 0.25) {
+  if (num(lt.loadsWithLongTasks) && ltLoads > 0 && lt.loadsWithLongTasks / ltLoads > THRESHOLDS.longTaskLoadShare) {
     out.push({
       id: "long-tasks",
       severity: "medium",
@@ -186,7 +191,7 @@ export function computeFindings(data) {
     // the failing loads," not "at least one request 500'd."
     out.push({
       id: "errors",
-      severity: (num(err.loadsWith5xx) ?? 0) / errLoads > 0.01 ? "high" : "medium",
+      severity: (num(err.loadsWith5xx) ?? 0) / errLoads > THRESHOLDS.error5xxShare ? "high" : "medium",
       title: "Errors on a meaningful share of loads",
       evidence: `${pct(failing, errLoads)}% of ${errLoads} loads had at least one error — ${pct(num(err.loadsWithException) ?? 0, errLoads)}% a JS exception, ${pct(num(err.loadsWith4xx) ?? 0, errLoads)}% a 4xx, ${pct(num(err.loadsWith5xx) ?? 0, errLoads)}% a 5xx.`,
     });
