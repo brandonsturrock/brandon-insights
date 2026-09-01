@@ -57,6 +57,13 @@ export function computeFindings(data) {
   const pageLoads = num(data.loadCount) || 0;        // distinct hard navigations
   const loads = cwvLoads;                            // CWV rules only
 
+  // Evidence strings are read by a person, in prose, so counts carry thousands
+  // separators — "29,829 loads" is read at a glance where "29829 loads" has to
+  // be counted digit by digit. `plural` exists to kill the "resource(s)"
+  // construction, which reads as a placeholder someone forgot to finish.
+  const n = (v) => Math.round(num(v) ?? 0).toLocaleString("en-US");
+  const plural = (count, word) => `${n(count)} ${word}${count === 1 ? "" : "s"}`;
+
   const ttfb = num(data.cwv?.ttfbP75);
   if (ttfb != null && ttfb > THRESHOLDS.ttfb.good) {
     const p = data.ttfbPhases || {};
@@ -64,7 +71,7 @@ export function computeFindings(data) {
       id: "slow-ttfb",
       severity: ttfb > THRESHOLDS.ttfb.poor ? "high" : "medium",
       title: "Slow time to first byte",
-      evidence: `TTFB p75 is ${Math.round(ttfb)}ms across ${loads} loads. Phases at p75 — DNS ${Math.round(num(p.dnsP75) ?? 0)}ms, connect ${Math.round(num(p.connectionP75) ?? 0)}ms, waiting ${Math.round(num(p.waitingP75) ?? 0)}ms, request ${Math.round(num(p.requestP75) ?? 0)}ms.`,
+      evidence: `TTFB p75 is ${Math.round(ttfb)}ms across ${n(loads)} loads. Phases at p75 — DNS ${Math.round(num(p.dnsP75) ?? 0)}ms, connect ${Math.round(num(p.connectionP75) ?? 0)}ms, waiting ${Math.round(num(p.waitingP75) ?? 0)}ms, request ${Math.round(num(p.requestP75) ?? 0)}ms.`,
     });
   }
 
@@ -76,7 +83,7 @@ export function computeFindings(data) {
       id: "slow-lcp",
       severity: lcp > THRESHOLDS.lcp.poor ? "high" : "medium",
       title: "LCP above the good threshold",
-      evidence: `LCP p75 is ${Math.round(lcp)}ms across ${loads} loads (good is under ${THRESHOLDS.lcp.good}ms).` +
+      evidence: `LCP p75 is ${Math.round(lcp)}ms across ${n(loads)} loads (good is under ${THRESHOLDS.lcp.good}ms).` +
         (el ? ` LCP element in the sampled load was <${el.toLowerCase()}>${url ? ` (${url})` : ""}.` : ""),
     });
   }
@@ -87,7 +94,7 @@ export function computeFindings(data) {
       id: "slow-inp",
       severity: inp > THRESHOLDS.inp.poor ? "high" : "medium",
       title: "Interaction latency above the good threshold",
-      evidence: `INP p75 is ${Math.round(inp)}ms across ${loads} loads (good is under ${THRESHOLDS.inp.good}ms).`,
+      evidence: `INP p75 is ${Math.round(inp)}ms across ${n(loads)} loads (good is under ${THRESHOLDS.inp.good}ms).`,
     });
   }
 
@@ -97,7 +104,7 @@ export function computeFindings(data) {
       id: "layout-shift",
       severity: cls > THRESHOLDS.cls.poor ? "high" : "medium",
       title: "Cumulative layout shift above the good threshold",
-      evidence: `CLS p75 is ${cls.toFixed(3)} across ${loads} loads (good is under ${THRESHOLDS.cls.good}).`,
+      evidence: `CLS p75 is ${cls.toFixed(3)} across ${n(loads)} loads (good is under ${THRESHOLDS.cls.good}).`,
     });
   }
 
@@ -124,8 +131,8 @@ export function computeFindings(data) {
       id: "render-blocking",
       severity: worstDuration >= THRESHOLDS.resourceSlowMs ? "high" : "medium",
       title: "Render-blocking resources on most loads",
-      evidence: `${blockers.length} render-blocking resource(s) block on at least ${Math.round(THRESHOLDS.prevalence.widespread * 100)}% of their own requests. Worst: ` +
-        top.map((r) => `${r.domain}${r.path} (blocks on ${r.blocking} of ${r.requests} requests across ${pct(r.loads, pageLoads)}% of loads, p75 ${Math.round(num(r.durationP75) ?? 0)}ms)`).join("; ") + ".",
+      evidence: `${plural(blockers.length, "render-blocking resource")} block${blockers.length === 1 ? "s" : ""} on at least ${Math.round(THRESHOLDS.prevalence.widespread * 100)}% of their own requests. Worst: ` +
+        top.map((r) => `${r.domain}${r.path} (blocks on ${n(r.blocking)} of ${n(r.requests)} requests across ${pct(r.loads, pageLoads)}% of loads, p75 ${Math.round(num(r.durationP75) ?? 0)}ms)`).join("; ") + ".",
     });
   }
 
@@ -137,8 +144,8 @@ export function computeFindings(data) {
       id: "slow-resources",
       severity: "medium",
       title: "Consistently slow resources",
-      evidence: `${slow.length} resource(s) exceed ${THRESHOLDS.resourceSlowMs}ms at p75 on most loads. Slowest: ` +
-        slow.slice(0, 5).map((r) => `${r.domain}${r.path} (p75 ${Math.round(num(r.durationP75) ?? 0)}ms, ${r.loads} loads)`).join("; ") + ".",
+      evidence: `${plural(slow.length, "resource")} exceed${slow.length === 1 ? "s" : ""} ${THRESHOLDS.resourceSlowMs}ms at p75 on most loads. Slowest: ` +
+        slow.slice(0, 5).map((r) => `${r.domain}${r.path} (p75 ${Math.round(num(r.durationP75) ?? 0)}ms, ${n(r.loads)} loads)`).join("; ") + ".",
     });
   }
 
@@ -159,7 +166,7 @@ export function computeFindings(data) {
       severity: "medium",
       title: "Slow third-party domains",
       evidence: thirdParty.slice(0, 5)
-        .map((d) => `${d.domain} (p75 total per load ${Math.round(num(d.durationP75) ?? 0)}ms, ${d.loads} of ${pageLoads} loads)`)
+        .map((d) => `${d.domain} (p75 total per load ${Math.round(num(d.durationP75) ?? 0)}ms, ${n(d.loads)} of ${n(pageLoads)} loads)`)
         .join("; ") + ".",
     });
   }
@@ -171,7 +178,7 @@ export function computeFindings(data) {
       id: "long-tasks",
       severity: "medium",
       title: "Main thread blocked by long tasks",
-      evidence: `${lt.loadsWithLongTasks} of ${ltLoads} loads (${pct(lt.loadsWithLongTasks, ltLoads)}%) had long tasks; p75 count ${num(lt.countP75) ?? 0}, p75 average duration ${Math.round(num(lt.avgDurationP75) ?? 0)}ms.`,
+      evidence: `${n(lt.loadsWithLongTasks)} of ${n(ltLoads)} loads (${pct(lt.loadsWithLongTasks, ltLoads)}%) had long tasks; p75 count ${num(lt.countP75) ?? 0}, p75 average duration ${Math.round(num(lt.avgDurationP75) ?? 0)}ms.`,
     });
   }
 
@@ -190,7 +197,7 @@ export function computeFindings(data) {
       id: "errors",
       severity: (num(err.loadsWith5xx) ?? 0) / errLoads > THRESHOLDS.error5xxShare ? "high" : "medium",
       title: "Errors on a meaningful share of loads",
-      evidence: `${pct(failing, errLoads)}% of ${errLoads} loads had at least one error — ${pct(num(err.loadsWithException) ?? 0, errLoads)}% a JS exception, ${pct(num(err.loadsWith4xx) ?? 0, errLoads)}% a 4xx, ${pct(num(err.loadsWith5xx) ?? 0, errLoads)}% a 5xx.`,
+      evidence: `${pct(failing, errLoads)}% of ${n(errLoads)} loads had at least one error — ${pct(num(err.loadsWithException) ?? 0, errLoads)}% a JS exception, ${pct(num(err.loadsWith4xx) ?? 0, errLoads)}% a 4xx, ${pct(num(err.loadsWith5xx) ?? 0, errLoads)}% a 5xx.`,
     });
   }
 
@@ -206,7 +213,7 @@ export function computeFindings(data) {
         severity: "medium",
         title: "One or more segments are much slower than the blend",
         evidence: outliers
-          .map((s) => `${s.browser} on ${s.device}: LCP p75 ${Math.round(s.lcpP75)}ms over ${s.loads} loads, versus a blended p75 of ${Math.round(lcp)}ms`)
+          .map((s) => `${s.browser} on ${s.device}: LCP p75 ${Math.round(s.lcpP75)}ms over ${n(s.loads)} loads, versus a blended p75 of ${Math.round(lcp)}ms`)
           .join("; ") + ".",
       });
     }

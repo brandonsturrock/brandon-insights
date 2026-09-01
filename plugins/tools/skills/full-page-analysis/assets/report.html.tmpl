@@ -424,17 +424,36 @@
      coloured inline per finding since severity is data, not a fixed class),
      the title, and the evidence sentence — no new hue set, just the three
      tokens the brief names, already vetted at these same weights by the CWV
-     rating pairs and the skipped-file banner elsewhere in this template. */
-  .finding-row { display: flex; gap: 10px; align-items: baseline; padding: 7px 0; border-bottom: 1px solid var(--border-subdued); }
-  .finding-row:last-child { border-bottom: none; }
-  .finding-chip { flex: 0 0 auto; }
-  .finding-title { font-weight: 600; margin-right: 6px; }
-  .finding-evidence { color: var(--text-subdued); }
-  /* Analyst notes: plain prose written by a later agent, edited in place. */
-  .exec-body { font-size: var(--wf-text-body); line-height: 1.55; color: var(--text-default); min-height: 3em; }
+     rating pairs and the skipped-file banner elsewhere in this template.
+
+     A two-column grid, not a flex row. The severity chip sits in a fixed-width
+     left column spanning both text lines, which puts every title on the same x:
+     the reader scans titles down one edge and drops into the evidence only for
+     the ones that matter. Title and evidence are on separate lines because a
+     600-weight title running inline with a subdued sentence stops being
+     scannable — the eye has to work out where the title ended before it can
+     skip the rest, which is the opposite of what a findings list is for. */
+  .finding-row { display: grid; grid-template-columns: 74px minmax(0, 1fr);
+    gap: 3px var(--dt-space-16); padding: 13px 0;
+    border-bottom: 1px solid var(--border-subdued); }
+  .finding-row:last-child { border-bottom: none; padding-bottom: 2px; }
+  .finding-chip { grid-row: span 2; align-self: start; justify-self: start; margin-top: 1px; }
+  .finding-title { font-weight: 600; color: var(--text-default); }
+  /* 72ch, not the panel width. Evidence lines were running past 150 characters
+     on a wide screen, roughly double the 65–75 a reader can track without
+     losing the line. `anywhere` lets the long resource URLs some rules name
+     wrap inside that measure instead of forcing it back open. */
+  .finding-evidence { color: var(--text-subdued); font-size: var(--wf-text-small);
+    line-height: 1.55; max-width: 72ch; overflow-wrap: anywhere; }
+  /* Analyst notes: plain prose written by a later agent, edited in place.
+     Capped at the same measure as the evidence above it, for the same reason —
+     this is the longest prose in the report and was the worst offender. */
+  .exec-body { font-size: var(--wf-text-body); line-height: 1.65; color: var(--text-default);
+    min-height: 3em; max-width: 74ch; }
   .exec-body ul { margin: 0; padding-left: 18px; }
-  .exec-body li { margin-bottom: 4px; }
-  .exec-body p { margin: 0 0 8px; }
+  .exec-body li { margin-bottom: var(--dt-space-8); }
+  .exec-body li:last-child { margin-bottom: 0; }
+  .exec-body p { margin: 0 0 10px; }
   /* --border-default (#dadbe4 on #f2f2f5) is 1.23:1 — nowhere near the 3:1 a
      UI-component outline needs. --dt-primary is 5.9:1 on the same panel and
      is already the link/emphasis role, so an editable region borrowing it
@@ -585,9 +604,18 @@
   <div id="lcp-slot"></div>
 </section>
 
+<!-- Two panels, not one with two headings. These are different kinds of claim
+     — one is derived by rule from the aggregates, the other is written by a
+     person — and stacking them under equal-weight headings inside a single card
+     read as one long list where the prose looked like more findings. Separate
+     cards say "different thing" with no extra label needed, and they let the
+     print rules break between them instead of inside the notes. -->
 <section class="panel" id="findings-panel">
   <h2>Findings</h2>
   <div id="computed-findings"></div>
+</section>
+
+<section class="panel" id="notes-panel">
   <h2>Analyst notes</h2>
   <div class="exec-body">{{ANALYST_NOTES}}</div>
 </section>
@@ -1559,10 +1587,14 @@ function renderFindings() {
     return;
   }
   setSlot("computed-findings", noLoadCount + findings.map((f) =>
+    // Three direct children, deliberately un-nested: the chip, the title and
+    // the evidence each have to be their own grid item for the two-column
+    // layout to place them. Wrapping title and evidence in a shared span makes
+    // them a single item and they collapse back onto one line.
     `<div class="finding-row">` +
     `<span class="chip finding-chip" style="color:${SEVERITY_COLOR[f.severity]};border-color:${SEVERITY_COLOR[f.severity]}">${escHtml(f.severity)}</span>` +
-    `<span><span class="finding-title">${escHtml(f.title)}</span>` +
-    `<span class="finding-evidence">${escHtml(f.evidence)}</span></span>` +
+    `<div class="finding-title">${escHtml(f.title)}</div>` +
+    `<div class="finding-evidence">${escHtml(f.evidence)}</div>` +
     `</div>`
   ).join(""));
 }

@@ -285,7 +285,7 @@ html = html.replace("</body>", `<style>
   @media print{#dt-save-bar{display:none!important}}
 </style>
 <div id="dt-save-bar">
-  <span>Edit findings above, then save when ready</span>
+  <span>Edit the analyst notes, then save when ready</span>
   <button id="dt-save-btn" onclick="dtSave()">Save changes</button>
 </div>
 <script>
