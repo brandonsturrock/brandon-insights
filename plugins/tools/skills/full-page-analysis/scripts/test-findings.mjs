@@ -93,18 +93,13 @@ const thirdParty = (loads) => ({
 assert.ok(ids(thirdParty(900)).includes("slow-third-party"));
 assert.ok(!ids(thirdParty(3)).includes("slow-third-party"));
 
-// a same-origin domain never counts as third-party even at high prevalence
+// first/third party is no longer decided here — fpa-thirdparty-agg.dql filters
+// on url.provider upstream, so a row reaching this rule is third-party by
+// construction and needs no origin comparison. What must still hold is that a
+// row with no domain at all cannot fire the rule.
 assert.ok(!ids({
   ...base,
-  thirdParty: [{ domain: "example.com", loads: 900, requests: 900, durationP75: 5000, transferP75: 90000 }],
-}).includes("slow-third-party"));
-
-// without a determinable origin, slow-third-party is suppressed entirely
-// rather than treating every domain as third-party
-assert.ok(!ids({
-  ...base,
-  instance: { ...base.instance, summary: { ...base.instance.summary, pageUrl: null } },
-  thirdParty: [{ domain: "cdn.example.net", loads: 900, requests: 900, durationP75: 5000, transferP75: 90000 }],
+  thirdParty: [{ domain: null, loads: 900, requests: 900, durationP75: 5000, transferP75: 90000 }],
 }).includes("slow-third-party"));
 
 // long tasks on most loads fires

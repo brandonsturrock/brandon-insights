@@ -142,20 +142,17 @@ export function computeFindings(data) {
     });
   }
 
-  const origin = (() => {
-    try { return new URL(data.instance?.summary?.pageUrl || "").hostname; } catch { return null; }
-  })();
-  // Without an origin, "third party" cannot be told apart from "first party" —
-  // suppress the whole rule rather than let a null origin make every domain
-  // (including the page's own) look third-party. Also gate on prevalence:
-  // `thirdParty[].loads` exists for exactly this, and a domain hit on 3 of
-  // 77,000 loads is noise, not a page-wide dependency.
-  const thirdParty = origin
-    ? (data.thirdParty || [])
-        .filter((d) => d.domain && d.domain !== origin && (num(d.durationP75) ?? 0) > THRESHOLDS.thirdPartySlowMs &&
-          pageLoads > 0 && d.loads / pageLoads >= THRESHOLDS.prevalence.widespread)
-        .sort((a, b) => (num(b.durationP75) ?? 0) - (num(a.durationP75) ?? 0))
-    : [];
+  // First-party rows are excluded upstream: fpa-thirdparty-agg.dql filters on
+  // `url.provider == "third_party"`, the RUM agent's own classification, so
+  // every row here is already third-party by definition. The `d.domain` guard
+  // stays as a cheap defence against a stale data directory built before that
+  // filter existed. Gate on prevalence too: `thirdParty[].loads` exists for
+  // exactly this, and a domain hit on 3 of 77,000 loads is noise, not a
+  // page-wide dependency.
+  const thirdParty = (data.thirdParty || [])
+    .filter((d) => d.domain && (num(d.durationP75) ?? 0) > THRESHOLDS.thirdPartySlowMs &&
+      pageLoads > 0 && d.loads / pageLoads >= THRESHOLDS.prevalence.widespread)
+    .sort((a, b) => (num(b.durationP75) ?? 0) - (num(a.durationP75) ?? 0));
   if (thirdParty.length) {
     out.push({
       id: "slow-third-party",

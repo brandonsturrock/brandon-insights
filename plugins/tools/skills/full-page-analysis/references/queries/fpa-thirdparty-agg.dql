@@ -2,6 +2,8 @@ fetch user.events, from: {{.timeframe}}
 | filter frontend.name == "{{.frontend}}"
 | filter characteristics.has_request == true
 | filter dt.rum.user_type == "real_user"
+| filter url.provider == "third_party"
+| filter isNotNull(url.domain)
 | join [
     fetch user.events, from: {{.timeframe}}
     | filter frontend.name == "{{.frontend}}"

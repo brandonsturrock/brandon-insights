@@ -34,6 +34,18 @@ representative-browser pick agree with the rest of the report's real-user
 population). `fpa-frontends`, `fpa-pages`, and `fpa-select-instance` do NOT filter
 on `dt.rum.user_type` — the instance-selection path is already validated against
 the built-in waterfall, so their population was left untouched.
+
+thirdparty-agg filters `url.provider == "third_party"`. Without it the query
+grouped by `url.domain` alone, so the page's own domain appeared in the
+third-party table — and since the table sorts by `duration_p75`, first party
+sorted to the top of it on every page (the sum of all first-party requests per
+load beats any single third party). `url.provider` is the RUM agent's own
+classification, is never null, and takes exactly `first_party` / `third_party`,
+so it decides this correctly without the query needing to know the page's
+hostname. It also filters `isNotNull(url.domain)`: request events with no
+domain do exist and carry a provider (111,981 third-party ones over 7d on
+Astroshop), and grouped by a null domain they render as a blank row with a real
+load count.
 -->
 
 `build-report.mjs` reads the `--data` directory by these exact filenames.
