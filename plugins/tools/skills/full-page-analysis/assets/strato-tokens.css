@@ -1,21 +1,22 @@
 /* Dynatrace Strato design tokens, extracted from @dynatrace/strato-design-tokens (v1.6.0).
    Development-time extraction only — the package is NOT a dependency of this skill.
    Each value below cites the Strato role it came from, verified against the package's
-   own generated stylesheet (styles/variables.css) in a scratch npm pack. */
+   own generated DARK stylesheet (styles/variables-dark.css) in a scratch npm pack.
+   The report is a dark-theme surface, so the dark variant of every role is used. */
 :root {
-  --dt-bg-base:              #f9f9fa; /* Colors.Background.Base.Default */
-  --dt-bg-container:         #f2f2f5; /* Colors.Background.Container.Neutral.Default */
-  --dt-bg-container-subtle:  #f9f9fa; /* Colors.Background.Container.Neutral.Subdued */
-  --dt-text-primary:         #2f2f4f; /* Colors.Text.Neutral.Default — body text (corrected: Text.Primary.Default is the brand-accent text role, not body text) */
-  --dt-text-secondary:       #595a7d; /* Colors.Text.Neutral.Subdued — secondary text (corrected from Text.Neutral.Default) */
-  --dt-border-default:       #dadbe4; /* Colors.Border.Neutral.Default */
-  --dt-critical:             #bb0731; /* Colors.Text.Critical.Default */
-  --dt-warning:              #855400; /* Colors.Text.Warning.Default */
-  --dt-success:              #2d6761; /* Colors.Text.Success.Default */
-  --dt-primary:               #464cce; /* Colors.Text.Primary.Default — the brand-accent text role (links, emphasis) */
+  --dt-bg-base:              #19192c; /* Colors.Background.Base.Default (dark) */
+  --dt-bg-container:         #212135; /* Colors.Background.Container.Neutral.Default (dark) */
+  --dt-bg-container-subtle:  #19192c; /* Colors.Background.Container.Neutral.Subdued (dark) */
+  --dt-text-primary:         #ebecff; /* Colors.Text.Neutral.Default — body text (corrected: Text.Primary.Default is the brand-accent text role, not body text) */
+  --dt-text-secondary:       #b1b2d2; /* Colors.Text.Neutral.Subdued — secondary text (corrected from Text.Neutral.Default) */
+  --dt-border-default:       #3b3b52; /* Colors.Border.Neutral.Default (dark) */
+  --dt-critical:             #ff999c; /* Colors.Text.Critical.Default (dark) */
+  --dt-warning:              #eea83f; /* Colors.Text.Warning.Default (dark) */
+  --dt-success:              #6fc3ba; /* Colors.Text.Success.Default (dark) */
+  --dt-primary:              #adb0ff; /* Colors.Text.Primary.Default (dark) — the brand-accent text role (links, emphasis) */
 
   /* Font stacks from Strato's typography tokens: sans = Typography.Text.Base.Default.Family,
-     mono = Typography.Code.Base.Default.Family. Both verified against variables.css. */
+     mono = Typography.Code.Base.Default.Family. Theme-independent — identical in both sheets. */
   --dt-font-sans: DynatraceFlow, Roboto, Helvetica, sans-serif;
   --dt-font-mono: "Roboto Mono", monospace;
 
@@ -23,8 +24,10 @@
   --dt-radius: 9px;
 
   /* Not a Strato role: a local composite for the floating save bar. Kept here
-     so the one place that needs an elevation shadow is theme-swappable. */
-  --dt-shadow-overlay: 0 4px 20px rgba(0, 0, 0, .25);
+     so the one place that needs an elevation shadow is theme-swappable.
+     Deepened for the dark canvas — a .25 black barely reads against #19192c,
+     where the surface below the shadow is already dark. */
+  --dt-shadow-overlay: 0 4px 20px rgba(0, 0, 0, .6);
 
   /* Spacings.Size8 / Size16 / Size32 — confirmed 1:1 in px against variables.css. */
   --dt-space-8: 8px;

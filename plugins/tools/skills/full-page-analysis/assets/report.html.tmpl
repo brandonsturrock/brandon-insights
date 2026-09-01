@@ -18,8 +18,12 @@
   /* v1 custom properties, remapped onto the Strato tokens above.
      Redefined here rather than edited rule-by-rule, so the ported waterfall
      rules are unchanged from v1's assets/template.html (deleted in Task 9).
-     v1 was a dark theme; Strato's are the light-theme roles, so the surface
-     ramp inverts. Derived shades use color-mix over the tokens — no new hex. */
+     Both v1 and v2 are dark themes and Strato's dark roles are loaded, so the
+     surface ramp runs dark base → lighter container, and every foreground mix
+     over --dt-bg-base lightens instead of darkening. Derived shades use
+     color-mix over the tokens — no new hex. Every percentage below was
+     re-measured against the dark canvas and lands at or above the ratio it
+     held on the light build, so they carry over unchanged. */
   :root {
     --bg-page:                   var(--dt-bg-base);
     --bg-surface:                var(--dt-bg-container-subtle);
@@ -295,7 +299,9 @@
   .cov-track {
     position: relative; flex: 1 1 70px; min-width: 56px; height: 9px;
     border-radius: 5px; background: var(--dt-bg-base);
-    border: 1px solid color-mix(in srgb, var(--dt-text-secondary) 30%, var(--dt-border-default));
+    /* 40%, not 30%: the track outline is the only thing that shows an empty
+       bar exists, and 30% sat at 2.78:1 against the page. 40% clears 3:1. */
+    border: 1px solid color-mix(in srgb, var(--dt-text-secondary) 40%, var(--dt-border-default));
     overflow: hidden;
   }
   .cov-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--text-subdued); }
@@ -362,13 +368,29 @@
      evidence, not the report's headline) kept short enough to not run to
      several pages.
 
-     Brief deviation: the brief specified
-     `body { padding: 0; background: #fff; color: #000; }`. Only `padding: 0`
-     is kept — the canvas is already Strato light theme (white background,
-     dark text), so forcing literal #fff/#000 would fight the existing
-     tokens for zero visible change and reintroduce a bare hex this
-     template otherwise avoids. */
+     The screen canvas is dark. Browsers do not print background colours by
+     default but they do print text colour, so a dark report printed as-is
+     would put #ebecff body text on white paper — and forcing the dark
+     backgrounds through with print-color-adjust would flood the page with
+     ink instead. Neither is acceptable, so print re-declares the same Strato
+     roles at their LIGHT values. That is one block at the top of the ramp;
+     every semantic alias and color-mix below it re-derives automatically,
+     because nothing under :root holds a raw colour of its own. Values are
+     the light variants of the identical roles, read from the same package
+     (styles/variables.css). */
   @media print {
+    :root {
+      --dt-bg-base:             #f9f9fa; /* Colors.Background.Base.Default (light) */
+      --dt-bg-container:        #f2f2f5; /* Colors.Background.Container.Neutral.Default (light) */
+      --dt-bg-container-subtle: #f9f9fa; /* Colors.Background.Container.Neutral.Subdued (light) */
+      --dt-text-primary:        #2f2f4f; /* Colors.Text.Neutral.Default (light) */
+      --dt-text-secondary:      #595a7d; /* Colors.Text.Neutral.Subdued (light) */
+      --dt-border-default:      #dadbe4; /* Colors.Border.Neutral.Default (light) */
+      --dt-critical:            #bb0731; /* Colors.Text.Critical.Default (light) */
+      --dt-warning:             #855400; /* Colors.Text.Warning.Default (light) */
+      --dt-success:             #2d6761; /* Colors.Text.Success.Default (light) */
+      --dt-primary:             #464cce; /* Colors.Text.Primary.Default (light) */
+    }
     body { padding: 0; }
     .panel { break-inside: avoid; page-break-inside: avoid; }
     /* `break-inside: avoid` on .panel only holds while the whole panel fits
@@ -577,14 +599,13 @@ const resolveType = (req) => {
   const raw = req.performanceInitiatorType;
   return raw ? raw.toLowerCase() : "other";
 };
-// The palette's `light` values are bright-on-dark tints from the v1 dark canvas;
-// on the light canvas they drop to ~1.3:1 and the phase reads as a gap. Derive the
-// light phase from the same categorical hue instead. RESOURCE_COLORS is unmodified
-// and `dark` — the hue that identifies the type — is passed through untouched.
-const resourceColors = (req) => {
-  const pair = RESOURCE_COLORS[resolveType(req)] || RESOURCE_COLORS.other;
-  return { dark: pair.dark, light: `color-mix(in srgb, ${pair.dark} 35%, var(--dt-bg-base))` };
-};
+// The palette's `light` values are bright-on-dark tints, which is exactly what
+// this canvas is again. Both phases are used as authored: `dark` (the saturated
+// hue that identifies the type) runs 3.07–7.17:1 against #19192c and `light`
+// runs 5.85–13.29:1, so both clear WCAG 1.4.11's 3:1. The light-canvas
+// color-mix workaround is gone — it measured 1.41–1.96:1 here, worse than
+// either authored phase.
+const resourceColors = (req) => RESOURCE_COLORS[resolveType(req)] || RESOURCE_COLORS.other;
 const RESOURCE_LABELS = {
   document: "Doc", navigation: "Nav", script: "JS", stylesheet: "CSS",
   image: "Img", fetch: "XHR", xmlhttprequest: "XHR", xhr: "XHR",
