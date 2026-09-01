@@ -439,17 +439,28 @@
   .finding-row:last-child { border-bottom: none; padding-bottom: 2px; }
   .finding-chip { grid-row: span 2; align-self: start; justify-self: start; margin-top: 1px; }
   .finding-title { font-weight: 600; color: var(--text-default); }
-  /* 72ch, not the panel width. Evidence lines were running past 150 characters
-     on a wide screen, roughly double the 65–75 a reader can track without
-     losing the line. `anywhere` lets the long resource URLs some rules name
-     wrap inside that measure instead of forcing it back open. */
+  /* The half-width column sets the measure; the cap here is only a guard for
+     very wide screens. `anywhere` lets the long resource URLs some rules name
+     wrap inside the column instead of forcing it open. */
   .finding-evidence { color: var(--text-subdued); font-size: var(--wf-text-small);
-    line-height: 1.55; max-width: 72ch; overflow-wrap: anywhere; }
+    line-height: 1.5; max-width: 88ch; overflow-wrap: anywhere; }
+  /* The findings / analyst-notes pair. `align-items: start` so each card hugs
+     its own content — stretching the shorter one to match just moves the empty
+     space from beside the text to below it. The panels keep their own
+     margin-bottom, so the pair only needs to suppress the double gap. */
+  .panel-pair { display: grid; gap: var(--dt-space-16);
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr));
+    align-items: start; }
+  .panel-pair .panel { margin-bottom: 0; }
+  .panel-pair { margin-bottom: var(--dt-space-32); }
+
   /* Analyst notes: plain prose written by a later agent, edited in place.
-     Capped at the same measure as the evidence above it, for the same reason —
-     this is the longest prose in the report and was the worst offender. */
-  .exec-body { font-size: var(--wf-text-body); line-height: 1.65; color: var(--text-default);
-    min-height: 3em; max-width: 74ch; }
+     No character cap here — the grid column above already sets the measure, and
+     a cap on top of it is what produced a narrow ribbon of text with dead space
+     beside it. The one guard left is for very wide screens, where half of a
+     2560px viewport would otherwise run to ~160 characters. */
+  .exec-body { font-size: var(--wf-text-body); line-height: 1.6; color: var(--text-default);
+    min-height: 3em; max-width: 88ch; }
   .exec-body ul { margin: 0; padding-left: 18px; }
   .exec-body li { margin-bottom: var(--dt-space-8); }
   .exec-body li:last-child { margin-bottom: 0; }
@@ -604,21 +615,26 @@
   <div id="lcp-slot"></div>
 </section>
 
-<!-- Two panels, not one with two headings. These are different kinds of claim
-     — one is derived by rule from the aggregates, the other is written by a
-     person — and stacking them under equal-weight headings inside a single card
-     read as one long list where the prose looked like more findings. Separate
-     cards say "different thing" with no extra label needed, and they let the
-     print rules break between them instead of inside the notes. -->
-<section class="panel" id="findings-panel">
-  <h2>Findings</h2>
-  <div id="computed-findings"></div>
-</section>
+<!-- Two panels side by side, not one stacked card. They are different kinds of
+     claim — one derived by rule from the aggregates, one written by a person —
+     so separate cards say "different thing" without needing a label. Pairing
+     them across the width rather than down the page is what keeps the measure
+     honest: a single full-width card forced either 150-character lines or a
+     narrow ribbon of text with half the panel empty beside it. At half width
+     the column lands near 75 characters on its own, with nothing left over.
+     Below ~460px per column the grid drops to one column, which is also what
+     print gets. -->
+<div class="panel-pair">
+  <section class="panel" id="findings-panel">
+    <h2>Findings</h2>
+    <div id="computed-findings"></div>
+  </section>
 
-<section class="panel" id="notes-panel">
-  <h2>Analyst notes</h2>
-  <div class="exec-body">{{ANALYST_NOTES}}</div>
-</section>
+  <section class="panel" id="notes-panel">
+    <h2>Analyst notes</h2>
+    <div class="exec-body">{{ANALYST_NOTES}}</div>
+  </section>
+</div>
 
 <section class="panel" id="ttfb-panel">
   <h2>Time to first byte phases</h2>

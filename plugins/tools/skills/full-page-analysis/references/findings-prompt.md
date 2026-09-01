@@ -23,6 +23,31 @@ invent additional sections expecting them to render.
 
 Pass the file to the build with `--findings <file.md>`.
 
+## Length is a hard constraint, not a guideline
+
+The notes render in a half-width card beside the findings list. Prose written
+to fill a page overruns it, and a reader who has to work through six lines to
+reach one recommendation stops reading.
+
+- **At most 5 bullets.** Fewer is better. Four findings do not require four
+  bullets — if two share a cause, that is one bullet.
+- **One claim per bullet, under 30 words.** Two short sentences at the very
+  most. If a bullet needs a third, it is carrying two claims: cut one or split
+  it.
+- **Lead with the verdict or the action, not the setup.** "Fix the retry loop
+  first; the long tasks follow from it" beats "The two findings worth acting on
+  are errors and long-tasks, and they are likely related, because..."
+- **No number that is already in the evidence line above.** The reader has it.
+  Cite a figure only when it is the reason two findings connect, and then cite
+  the one figure, not the derivation.
+- **No hedging clauses.** "worth noting", "it is worth distrusting", "arguably",
+  "generally" — cut them all. State the thing or leave it out.
+- **Say nothing about sections with no findings.** An absent problem needs no
+  paragraph explaining that it is absent. One short bullet is fine when a clean
+  result actively changes what someone should do (for example, that the critical
+  path is clean, so nobody should spend time there); a tour of everything that
+  is fine is not.
+
 ## What to read before writing
 
 Read the computed findings from `DATA.findings` in the **rendered HTML
