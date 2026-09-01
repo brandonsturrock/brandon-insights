@@ -3,6 +3,10 @@
 <head>
 <meta charset="utf-8">
 <title>Full Page Analysis — {{PAGE_TITLE}}</title>
+<!-- DT Flow faces, base64-inlined by build-report.mjs. Empty when the font
+     files are not present locally; --dt-font-sans then falls through to
+     Roboto. See fontFaceCss() for why they are not committed. -->
+<style>{{FONT_FACES}}</style>
 <style>{{STRATO_TOKENS}}</style>
 <style>
   body { background: var(--dt-bg-base); color: var(--dt-text-primary);
@@ -284,6 +288,84 @@
   .agg-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; width: 1%; }
   .agg-table .lead { font-size: var(--wf-text-body); font-weight: 600; }
   .agg-table .path { font-family: var(--dt-font-mono); color: var(--text-default); white-space: nowrap; }
+
+  /* ── Page experience metric tiles ────────────────────────────────────
+     These replace a percentile table. The table's own objection to charting
+     these five metrics still stands and is worth restating, because it is
+     what shapes the tile: LCP, FCP, INP and TTFB are milliseconds, CLS is an
+     unitless shift score, and no numeric axis can hold both. So the tiles do
+     not give them one. Each tile normalises its metric against its *own*
+     good/poor boundaries, which pins every threshold to the same x in every
+     tile — good ends at 40%, poor begins at 70%. The axis is semantic rather
+     than numeric: "how far into unacceptable is this, and how wide is the
+     spread" reads straight across all five, while every printed figure stays
+     in its own unit. That is the one thing the table could not show, since a
+     table cell can carry a value and a verdict but not a distribution.
+
+     Colour is never the only carrier of the verdict: each tile pairs its
+     colour with a shaped icon and the rating spelled out, following Strato's
+     status vocabulary (circle+check ideal, triangle+exclamation warning,
+     diamond+X critical). Strip the colour and the tile still reads. */
+  .metric-grid { display: grid; gap: var(--dt-space-16);
+    grid-template-columns: repeat(auto-fit, minmax(208px, 1fr)); }
+  .metric-tile { background: var(--dt-bg-container-subtle);
+    border: 1px solid var(--dt-border-default); border-radius: var(--dt-radius);
+    padding: var(--dt-space-16); }
+  /* One accent per tile, set from the rating and consumed by the value, the
+     status chip and the p75 marker, so the three can never disagree. */
+  .metric-tile[data-rating="good"]              { --mt-accent: var(--good); }
+  .metric-tile[data-rating="needs-improvement"] { --mt-accent: var(--warning); }
+  .metric-tile[data-rating="poor"]              { --mt-accent: var(--critical); }
+  .metric-tile[data-rating="none"]              { --mt-accent: var(--text-subdued); }
+
+  .mt-head { display: flex; align-items: baseline; justify-content: space-between;
+    gap: var(--dt-space-8); }
+  .mt-abbr { font-weight: 700; font-size: var(--wf-text-title); letter-spacing: .02em; }
+  .mt-name { color: var(--text-subdued); font-size: var(--wf-text-small); margin-top: 2px; }
+  .mt-status { display: inline-flex; align-items: center; gap: 5px; flex: none;
+    font-size: var(--wf-text-micro); font-weight: 700; padding: 2px 8px; border-radius: 999px;
+    color: var(--mt-accent); background: color-mix(in srgb, var(--mt-accent) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--mt-accent) 45%, transparent); }
+  .mt-status svg { flex: none; display: block; }
+
+  .mt-value { margin-top: var(--dt-space-16); font-weight: 700; font-size: 30px; line-height: 1;
+    color: var(--mt-accent); font-variant-numeric: tabular-nums; }
+  .mt-value-tag { font-size: var(--wf-text-small); font-weight: 600; color: var(--text-subdued);
+    margin-left: 7px; letter-spacing: .04em; }
+
+  /* The scale. The track carries the three threshold zones; markers sit in the
+     same positioning context but outside the track's `overflow: hidden`, so a
+     marker at 0% or 100% is not clipped in half. */
+  .mt-scale { position: relative; margin-top: 14px; height: 22px; }
+  .mt-track { display: flex; height: 8px; border-radius: 4px; overflow: hidden; }
+  /* A 2px gap of the tile surface separates adjacent fills, so the boundary
+     between two zones is a real edge rather than two mixed colours meeting.
+     border-box keeps the percentage widths honest once the border is added —
+     without it each zone would grow by its border and the three would overflow
+     the track, pushing the poor zone off the end. */
+  .mt-zone { height: 100%; box-sizing: border-box; }
+  .mt-zone + .mt-zone { border-left: 2px solid var(--dt-bg-container-subtle); }
+  /* Zone fills stay quieter than the markers — they are a reference backdrop,
+     not data — but each is mixed only part-way toward the page base so the
+     three remain tellable apart at 8px tall, which a lighter mix did not. */
+  .mt-zone-good { width: 40%; background: color-mix(in srgb, var(--good) 45%, var(--dt-bg-base)); }
+  .mt-zone-ni   { width: 30%; background: color-mix(in srgb, var(--warning) 45%, var(--dt-bg-base)); }
+  .mt-zone-poor { width: 30%; background: color-mix(in srgb, var(--critical) 45%, var(--dt-bg-base)); }
+  /* 2px surface ring, so a marker landing on a zone boundary or overlapping a
+     neighbouring marker stays legible as its own mark. */
+  .mt-mark { position: absolute; top: 0; width: 2px; height: 8px; border-radius: 1px;
+    background: var(--text-subdued); transform: translateX(-1px);
+    box-shadow: 0 0 0 2px var(--dt-bg-container-subtle); }
+  .mt-mark-p75 { width: 4px; height: 16px; top: -4px; transform: translateX(-2px);
+    background: var(--mt-accent); }
+  .mt-bounds { display: flex; justify-content: space-between; gap: var(--dt-space-8);
+    margin-top: 2px; font-size: var(--wf-text-micro); color: var(--text-subdued); }
+  .mt-tail { display: flex; justify-content: space-between; gap: var(--dt-space-8);
+    margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--dt-border-default);
+    font-size: var(--wf-text-small); color: var(--text-subdued);
+    font-variant-numeric: tabular-nums; }
+  .mt-tail b { color: var(--text-default); font-weight: 600; }
+
   /* The em dash is the mandated null mark, so it is the one glyph that must
      stay legible: --text-disabled is 2.25:1 on the panel, --text-subdued is
      5.90:1. The dash is already distinct from a figure by shape; it does not
@@ -400,6 +482,9 @@
        without this rule the browser was free to split *inside* a table row,
        cutting a cell's text at the page edge rather than between rows. */
     .agg-table tr { break-inside: avoid; page-break-inside: avoid; }
+    /* A tile split across a page break loses either its verdict or its scale,
+       and each is small enough to always fit whole. */
+    .metric-tile { break-inside: avoid; page-break-inside: avoid; }
 
     /* overflow-x:auto clips rather than reflows when printed. Every
        .table-scroll wrapper (Core Web Vitals, slowest/heaviest resources,
@@ -465,10 +550,14 @@
      a single real timeline to ground it, then the recommendations, and only
      then the per-resource tables. Every figure here is cross-session except the
      waterfall panel, which is a single load and says so in its own note. -->
-<section class="panel" id="cwv-panel">
-  <h2>Core Web Vitals</h2>
-  <p class="panel-note" id="cwv-note"></p>
-  <div class="table-scroll" id="cwv-slot"></div>
+<section class="panel" id="experience-panel">
+  <!-- "Page experience metrics", not "Core Web Vitals": three of the five
+       (LCP, INP, CLS) are Core Web Vitals, but FCP and TTFB are not, and
+       labelling the panel after the subset misnames two of its own rows. The
+       note below names which three carry the CWV assessment. -->
+  <h2>Page experience metrics</h2>
+  <p class="panel-note" id="experience-note"></p>
+  <div id="experience-slot"></div>
 </section>
 
 <section class="panel" id="waterfall-panel">
@@ -1478,10 +1567,10 @@ function renderFindings() {
   ).join(""));
 }
 
-// ─── 1. Core Web Vitals ───────────────────────────────────────────────
-// A table, not a chart: five metrics on five incompatible scales (ms and an
-// unitless shift score) have no shared axis, and the reader's question is
-// "what is the number and is it acceptable", which is a lookup.
+// ─── 1. Page experience metrics ───────────────────────────────────────
+// One tile per metric. See the .metric-grid block for why these are tiles on
+// per-metric normalised scales rather than the shared axis five incompatible
+// units cannot have.
 const CWV_ROWS = [
   { label: "LCP", name: "Largest contentful paint", key: "lcp", th: "lcp", fmt: formatMs },
   { label: "FCP", name: "First contentful paint", key: "fcp", th: "fcp", fmt: formatMs },
@@ -1497,18 +1586,92 @@ const CWV_ROWS = [
     fmt: (v) => (v > 0 && v < 0.001 ? "< 0.001" : v.toFixed(3)) },
   { label: "TTFB", name: "Time to first byte", key: "ttfb", th: "ttfb", fmt: formatMs },
 ];
+// Strato's status vocabulary is shape-first: an ideal state is a circle with a
+// check, a warning is a triangle with an exclamation, a critical state is a
+// diamond with an X. Reproduced as inline SVG because this report ships as one
+// standalone file with no React and no Strato runtime to import icons from —
+// the shapes and the semantics are Strato's, the delivery is not.
+const RATING_SHAPES = {
+  good:
+    `<svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">` +
+    `<circle cx="6" cy="6" r="5.25" fill="none" stroke="currentColor" stroke-width="1.5"/>` +
+    `<path d="M3.5 6.2 5.2 7.9 8.6 4.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  "needs-improvement":
+    `<svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">` +
+    `<path d="M6 1.1 11.4 10.6H0.6Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>` +
+    `<path d="M6 4.5v2.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>` +
+    `<circle cx="6" cy="8.9" r=".85" fill="currentColor"/></svg>`,
+  poor:
+    `<svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">` +
+    `<path d="M6 .9 11.1 6 6 11.1.9 6Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>` +
+    `<path d="M4.3 4.3 7.7 7.7M7.7 4.3 4.3 7.7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
+  none:
+    `<svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">` +
+    `<circle cx="6" cy="6" r="5.25" fill="none" stroke="currentColor" stroke-width="1.5"/>` +
+    `<path d="M3.2 8.8 8.8 3.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
+};
+const RATING_WORDS = { good: "Good", "needs-improvement": "Needs work", poor: "Poor", none: "Not measured" };
+
+// Position a value on its metric's own threshold scale, as a percentage of the
+// track. Anchors are fixed so every tile agrees: 0 -> 0%, good -> 40%,
+// poor -> 70%, and twice the poor boundary -> 100%. A value beyond that clamps
+// to the end rather than running off the track; the printed figure beside the
+// track is what carries the magnitude in that case, and the marker only has to
+// say "off the far end".
+function thresholdPos(value, t) {
+  if (!(t.good > 0) || !(t.poor > t.good)) return null;
+  const v = Math.max(0, value);
+  if (v <= t.good) return 40 * (v / t.good);
+  if (v <= t.poor) return 40 + 30 * ((v - t.good) / (t.poor - t.good));
+  return Math.min(100, 70 + 30 * ((v - t.poor) / t.poor));
+}
+
+function metricTile(row, c) {
+  const t = T[row.th];
+  const p50 = c[row.key + "P50"], p75 = c[row.key + "P75"], p95 = c[row.key + "P95"];
+  const rating = p75 == null ? "none" : msRating(p75, [t.good, t.poor]);
+  const marks = [["p50", p50], ["p75", p75], ["p95", p95]]
+    .map(([name, v]) => {
+      if (v == null) return "";
+      const pos = thresholdPos(v, t);
+      if (pos == null) return "";
+      // title, not a hover handler: the tooltip layer in this report belongs to
+      // the waterfall, and a native title needs no JS to work in print preview
+      // or after the file is emailed on.
+      return `<span class="mt-mark ${name === "p75" ? "mt-mark-p75" : ""}" style="left:${pos.toFixed(2)}%" ` +
+             `title="${escHtml(name + " " + row.fmt(v))}"></span>`;
+    }).join("");
+  return `<article class="metric-tile" data-rating="${rating}">` +
+    `<div class="mt-head"><span class="mt-abbr">${escHtml(row.label)}</span>` +
+      `<span class="mt-status">${RATING_SHAPES[rating]}${escHtml(RATING_WORDS[rating])}</span></div>` +
+    `<div class="mt-name">${escHtml(row.name)}</div>` +
+    `<div class="mt-value">${fmt(p75, row.fmt)}<span class="mt-value-tag">p75</span></div>` +
+    `<div class="mt-scale">` +
+      `<div class="mt-track">` +
+        `<span class="mt-zone mt-zone-good"></span>` +
+        `<span class="mt-zone mt-zone-ni"></span>` +
+        `<span class="mt-zone mt-zone-poor"></span>` +
+      `</div>${marks}</div>` +
+    `<div class="mt-bounds"><span>good \u2264 ${escHtml(row.fmt(t.good))}</span>` +
+      `<span>poor &gt; ${escHtml(row.fmt(t.poor))}</span></div>` +
+    `<div class="mt-tail"><span>p50 <b>${fmt(p50, row.fmt)}</b></span>` +
+      `<span>p95 <b>${fmt(p95, row.fmt)}</b></span></div>` +
+    `</article>`;
+}
+
 function renderCwv() {
   const c = DATA.cwv;
-  document.getElementById("cwv-note").innerHTML = c.loads == null
+  document.getElementById("experience-note").innerHTML = c.loads == null
     ? "No page summaries returned for this page."
     : `Percentiles across <strong>${Math.round(c.loads).toLocaleString()}</strong> page loads. ` +
-      `p75 is the figure Core Web Vitals is assessed on.`;
-  setSlot("cwv-slot", aggTable([
-    { label: "Metric", cell: (r) => `<span class="lead">${escHtml(r.label)}</span> <span class="subdued">${escHtml(r.name)}</span>` },
-    { label: "p50", num: true, cell: (r) => fmt(c[r.key + "P50"], r.fmt) },
-    { label: "p75", num: true, cell: (r) => ratingCell(c[r.key + "P75"], r.th, r.fmt) },
-    { label: "p95", num: true, cell: (r) => fmt(c[r.key + "P95"], r.fmt) },
-  ], CWV_ROWS));
+      `Each tile is scaled to its own thresholds, so the zone boundaries line up across all five. ` +
+      `p75 is the assessed figure; LCP, INP and CLS are the three Core Web Vitals.`;
+  if (c.loads == null) {
+    setSlot("experience-slot", emptyNote("No page summaries returned for this page."));
+    return;
+  }
+  setSlot("experience-slot",
+    `<div class="metric-grid">${CWV_ROWS.map((r) => metricTile(r, c)).join("")}</div>`);
 }
 
 // ─── 2. TTFB phases ───────────────────────────────────────────────────

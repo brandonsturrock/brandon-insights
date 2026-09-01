@@ -17,7 +17,12 @@
 
   /* Font stacks from Strato's typography tokens: sans = Typography.Text.Base.Default.Family,
      mono = Typography.Code.Base.Default.Family. Theme-independent — identical in both sheets. */
-  --dt-font-sans: DynatraceFlow, Roboto, Helvetica, sans-serif;
+  /* "DT Flow" is the family name build-report.mjs declares on the inlined
+     @font-face rules, so it has to lead the stack for them to be used at all.
+     "DynatraceFlow" follows it as the name a machine with the font installed
+     system-wide would expose; Roboto and Helvetica are the real fallbacks when
+     the font is absent, which is the normal case outside Dynatrace. */
+  --dt-font-sans: "DT Flow", DynatraceFlow, Roboto, Helvetica, sans-serif;
   --dt-font-mono: "Roboto Mono", monospace;
 
   /* Borders.Radius.Container.Default — the base container radius Strato components use. */

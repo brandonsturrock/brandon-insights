@@ -7,6 +7,7 @@
 //   node build-report.mjs --data /tmp/fpa-home --page-title "/" --out ~/Downloads/report.html
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { normalizeRaw } from "./lib/normalize.mjs";
@@ -211,12 +212,54 @@ const analystNotesHtml = args.findings
 const template = fs.readFileSync(path.join(SKILL_ROOT, "assets", "report.html.tmpl"), "utf8");
 const tokens = fs.readFileSync(path.join(SKILL_ROOT, "assets", "strato-tokens.css"), "utf8");
 
+// ── DT Flow font embedding ─────────────────────────────────────────────
+// The report is a single self-contained file that also gets printed to PDF by
+// headless Chrome, so a linked webfont is not an option — the face has to be a
+// data URI or it will not survive being moved, mailed, or printed.
+//
+// DT Flow is a Dynatrace brand font and is not ours to redistribute, so the
+// .otf files are deliberately NOT committed to this repo. The build looks for
+// them locally and inlines whatever it finds; when they are absent it emits
+// nothing and the report falls back to the Roboto/Helvetica stack already
+// declared in --dt-font-sans. That fallback is the whole reason the stack has
+// more than one entry: a non-Dynatrace user gets a correct report in Roboto
+// rather than a build error about a missing font.
+//
+// Only the three weights the stylesheet actually asks for (400 body, 600
+// headings and labels, 700 emphasis and <strong>) are embedded. DTFlow-Medium
+// exists in the same directory but nothing references weight 500, and each
+// face costs roughly 95 KB once base64-encoded.
+const FONT_FACES = [
+  ["DTFlow-Regular.otf", 400],
+  ["DTFlow-Semibold.otf", 600],
+  ["DTFlow-Bold.otf", 700],
+];
+const FONT_DIRS = [
+  path.join(SKILL_ROOT, "assets", "fonts"),
+  path.join(os.homedir(), "brain", "Resources", "Fonts"),
+];
+function fontFaceCss() {
+  const dir = FONT_DIRS.find((d) => FONT_FACES.every(([f]) => fs.existsSync(path.join(d, f))));
+  if (!dir) return "/* DT Flow not found locally — falling back to the Roboto stack. */";
+  return FONT_FACES.map(([file, weight]) => {
+    const b64 = fs.readFileSync(path.join(dir, file)).toString("base64");
+    return `@font-face {\n` +
+      `  font-family: "DT Flow";\n` +
+      `  font-weight: ${weight};\n` +
+      `  font-style: normal;\n` +
+      `  font-display: block;\n` +
+      `  src: url(data:font/otf;base64,${b64}) format("opentype");\n` +
+      `}`;
+  }).join("\n");
+}
+
 const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 let html = template
   .split("{{PAGE_TITLE}}").join(esc(args["page-title"]))
   .split("{{GENERATED_AT}}").join(new Date().toISOString().slice(0, 10))
   .split("{{STRATO_TOKENS}}").join(tokens)
+  .split("{{FONT_FACES}}").join(fontFaceCss())
   .split("{{ANALYST_NOTES}}").join(analystNotesHtml)
   .replace("{{DATA_JSON}}", () =>
     JSON.stringify(data).replace(/<\/script>/g, "<\\/script>"));
