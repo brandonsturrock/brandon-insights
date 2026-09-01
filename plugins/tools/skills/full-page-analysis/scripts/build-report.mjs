@@ -63,7 +63,13 @@ function parseArgs(argv) {
   const out = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a.startsWith("--")) { out[a.slice(2)] = argv[++i]; }
+    if (!a.startsWith("--")) continue;
+    // A flag whose next token is another flag (or which ends the line) is a
+    // boolean. Without this, `--print-findings` swallowed whatever followed it
+    // and evaluated as undefined when it came last.
+    const next = argv[i + 1];
+    if (next === undefined || next.startsWith("--")) { out[a.slice(2)] = true; }
+    else { out[a.slice(2)] = argv[++i]; }
   }
   return out;
 }
@@ -93,8 +99,12 @@ const isMain = import.meta.url === `file://${process.argv[1]}`;
 if (isMain) {
 const args = parseArgs(process.argv.slice(2));
 if (!args.data) { console.error("Missing --data <dir>"); process.exit(1); }
-if (!args.out) { console.error("Missing --out <report.html>"); process.exit(1); }
-if (!args["page-title"]) { console.error("Missing --page-title <title>"); process.exit(1); }
+// --print-findings computes the findings and prints them, nothing else, so it
+// needs neither an output path nor a page title.
+if (!args["print-findings"]) {
+  if (!args.out) { console.error("Missing --out <report.html>"); process.exit(1); }
+  if (!args["page-title"]) { console.error("Missing --page-title <title>"); process.exit(1); }
+}
 
 const raw = {
   summary: loadRecords(args.data, "instance-summary.json")[0] || {},
@@ -209,6 +219,16 @@ data.instance.action = {
 if (skipped.length) console.warn(`Skipped missing/empty data files: ${skipped.join(", ")}`);
 data.skipped = skipped;
 data.findings = computeFindings(data);
+
+// The analyst needs the computed findings before writing notes, and the notes
+// are an input to the build — a cycle that used to be broken by building the
+// whole report once against a placeholder findings file, then grepping DATA out
+// of the rendered HTML, then building again. The findings are already computed
+// here, on coerced numbers, so just print them and skip the render.
+if (args["print-findings"]) {
+  console.log(JSON.stringify(data.findings, null, 2));
+  process.exit(0);
+}
 // The page's detected name, as passed on the command line. summary.pageTitle is
 // the document's own <title> ("easyTravel"), which is a different fact from the
 // page this report is about ("/") — the header shows both.

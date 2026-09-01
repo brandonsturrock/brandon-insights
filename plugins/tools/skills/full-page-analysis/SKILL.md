@@ -124,6 +124,30 @@ environment URL. Then continue to Step 0.
 
 ---
 
+## Output discipline
+
+This skill runs mostly unattended and the person watching wants to know where
+it is, not what it is doing. **One short line per stage, nothing else.**
+
+Emit exactly one line when each of these completes, and no other prose:
+
+| Stage | Line |
+|---|---|
+| Context confirmed | `Context: NAME (ENV_URL)` |
+| Application chosen | `Application: FRONTEND` |
+| Page chosen | `Page: PAGE (N hard navigations)` |
+| Instance selected | `Instance: UA_INSTANCE_ID — LCP Nms, p75 Nms` |
+| Queries finished | `Queried N of 12 files.` — only if some came back empty; silent otherwise |
+| Report built | `Report: /tmp/...html` |
+| PDF written | the two `~/Downloads/` paths |
+
+Do not narrate what you are about to do, echo DQL, print query output, describe
+the findings you computed, or summarise the report's contents — the report says
+all of that, in writing, on the page. Errors and the `AskUserQuestion` prompts
+are the only other things that reach the terminal.
+
+---
+
 ## Context check (normal runs only)
 
 ```bash
@@ -226,8 +250,7 @@ returned record: `VIEW_INSTANCE_ID` (`view.instance_id`), `FRONTEND`
 (`frontend.name`), `PAGE` (`page.detected_name`), and browser/device
 metadata for later use in the report.
 
-Tell the user: instance found, timeframe used, frontend, page name, and
-instance LCP value.
+Report the one line for "Instance selected" (see **Output discipline**).
 
 **Continue directly to Step 4.** Skip Steps 2 and 3.
 
@@ -256,9 +279,10 @@ rules (3 + "Show more...", exact query order, counts in labels, e.g.
 ## Step 3 — Selection path: representative instance
 
 Run `fpa-lcp-baseline.dql` with `timeframe=TF`, `frontend=FRONTEND`,
-`page=PAGE`. This returns `p50_lcp`, `p75_lcp`, `p95_lcp`, `hard_navs`. State
-these to the user with status labels (LCP thresholds: ≤2500ms good,
-2501–4000ms needs improvement, >4000ms poor).
+`page=PAGE`. This returns `p50_lcp`, `p75_lcp`, `p95_lcp`, `hard_navs`. Keep
+these; do not print them. The report states every percentile with its rating in
+the page experience tiles, so repeating them in the terminal is the same fact
+twice, one copy of which cannot be shared.
 
 Run `fpa-top-browser.dql` with the same params. Set `BROWSER` to the
 returned `browser.name`.
@@ -330,12 +354,18 @@ prose. Write the result to:
 /tmp/fpa-SLUG/findings.md
 ```
 
-The required heading is `## Analyst notes`. Note that `findings-prompt.md`
-expects you to read the computed findings from the **rendered HTML** (Step
-6), not from the raw query JSON — the raw counters are unparsed strings
-until `build-report.mjs` coerces them. Run Step 6 once with an empty or
-placeholder findings file first if you need to see `DATA.findings` before
-writing prose, then rerun Step 6 after writing `findings.md`.
+The required heading is `## Analyst notes`.
+
+Read the computed findings first, from the build script rather than from the
+raw query JSON — the raw counters are unparsed strings until `build-report.mjs`
+coerces them, so rules run against them by hand can disagree with the report:
+
+```bash
+node <SKILL_BASE_DIR>/scripts/build-report.mjs --data /tmp/fpa-SLUG --print-findings
+```
+
+That prints the same `{ id, severity, title, evidence }` array the report
+embeds, and exits without rendering.
 
 ---
 

@@ -50,11 +50,15 @@ reach one recommendation stops reading.
 
 ## What to read before writing
 
-Read the computed findings from `DATA.findings` in the **rendered HTML
-only** — open the built report and inspect the embedded `DATA` object (e.g.
-`grep "const DATA = " report.html`, or a browser console). Each entry is
-`{ id, severity, title, evidence }`, and `evidence` already contains every
-number that finding fired on.
+Read the computed findings from the build script:
+
+```bash
+node <SKILL_BASE_DIR>/scripts/build-report.mjs --data <data-dir> --print-findings
+```
+
+Each entry is `{ id, severity, title, evidence }`, and `evidence` already
+contains every number that finding fired on. The same array is embedded as
+`DATA.findings` in a rendered report, if you happen to have one open.
 
 Do not hand-call `computeFindings` yourself against the raw `--data`
 directory. Raw dtctl query output carries every counter (`loads`,
@@ -62,7 +66,8 @@ directory. Raw dtctl query output carries every counter (`loads`,
 `build-report.mjs` coerces every one of them through its own `num()` before
 `computeFindings` ever sees them. A hand-rolled call skips that coercion and
 can silently produce different findings than the ones actually in the
-report. `DATA.findings` in the built HTML is the only trustworthy source.
+report. `--print-findings` runs the same coercion the report does, which is
+what makes it trustworthy.
 
 ## The one failure mode this file exists to prevent
 
