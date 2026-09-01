@@ -204,6 +204,10 @@ data.instance.action = {
 if (skipped.length) console.warn(`Skipped missing/empty data files: ${skipped.join(", ")}`);
 data.skipped = skipped;
 data.findings = computeFindings(data);
+// The page's detected name, as passed on the command line. summary.pageTitle is
+// the document's own <title> ("easyTravel"), which is a different fact from the
+// page this report is about ("/") — the header shows both.
+data.page = args["page-title"] || null;
 
 const analystNotesHtml = args.findings
   ? markdownToHtml(extractMarkdownSection(fs.readFileSync(args.findings, "utf8"), "analyst notes"))

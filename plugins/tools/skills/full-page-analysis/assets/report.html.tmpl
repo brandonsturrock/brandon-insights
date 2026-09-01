@@ -21,7 +21,7 @@
      viewBox carries the aspect ratio. */
   .report-header { display: flex; align-items: center; justify-content: space-between;
     gap: var(--dt-space-16); flex-wrap: wrap;
-    padding-bottom: 14px; margin-bottom: var(--dt-space-32);
+    padding-bottom: 14px; margin-bottom: 34px;
     border-bottom: 1px solid var(--dt-border-default); }
   .brand { display: flex; align-items: center; gap: 14px; color: var(--dt-text-primary); }
   .dt-logo { width: 150px; height: auto; display: block; flex: none; }
@@ -36,6 +36,29 @@
   .brand-meta { font-size: var(--wf-text-small); color: var(--text-subdued); }
 
   h1, h2 { font-weight: 600; margin: 0 0 var(--dt-space-16); }
+  /* The title was sitting between two hard edges — the masthead rule above and
+     the first panel below — with 16px on each side. It carries the name of the
+     whole document, so it gets room to be the thing you land on. */
+  h1 { font-size: 27px; line-height: 1.2; letter-spacing: -.01em; margin: 0 0 22px; }
+
+  /* Report context: what was measured, and which single load the waterfall
+     came from. A definition grid rather than a sentence, because these are
+     seven independent facts a reader looks up one at a time — the same reason
+     the resource tables are tables. auto-fit means it reflows to however many
+     columns the width allows instead of a fixed break. */
+  .report-context { display: grid; gap: 14px var(--dt-space-32);
+    grid-template-columns: repeat(auto-fit, minmax(150px, max-content));
+    margin: 0 0 var(--dt-space-32); padding: 0; }
+  .report-context dt { font-size: var(--wf-text-micro); font-weight: 700;
+    letter-spacing: .1em; text-transform: uppercase; color: var(--text-subdued);
+    margin: 0 0 3px; }
+  .report-context dd { margin: 0; font-size: var(--wf-text-body);
+    color: var(--text-default); }
+  /* IDs are opaque tokens — a line break inside one turns a copyable value
+     into two fragments, so they never wrap and take a column as wide as they
+     need. */
+  .report-context .id { font-family: var(--dt-font-mono); font-size: var(--wf-text-small);
+    color: var(--text-subdued); white-space: nowrap; }
   h2 { font-size: var(--wf-text-title); }
   .example-note { color: var(--dt-warning); font-size: var(--wf-text-body); }
 </style>
@@ -594,6 +617,7 @@
 </header>
 
 <h1>Full Page Analysis — {{PAGE_TITLE}}</h1>
+<dl class="report-context" id="report-context"></dl>
 
 <div id="skipped-slot"></div>
 
@@ -880,8 +904,10 @@ const el = (tag, cls, html) => {
 
 // ─── Static page header ────────────────────────────────────────────────
 document.getElementById("page-title").textContent = summary.pageTitle || summary.pageUrl || "Page Waterfall";
-document.getElementById("page-subtitle").textContent =
-  `${summary.pageUrl || ""}  ·  ${summary.browserName} ${summary.browserVersion}  ·  ${summary.deviceType}  ·  ${new Date(summary.clientStartTimeMs).toLocaleString()}`;
+// Browser, device and capture time moved to the report context grid in the
+// header, where they describe the sampled load once. What stays here is the
+// one fact that is specific to this panel: which URL the waterfall is of.
+document.getElementById("page-subtitle").textContent = summary.pageUrl || "";
 
 const navRequest = requests.find((r) => r.performanceInitiatorType === "navigation" || resolveType(r) === "navigation" || resolveType(r) === "document");
 if (navRequest && navRequest.incompleteReason && !isCacheLike(navRequest)) {
@@ -1891,7 +1917,34 @@ function renderBrowserDevice() {
   ], rows));
 }
 
+// Identity of the sampled load. The action id is read off the request rows
+// rather than the summary: request events are scoped to the user action by
+// definition, while user_action.instance_id is null on the page-summary event.
+function renderContext() {
+  const uaId = (requests.find((r) => r.uaInstanceId) || {}).uaInstanceId || null;
+  const captured = summary.startTime
+    ? new Date(summary.startTime).toLocaleString(undefined,
+        { dateStyle: "medium", timeStyle: "short" })
+    : null;
+  const rows = [
+    ["Application", escHtml(summary.frontendName || "—")],
+    ["Page", escHtml(DATA.page || "—")],
+    ["Sampled load", escHtml(captured || "—")],
+    ["Browser", escHtml([summary.browserName, summary.browserVersion].filter(Boolean).join(" ") || "—")],
+    ["Platform", escHtml([summary.osName, summary.deviceType].filter(Boolean).join(" · ") || "—")],
+    // The session id is deliberately not a row: it is 34 opaque characters, the
+    // widest thing in the grid, and nothing a reader does anything with by
+    // eye. It stays on summary.sessionId, where it is what a Users & Sessions
+    // deep link would be built from.
+    ["Action instance", `<span class="id">${escHtml(uaId || "—")}</span>`],
+  ];
+  setSlot("report-context", rows.map(([k, v]) =>
+    `<div><dt>${escHtml(k)}</dt><dd>${v}</dd></div>`
+  ).join(""));
+}
+
 function renderAggregates() {
+  renderContext();
   renderSkipped();
   renderFindings();
   renderCwv();

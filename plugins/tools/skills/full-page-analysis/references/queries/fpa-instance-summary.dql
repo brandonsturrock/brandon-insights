@@ -13,6 +13,7 @@ fetch user.events, from: {{.timeframe}}
     web_vitals.interaction_to_next_paint, inp.status,
     fid.status,
     lcp.url, lcp.ui_element.tag_name,
+    dt.rum.session.id, start_time,
     page.url.full, page.title, browser.name, browser.version,
     device.type, os.name, navigation.type, frontend.name,
     long_task.all.count, long_task.all.avg_duration, long_task.all.slowest_occurrences,

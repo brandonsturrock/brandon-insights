@@ -4,6 +4,7 @@ fetch user.events, from: {{.timeframe}}
 | sort start_time asc
 | limit 500
 | fields
+    user_action.instance_id,
     url.full, url.domain, url.path, url.provider,
     performance.initiator_type,
     start_time, end_time, duration,

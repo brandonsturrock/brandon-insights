@@ -32,6 +32,12 @@ export function normalizeRaw(raw) {
     browserName: s['browser.name'], browserVersion: s['browser.version'],
     deviceType: s['device.type'], osName: s['os.name'],
     navigationType: s['navigation.type'], frontendName: s['frontend.name'],
+    // Identity of the sampled load, for the report header. sessionId and
+    // startTime ride on the page-summary event; user_action.instance_id does
+    // not (it is null there), so it is picked up off the request rows below,
+    // which are scoped to that action by definition.
+    sessionId: s['dt.rum.session.id'] || null,
+    startTime: s['start_time'] || null,
     longTaskCount: Number(s['long_task.all.count'] || 0),
     longTaskAvgMs: s['long_task.all.avg_duration'] != null ? Number(s['long_task.all.avg_duration']) : null,
     longTaskOccurrences: ltOccs,
@@ -67,6 +73,7 @@ export function normalizeRaw(raw) {
       return n;
     }
     const out = {
+      uaInstanceId: r['user_action.instance_id'] || null,
       urlPath: r['url.path'], urlDomain: r['url.domain'], urlFull: r['url.full'],
       urlProvider: r['url.provider'] || null, startAbsoluteMs: startMs, endAbsoluteMs: endMs,
       durationMs: startMs && endMs ? endMs - startMs : null,
