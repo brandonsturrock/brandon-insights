@@ -81,12 +81,6 @@
   .metric-tile .value { font-size: var(--wf-text-lead); font-weight: 600; margin: 0; font-variant-numeric: tabular-nums; }
   .metric-tile .sub { color: var(--text-subdued); font-size: var(--wf-text-small); display: block; margin-top: 2px; }
 
-  .ttfb-breakdown { margin-top: 8px; margin-bottom: 16px; }
-  .ttfb-bar { display: flex; height: 16px; border-radius: 3px; overflow: hidden; gap: 1px; }
-  .ttfb-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
-  .ttfb-legend-item { display: flex; align-items: center; gap: 4px; }
-  .swatch { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
-
   .context-box {
     margin-top: var(--dt-space-16);
     margin-bottom: var(--dt-space-16);
@@ -400,16 +394,6 @@
   .rating { font-weight: 600; }
   .rating .word { font-size: var(--wf-text-micro); text-transform: uppercase; letter-spacing: 0.06em; margin-left: 6px; }
 
-  /* TTFB phase bar. Five ordered stages of one duration, so a single-hue
-     sequential ramp keyed to time order, not five categorical hues — there is
-     no five-hue token set here, and stage order is real information. Adjacent
-     steps sit ~1.3:1 apart, so separation comes from the 2px surface gap and
-     the direct-labelled legend, never from hue alone. Every step clears 3:1
-     against the panel surface, so the thinnest segment is still visible. */
-  .ttfb-bar { gap: 2px; height: 20px; border-radius: 4px; background: var(--bg-surface); }
-  .ttfb-legend { gap: 4px 20px; margin-top: 10px; font-size: var(--wf-text-small); }
-  .ttfb-legend-item .k { color: var(--text-subdued); }
-  .ttfb-legend-item .v { font-variant-numeric: tabular-nums; font-weight: 600; }
 
   .empty-note { color: var(--text-subdued); font-size: var(--wf-text-small); font-style: italic; }
   .skipped-banner {
@@ -444,13 +428,13 @@
      wrap inside the column instead of forcing it open. */
   .finding-evidence { color: var(--text-subdued); font-size: var(--wf-text-small);
     line-height: 1.5; max-width: 88ch; overflow-wrap: anywhere; }
-  /* The findings / analyst-notes pair. `align-items: start` so each card hugs
-     its own content — stretching the shorter one to match just moves the empty
-     space from beside the text to below it. The panels keep their own
+  /* The findings / analyst-notes pair. The two cards stretch to a common
+     height (grid's default `align-items: stretch`) because they read as one
+     row: two cards of different heights sitting side by side look like a
+     layout accident rather than a pairing. The panels keep their own
      margin-bottom, so the pair only needs to suppress the double gap. */
   .panel-pair { display: grid; gap: var(--dt-space-16);
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr));
-    align-items: start; }
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); }
   .panel-pair .panel { margin-bottom: 0; }
   .panel-pair { margin-bottom: var(--dt-space-32); }
 
@@ -635,12 +619,6 @@
     <div class="exec-body">{{ANALYST_NOTES}}</div>
   </section>
 </div>
-
-<section class="panel" id="ttfb-panel">
-  <h2>Time to first byte phases</h2>
-  <p class="panel-note" id="ttfb-note"></p>
-  <div id="ttfb-slot"></div>
-</section>
 
 <section class="panel" id="slowest-panel">
   <h2>Slowest resources</h2>
@@ -1722,65 +1700,7 @@ function renderCwv() {
     `<div class="metric-grid">${CWV_ROWS.map((r) => metricTile(r, c)).join("")}</div>`);
 }
 
-// ─── 2. TTFB phases ───────────────────────────────────────────────────
-const TTFB_PHASES = [
-  { key: "dnsP75", label: "DNS" },
-  { key: "connectionP75", label: "Connection" },
-  { key: "requestP75", label: "Request" },
-  { key: "waitingP75", label: "Waiting" },
-  { key: "cacheP75", label: "Cache" },
-];
-// Single-hue sequential ramp keyed to stage order. Each step clears 3:1 against
-// the panel surface so the thinnest segment stays visible; separation between
-// neighbours comes from the 2px surface gap, not from hue.
-const TTFB_RAMP = [
-  "color-mix(in srgb, var(--dt-primary) 70%, var(--dt-bg-base))",
-  "color-mix(in srgb, var(--dt-primary) 85%, var(--dt-bg-base))",
-  "var(--dt-primary)",
-  "color-mix(in srgb, var(--dt-text-primary) 40%, var(--dt-primary))",
-  "color-mix(in srgb, var(--dt-text-primary) 75%, var(--dt-primary))",
-];
-function renderTtfb() {
-  const p = DATA.ttfbPhases;
-  const present = TTFB_PHASES.map((ph, i) => ({ ...ph, value: p[ph.key], color: TTFB_RAMP[i] }))
-    .filter((ph) => ph.value != null);
-  const note = document.getElementById("ttfb-note");
-  if (!present.length) {
-    note.textContent = "";
-    setSlot("ttfb-slot", emptyNote("No connection-phase timings were reported for this page."));
-    return;
-  }
-  const sum = present.reduce((a, ph) => a + ph.value, 0);
-  const ttfbP75 = DATA.cwv.ttfbP75;
-  // Honesty over tidiness: independent p75s do not add up to the p75 of their
-  // sum, so the bar total is labelled as a sum of phase p75s and the measured
-  // TTFB p75 is printed next to it rather than being implied by the bar.
-  note.innerHTML =
-    `Phase p75s across <strong>${p.loads == null ? "—" : Math.round(p.loads).toLocaleString()}</strong> loads. ` +
-    `Percentiles are computed per phase and do not sum, so the bar totals ` +
-    `<strong>${formatMs(sum)}</strong> against a measured TTFB p75 of ` +
-    `<strong>${ttfbP75 == null ? "—" : formatMs(ttfbP75)}</strong>. Read the segments, not the total.`;
-  const total = sum || 1;
-  setSlot("ttfb-slot",
-    `<div class="ttfb-breakdown">` +
-      `<div class="ttfb-bar" role="img" aria-label="${escHtml(present.map((ph) => `${ph.label} ${formatMs(ph.value)}`).join(", "))}">` +
-      // Zero-length phases are real on fast origins (this tenant reports DNS,
-      // connection and cache all at 0 ms p75). They stay in the legend, where
-      // a sub-millisecond phase is a finding, but they get no segment — a 0 ms
-      // as a 2px sliver would read as a small non-zero one.
-      present.filter((ph) => ph.value > 0).map((ph) =>
-        `<div style="width:${(ph.value / total * 100).toFixed(2)}%;background:${ph.color}" title="${escHtml(ph.label)} ${escHtml(formatMs(ph.value))}"></div>`
-      ).join("") +
-      `</div>` +
-      `<div class="ttfb-legend">` +
-      present.map((ph) =>
-        `<span class="ttfb-legend-item"><span class="swatch" style="background:${ph.color}"></span>` +
-        `<span class="k">${escHtml(ph.label)}</span> <span class="v">${escHtml(formatMs(ph.value))}</span></span>`
-      ).join("") +
-      `</div></div>`);
-}
-
-// ─── 3 & 4. Slowest and heaviest resources ────────────────────────────
+// ─── 2 & 3. Slowest and heaviest resources ────────────────────────────
 const RESOURCE_COLS = [
   { label: "Resource", cell: (r) => {
       const path = r.path || "/";
@@ -1814,7 +1734,7 @@ function renderResourceTable(slotId, noteId, field, blurb) {
   setSlot(slotId, aggTable(RESOURCE_COLS, rows));
 }
 
-// ─── 5. Third parties ─────────────────────────────────────────────────
+// ─── 4. Third parties ─────────────────────────────────────────────────
 function renderThirdParty() {
   let origin = null;
   try { origin = new URL(summary.pageUrl).hostname; } catch { /* pageUrl may be a path */ }
@@ -1846,7 +1766,7 @@ function renderThirdParty() {
   ], rows));
 }
 
-// ─── 6. Long tasks and errors ─────────────────────────────────────────
+// ─── 5. Long tasks and errors ─────────────────────────────────────────
 // Stat tiles rather than a chart: each of these is one number with a
 // denominator, which is the definition of a stat tile, not of a plot.
 const tile = (label, value, sub) =>
@@ -1884,7 +1804,7 @@ function renderMainThread() {
     `</div>`);
 }
 
-// ─── 7. Browser and device ────────────────────────────────────────────
+// ─── 6. Browser and device ────────────────────────────────────────────
 function renderBrowserDevice() {
   const rows = [...DATA.browserDevice].sort(byDesc("loads"));
   const note = document.getElementById("browserdevice-note");
@@ -1910,7 +1830,6 @@ function renderAggregates() {
   renderSkipped();
   renderFindings();
   renderCwv();
-  renderTtfb();
   renderResourceTable("slowest-slot", "slowest-note", "durationP75", "Top 20 by p75 duration.");
   renderResourceTable("heaviest-slot", "heaviest-note", "transferP75", "Top 20 by p75 transfer size.");
   renderThirdParty();

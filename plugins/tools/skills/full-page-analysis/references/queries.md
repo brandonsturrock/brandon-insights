@@ -127,3 +127,9 @@ instances by this field, so they are unaffected and were left as plain
 | `fpa-longtasks-agg.dql` | `timeframe`, `frontend`, `page` | `longtasks-agg.json` |
 | `fpa-errors-agg.dql` | `timeframe`, `frontend`, `page` | `errors-agg.json` |
 | `fpa-browser-device.dql` | `timeframe`, `frontend`, `page` | `browser-device.json` |
+
+`ttfb-phases.json` has no panel of its own. It is still queried because the
+`slow-ttfb` finding names the DNS / connect / waiting / request split in its
+evidence, and that rule only fires when TTFB p75 is already over its threshold —
+which is the only time the split says anything. As a standing panel it reported
+a breakdown of a number that was usually fine.
