@@ -192,6 +192,11 @@ const data = {
 
 const actionRow = loadRecords(args.data, "instance-action.json")[0] || {};
 data.instance.action = {
+  // `id` is the user-action event's own 32-hex identifier, which the Users &
+  // Sessions viewer takes as its `event` parameter to select this action inside
+  // the session. It is not user_action.instance_id (16 hex) — that one names
+  // the action across the data model, this one names the event row.
+  eventId: actionRow.id ?? null,
   name: actionRow["user_action.name"] ?? null,
   type: actionRow["user_action.type"] ?? null,
   durationMs: actionRow.duration != null ? Number(actionRow.duration) / 1e6 : null,
@@ -261,6 +266,10 @@ const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&l
 
 let html = template
   .split("{{PAGE_TITLE}}").join(esc(args["page-title"]))
+  // Rendered into the masthead server-side rather than by renderAggregates, so
+  // the document identifies itself even if the script never runs.
+  .split("{{APPLICATION}}").join(esc(data.instance?.summary?.frontendName || "—"))
+  .split("{{ENVIRONMENT}}").join(esc(args.environment || ""))
   .split("{{GENERATED_AT}}").join(new Date().toISOString().slice(0, 10))
   .split("{{STRATO_TOKENS}}").join(tokens)
   .split("{{FONT_FACES}}").join(fontFaceCss())

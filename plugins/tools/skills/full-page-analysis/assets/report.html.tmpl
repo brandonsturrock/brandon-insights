@@ -36,10 +36,13 @@
   .brand-meta { font-size: var(--wf-text-small); color: var(--text-subdued); }
 
   h1, h2 { font-weight: 600; margin: 0 0 var(--dt-space-16); }
-  /* The title was sitting between two hard edges — the masthead rule above and
-     the first panel below — with 16px on each side. It carries the name of the
-     whole document, so it gets room to be the thing you land on. */
-  h1 { font-size: 27px; line-height: 1.2; letter-spacing: -.01em; margin: 0 0 22px; }
+  /* The title block sits between two hard edges — the masthead rule above and
+     the first panel below — so it gets room to be the thing you land on. */
+  .doc-title { margin: 0 0 var(--dt-space-32); }
+  .doc-kind { margin: 0 0 5px; font-size: var(--wf-text-small); color: var(--text-subdued); }
+  h1 { font-size: 27px; line-height: 1.2; letter-spacing: -.01em; margin: 0; }
+  .doc-page { margin: 7px 0 0; font-size: var(--wf-text-body); color: var(--text-subdued); }
+  .doc-page .id { font-family: var(--dt-font-mono); color: var(--text-default); }
 
   /* Report context: what was measured, and which single load the waterfall
      came from. A definition grid rather than a sentence, because these are
@@ -65,6 +68,15 @@
     grid-template-columns: repeat(auto-fit, minmax(130px, max-content)); }
   .report-context .id { font-family: var(--dt-font-mono); font-size: var(--wf-text-small);
     color: var(--text-subdued); white-space: nowrap; }
+  /* The id keeps its mono treatment inside the link; the accent and the
+     external-link glyph are what mark it as somewhere to go. */
+  .ctx-link { display: inline-flex; align-items: center; gap: 5px;
+    text-decoration: none; color: var(--dt-primary); }
+  .ctx-link .id { color: inherit; }
+  .ctx-link:hover .id, .ctx-link:focus-visible .id { text-decoration: underline; }
+  .ctx-link:focus-visible { outline: 1px dashed var(--dt-primary); outline-offset: 3px; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap; }
   h2 { font-size: var(--wf-text-title); }
   .example-note { color: var(--dt-warning); font-size: var(--wf-text-body); }
 </style>
@@ -622,8 +634,18 @@
   <div class="brand-meta">Generated {{GENERATED_AT}}</div>
 </header>
 
-<h1>Full Page Analysis — {{PAGE_TITLE}}</h1>
-<dl class="report-context" id="report-context"></dl>
+<!-- The document's subject is one page of one application, so the title says
+     exactly that and says each part once. "Full page analysis" is the kind of
+     document, not the subject, which is what the eyebrow is for — it was
+     previously the loudest text on the page while the application name, the
+     thing a reader actually needs, sat in a grid cell underneath. The page path
+     is set in mono because it is a literal, and because "/" as a bare word in
+     prose type reads as punctuation rather than a value. -->
+<div class="doc-title">
+  <p class="doc-kind">Full page analysis</p>
+  <h1>{{APPLICATION}}</h1>
+  <p class="doc-page">Page <span class="id">{{PAGE_TITLE}}</span></p>
+</div>
 
 <div id="skipped-slot"></div>
 
@@ -1927,17 +1949,44 @@ const contextGrid = (id, rows) => setSlot(id, rows.map(([k, v]) =>
   `<div><dt>${escHtml(k)}</dt><dd>${v}</dd></div>`
 ).join(""));
 
-// Two context grids, split by what they are true of. The header one describes
-// the whole report — every aggregate on the page is scoped to this application
-// and this page. The waterfall one describes a single sampled load, and every
-// field in it (when it happened, on what browser, which action instance) is
-// true only of that one row set. Putting the second in the header claimed
-// report-wide scope for facts about one visit.
-function renderReportContext() {
-  contextGrid("report-context", [
-    ["Application", escHtml(summary.frontendName || "—")],
-    ["Page", escHtml(DATA.page || "—")],
-  ]);
+// Report scope — the application and the page — is stated once, in the title
+// block, server-side. What is left here is the waterfall's own context: a
+// single sampled load, where every field (when it happened, on what browser,
+// which action instance) is true only of that one visit and would claim
+// report-wide scope if it sat in the header.
+// Deep link into Users & Sessions for the sampled load, so a reader can open
+// Dynatrace's own session viewer on the exact action this waterfall was built
+// from. Shape, from a real link:
+//
+//   {env}/ui/apps/dynatrace.users.sessions/session-viewer
+//        /{dt.rum.session.id}/{ISO timestamp}?event={event id}&perspective=general&tf=...
+//
+// Every part has to be present or the link lands somewhere useless, so it
+// degrades to plain text unless all four resolve. --environment is the tenant
+// base URL and is the only one not derivable from the data.
+//
+// The timestamp is trimmed to milliseconds: Grail returns start_time at
+// nanosecond precision ("...:07.244999936Z") and the viewer's path segment is
+// an ISO instant ("...:07.244Z").
+//
+// tf is a 30-day window rather than the "@d;now" (today) the example carried,
+// because a report is routinely written about a load from earlier in the
+// 7-day query window, and a same-day timeframe would exclude it.
+const SESSION_VIEWER_TF = "-30d%3Bnow";
+function sessionViewerLink(uaId) {
+  const label = `<span class="id">${escHtml(uaId || "—")}</span>`;
+  const env = "{{ENVIRONMENT}}".replace(/\/+$/, "");
+  const eventId = (DATA.instance.action || {}).eventId;
+  const ts = summary.startTime ? new Date(summary.startTime).toISOString() : null;
+  if (!env || !summary.sessionId || !eventId || !ts) return label;
+  const href = `${env}/ui/apps/dynatrace.users.sessions/session-viewer/` +
+    `${encodeURIComponent(summary.sessionId)}/${encodeURIComponent(ts)}` +
+    `?event=${encodeURIComponent(eventId)}&perspective=general&tf=${SESSION_VIEWER_TF}`;
+  return `<a class="ctx-link" href="${escHtml(href)}" target="_blank" rel="noopener">${label}` +
+    `<svg width="9" height="9" viewBox="0 0 12 12" aria-hidden="true">` +
+    `<path d="M4.5 2h5.5v5.5M10 2 4 8M8 10H2V4" fill="none" stroke="currentColor" ` +
+    `stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>` +
+    `<span class="sr-only"> (opens in Users \u0026 Sessions)</span></a>`;
 }
 
 // The action id is read off the request rows rather than the summary: request
@@ -1953,16 +2002,14 @@ function renderWaterfallContext() {
     ["Captured", escHtml(captured || "—")],
     ["Browser", escHtml([summary.browserName, summary.browserVersion].filter(Boolean).join(" ") || "—")],
     ["Platform", escHtml([summary.osName, summary.deviceType].filter(Boolean).join(" · ") || "—")],
-    // The session id is deliberately not a row: it is 34 opaque characters, the
-    // widest thing in the grid, and nothing a reader does anything with by
-    // eye. It stays on summary.sessionId, where it is what a Users & Sessions
-    // deep link would be built from.
-    ["Action instance", `<span class="id">${escHtml(uaId || "—")}</span>`],
+    // The session id is deliberately not shown: 34 opaque characters, and
+    // nothing a reader uses by eye. It is in the href instead, which is the
+    // one thing it is actually good for.
+    ["Action instance", sessionViewerLink(uaId)],
   ]);
 }
 
 function renderAggregates() {
-  renderReportContext();
   renderWaterfallContext();
   renderSkipped();
   renderFindings();

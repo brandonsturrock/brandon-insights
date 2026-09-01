@@ -341,13 +341,29 @@ writing prose, then rerun Step 6 after writing `findings.md`.
 
 ## Step 6 — Build the report
 
+First read the active environment URL — the report links the sampled load
+back to Users & Sessions and needs the tenant base:
+
+```bash
+ENV_URL=$(dtctl config get-contexts -o json | python3 -c "
+import json,sys
+d = json.load(sys.stdin)
+rows = d['result'] if isinstance(d, dict) else d   # -o json returns a bare list; the default form wraps it
+print(next((c['Environment'] for c in rows if c.get('Current') == '*'), '').rstrip('/'))")
+```
+
 ```bash
 node <SKILL_BASE_DIR>/scripts/build-report.mjs \
   --data /tmp/fpa-SLUG \
   --findings /tmp/fpa-SLUG/findings.md \
   --page-title "PAGE" \
+  --environment "$ENV_URL" \
   --out /tmp/full-page-analysis-SLUG-YYYY-MM-DD.html
 ```
+
+`--environment` is optional. Without it the report still builds; the
+waterfall's **Action instance** row is plain text instead of a link into
+the session viewer.
 
 This reads the canonical JSON filenames from the data directory, applies
 the unit conversions and finding rules in `scripts/lib/normalize.mjs` and

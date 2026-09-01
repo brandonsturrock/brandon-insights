@@ -128,6 +128,13 @@ instances by this field, so they are unaffected and were left as plain
 | `fpa-errors-agg.dql` | `timeframe`, `frontend`, `page` | `errors-agg.json` |
 | `fpa-browser-device.dql` | `timeframe`, `frontend`, `page` | `browser-device.json` |
 
+`fpa-instance-action.dql` selects `id` alongside the action fields. That is the
+user-action *event's* own 32-hex identifier, which the Users & Sessions viewer
+takes as its `event` parameter to select this action inside the session — it is
+not `user_action.instance_id` (16 hex), which names the action across the data
+model rather than the event row. `fpa-instance-summary.dql` supplies the other
+two halves of that link, `dt.rum.session.id` and `start_time`.
+
 `ttfb-phases.json` has no panel of its own. It is still queried because the
 `slow-ttfb` finding names the DNS / connect / waiting / request split in its
 evidence, and that rule only fires when TTFB p75 is already over its threshold —
