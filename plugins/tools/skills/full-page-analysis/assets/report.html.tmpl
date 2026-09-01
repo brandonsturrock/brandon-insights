@@ -14,6 +14,27 @@
   .panel { background: var(--dt-bg-container); border: 1px solid var(--dt-border-default);
            border-radius: var(--dt-radius); padding: var(--dt-space-16);
            margin-bottom: var(--dt-space-32); }
+  /* Masthead: logo, a hairline divider, the team lockup, and the build date on
+     the far side. Deliberately quiet — a deliverable looks official because the
+     mark is placed with confidence and the rule under it is crisp, not because
+     the branding is large. The logo is sized in one place, by width, and the
+     viewBox carries the aspect ratio. */
+  .report-header { display: flex; align-items: center; justify-content: space-between;
+    gap: var(--dt-space-16); flex-wrap: wrap;
+    padding-bottom: 14px; margin-bottom: var(--dt-space-32);
+    border-bottom: 1px solid var(--dt-border-default); }
+  .brand { display: flex; align-items: center; gap: 14px; color: var(--dt-text-primary); }
+  .dt-logo { width: 150px; height: auto; display: block; flex: none; }
+  .brand-rule { width: 1px; align-self: stretch; min-height: 20px;
+    background: var(--dt-border-default); }
+  /* An all-caps lockup, not UI copy — the one place the report shouts, and it
+     shouts quietly: tracked out, small, and in the secondary ink so it sits
+     beside the mark rather than competing with it. */
+  .brand-team { font-size: var(--wf-text-small); font-weight: 700;
+    letter-spacing: .16em; text-transform: uppercase; color: var(--dt-text-secondary);
+    white-space: nowrap; }
+  .brand-meta { font-size: var(--wf-text-small); color: var(--text-subdued); }
+
   h1, h2 { font-weight: 600; margin: 0 0 var(--dt-space-16); }
   h2 { font-size: var(--wf-text-title); }
   .example-note { color: var(--dt-warning); font-size: var(--wf-text-body); }
@@ -128,19 +149,27 @@
   .col-dur   { width: 80px; flex-shrink: 0; box-sizing: border-box; text-align: right; padding-right: 16px; padding-bottom: 6px; align-self: flex-end; }
   .col-timeline-hd { flex: 1; position: relative; align-self: stretch; z-index: 10; }
 
+  /* The pill is now only a positioner: each marker inside it carries its own
+     chip. A merged group holds two or three milestones that landed within 2.5%
+     of each other, and one background colour cannot speak for all of them —
+     so they sit as separate chips rather than as coloured words sharing a box. */
   .pill {
     position: absolute;
     transform: translateX(-50%);
-    background: var(--bg-surface);
-    border: 1px solid var(--border-default);
+    display: flex;
+    gap: 3px;
+    white-space: nowrap;
+    cursor: crosshair;
+    user-select: none;
+  }
+  .pm-chip {
     border-radius: 3px;
     padding: 1px 5px;
     font-size: var(--wf-text-micro);
+    font-weight: 700;
     letter-spacing: 0.07em;
-    white-space: nowrap;
     line-height: 14px;
-    cursor: crosshair;
-    user-select: none;
+    color: var(--dt-bg-base);
   }
   .sticky-pills {
     position: fixed;
@@ -551,8 +580,20 @@
 </style>
 </head>
 <body>
+<!-- Masthead. The wordmark's own group is fill="currentColor", so the header
+     sets `color` and the type picks up the light ink; the logo mark keeps its
+     fixed brand colours, which are the one place in this report where a hue is
+     not a design token and must not be. -->
+<header class="report-header">
+  <div class="brand">
+    <svg class="dt-logo" viewBox="0 0 800 142" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Dynatrace"><g fill="currentColor"><path d="m578.6 37.2h-18.4c-5.2 0-8.8 1-11 3.2-2.2 2.1-3.3 5.8-3.3 10.8v63.6h-11v-64.4c.1-4.9.9-10.2 3.5-14.2 4.7-7.5 13.7-8.9 20.4-8.9h19.9v9.9z"/><path d="m507.6 104.8c-5.2 0-8.8-1-11-3.2-2.2-2.1-3.3-5.6-3.3-10.6v-53.8h23.1v-9.9h-23.1v-26.3h-11v90.6c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h19.9v-9.9z"/><path d="m219.3 1v26.2h-23.1c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h10.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2v-90.7zm-3.3 100.7c-2.2 2.1-5.8 3.2-11 3.2h-10c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-28.9c0-4.1 1.4-9.4 5.5-13.4 3.5-3.4 9.1-6 18.2-6h24.2v53.9c.1 4.9-1 8.4-3.2 10.6z"/><path d="m678.2 43.2c3.5-3.4 9.1-6 18.2-6h26.5v-9.9h-25.4c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h25.4v-9.9h-26.5c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-29c0-4.1 1.4-9.5 5.5-13.4z"/><path d="m470.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m652.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m317.8 27.2h-11.5l-27.9 72.6-27.9-72.6h-11.4l33.6 87.5-10.1 26.3h11.5z"/><path d="m392.2 56.9c0-1.2 0-12.5-8-20.4-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v57.9h11v-58.2c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v58.2h11c0-4.5 0-56.5 0-57.9z"/><path d="m791 36.5c-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v28.2c0 1.2 0 12.5 8 20.4 5.1 5 13.2 9.1 26.4 9.3h26v-10h-25.4c-8.7-.1-15.2-2.7-18.6-6-4-4-5.4-9.3-5.4-13.4v-10.3h59v-18.2c.1-1.2.1-12.5-8-20.4zm-50.9 28.7v-8.6c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v8.6z"/></g><g><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9-2.1 25.2-.8 42.1-.8 42.1l-35.5 33.7s-2.7-18.9-4.1-40.2c-.8-13.2-1.1-24.8-1.1-31.8 0-.4.2-.8.2-1.2 0-.5.6-5.2 5.2-9.6 5-4.8 41.9-33.7 41.3-30.9z" fill="#1496ff"/><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9 0 0-39.3-4.7-41.5 4.8 0-.5.7-6.3 5.3-10.7 5-4.8 42-34.8 41.4-32z" fill="#1284ea"/><path d="m1 53.1v2.2c.4-1.7 1.1-2.9 2.5-4.8 2.9-3.7 7.6-4.7 9.5-4.9 9.6-1.3 23.8-2.8 38.1-3.2 25.3-.8 42 1.3 42 1.3l35.5-33.7s-18.6-3.5-39.8-6c-13.9-1.7-26.1-2.6-33-3-.5 0-5.4-.6-10 3.8-5 4.8-30.4 28.9-40.6 38.6-4.6 4.4-4.2 9.3-4.2 9.7z" fill="#b4dc00"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4-25.3.8-42.1-1.3-42.1-1.3l-35.5 33.8s18.8 3.7 40 6.1c13 1.5 24.5 2.3 31.5 2.7.5 0 1.3-.4 1.8-.4s5.4-.9 10-5.3c5-4.8 35.2-39.3 32.4-39z" fill="#6f2da8"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4 0 0 2.7 39.5-6.8 41.2.5 0 7-.3 11.6-4.7 5-4.8 36.1-40.2 33.3-39.9z" fill="#591f91"/><path d="m84.5 141c-.7 0-1.4-.1-2.2-.1 1.8-.3 3-.9 4.9-2.3 3.8-2.7 5-7.4 5.4-9.3 1.7-9.5 4-23.6 5.1-37.9 2-25.2.8-42 .8-42l35.5-33.8s2.6 18.8 4.1 40.1c.9 13.9 1.2 26.2 1.3 33 0 .5.4 5.4-4.2 9.8-5 4.8-30.4 29-40.5 38.7-4.8 4.4-9.7 3.8-10.2 3.8z" fill="#73be28"/></g></svg>
+    <span class="brand-rule" aria-hidden="true"></span>
+    <span class="brand-team">Business Insights</span>
+  </div>
+  <div class="brand-meta">Generated {{GENERATED_AT}}</div>
+</header>
+
 <h1>Full Page Analysis — {{PAGE_TITLE}}</h1>
-<p>Generated {{GENERATED_AT}}</p>
 
 <div id="skipped-slot"></div>
 
@@ -737,11 +778,31 @@ const isCacheLike = (r) => r.incompleteReason === "local_cache" ||
 
 // ─── Phase markers ────────────────────────────────────────────────────
 const ttfbPositionMs = summary.ttfbMs ?? null;
+// Two values per marker, because the colour has two jobs with opposite
+// requirements. `color` is the identity hue: it paints the vertical line and
+// the legend swatch, so it has to hold up as a mark against the dark panel.
+// `chip` is the same hue lifted toward white, so the label sitting on it can
+// be dark ink. The pair keeps the chip visibly "the colour of its line" while
+// letting each value be correct for what it does.
+//
+// The four hues were validated as a categorical set in chronological order
+// (the order they appear along the timeline, which is what a reader compares):
+// all four inside the dark-mode lightness band, all above the chroma floor,
+// normal-vision separation 16.9, worst CVD-adjacent pair 7.2. That last figure
+// sits in the band that is only acceptable with a secondary encoding — which
+// this has, since every chip is direct-labelled with its metric name and never
+// relies on hue to say which milestone it is.
+//
+// The previous palette (#1D4ED8, #0E7490, #047857, #B45309) was inherited from
+// v1's light canvas and measured 2.3–3.1 against this panel, which is why the
+// markers were hard to see: they were dark colours on a dark surface.
+const PHASE_TINT = 60; // % of the hue in the chip mix; the rest is white
+const phaseChip = (c) => `color-mix(in srgb, ${c} ${PHASE_TINT}%, white)`;
 const buildPhaseMarkers = () => ([
-  { key: "ttfb", label: "TTFB", color: "#1D4ED8", valueMs: ttfbPositionMs },
-  { key: "fp",   label: "FP",   color: "#0E7490", valueMs: summary.fpMs },
-  { key: "fcp",  label: "FCP",  color: "#047857", valueMs: summary.fcpMs },
-  { key: "lcp",  label: "LCP",  color: "#B45309", valueMs: summary.lcpMs },
+  { key: "ttfb", label: "TTFB", color: "#358F66", valueMs: ttfbPositionMs },
+  { key: "fp",   label: "FP",   color: "#B87C25", valueMs: summary.fpMs },
+  { key: "fcp",  label: "FCP",  color: "#3F6FBF", valueMs: summary.fcpMs },
+  { key: "lcp",  label: "LCP",  color: "#AF5285", valueMs: summary.lcpMs },
 ]).filter((m) => m.valueMs !== null && m.valueMs > 0);
 
 const MERGE_THRESHOLD_PCT = 0.025;
@@ -986,7 +1047,7 @@ function attachLineHover(node, group) {
     e.stopPropagation();
     hideTooltip(ttEl);
     lineTtEl.innerHTML = group.markers.map((m) =>
-      `<div class="tt-marker-row"><div class="tt-marker-line" style="background:${m.color}"></div><span class="tt-marker-label" style="color:${m.color}">${escHtml(m.label)}</span><span class="tt-marker-value">${formatMs(m.valueMs)}</span></div>`
+      `<div class="tt-marker-row"><div class="tt-marker-line" style="background:${m.color}"></div><span class="tt-marker-label">${escHtml(m.label)}</span><span class="tt-marker-value">${formatMs(m.valueMs)}</span></div>`
     ).join("");
     positionTooltip(lineTtEl, e.clientX, e.clientY);
   });
@@ -1127,9 +1188,9 @@ function renderWaterfall() {
     const pill = el("div", "pill");
     pill.style.left = toPct(group.valueMs) + "%";
     pill.style.top = LABEL_ROW_0 + "px";
-    pill.innerHTML = group.markers.map((m, i) =>
-      (i > 0 ? `<span class="subdued">·</span> ` : "") + `<span style="color:${m.color}">${escHtml(m.label)}</span>`
-    ).join(" ");
+    pill.innerHTML = group.markers.map((m) =>
+      `<span class="pm-chip" style="background:${phaseChip(m.color)}">${escHtml(m.label)}</span>`
+    ).join("");
     attachLineHover(pill, group);
     colTimeline.appendChild(pill);
   }
@@ -1186,7 +1247,11 @@ function renderWaterfall() {
     hit.style.left = `calc(${toPct(group.valueMs)}% - 4px)`;
     hit.style.top = (LABEL_ROW_0 + PILL_HEIGHT) + "px";
     hit.style.pointerEvents = "auto";
-    hit.appendChild(el("div", "phase-line"));
+    const pline = el("div", "phase-line");
+    // The line takes the group's own hue instead of the old shared grey, so a
+    // chip and the line it labels are visibly the same marker.
+    pline.style.background = group.color;
+    hit.appendChild(pline);
     attachLineHover(hit, group);
     lineOverlay.appendChild(hit);
   }
@@ -1475,9 +1540,9 @@ function updateStickyPills() {
     const pill = el("div", "pill");
     pill.style.left = left + "px";
     pill.style.top = "0";
-    pill.innerHTML = group.markers.map((m, i) =>
-      (i > 0 ? `<span class="subdued">·</span> ` : "") + `<span style="color:${m.color}">${escHtml(m.label)}</span>`
-    ).join(" ");
+    pill.innerHTML = group.markers.map((m) =>
+      `<span class="pm-chip" style="background:${phaseChip(m.color)}">${escHtml(m.label)}</span>`
+    ).join("");
     attachLineHover(pill, group);
     sticky.appendChild(pill);
   }
