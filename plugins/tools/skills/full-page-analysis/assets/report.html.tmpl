@@ -57,6 +57,12 @@
   /* IDs are opaque tokens — a line break inside one turns a copyable value
      into two fragments, so they never wrap and take a column as wide as they
      need. */
+  /* Inside the waterfall card the grid is panel furniture rather than document
+     furniture: it sits under the URL with a rule above it and tighter columns,
+     so it reads as this panel's caption and not as a second page header. */
+  .wf-context { margin: 14px 0 var(--dt-space-16); padding-top: 14px;
+    border-top: 1px solid var(--border-subdued);
+    grid-template-columns: repeat(auto-fit, minmax(130px, max-content)); }
   .report-context .id { font-family: var(--dt-font-mono); font-size: var(--wf-text-small);
     color: var(--text-subdued); white-space: nowrap; }
   h2 { font-size: var(--wf-text-title); }
@@ -656,6 +662,7 @@
        is panel-scoped information, so they live inside the panel. -->
   <div id="page-title" class="wf-instance-title"></div>
   <div id="page-subtitle" class="subtitle"></div>
+  <dl class="report-context wf-context" id="waterfall-context"></dl>
   <div id="warn-banner-slot"></div>
   <div id="controls-slot"></div>
   <div id="waterfall-slot"></div>
@@ -904,9 +911,8 @@ const el = (tag, cls, html) => {
 
 // ─── Static page header ────────────────────────────────────────────────
 document.getElementById("page-title").textContent = summary.pageTitle || summary.pageUrl || "Page Waterfall";
-// Browser, device and capture time moved to the report context grid in the
-// header, where they describe the sampled load once. What stays here is the
-// one fact that is specific to this panel: which URL the waterfall is of.
+// The URL alone; everything else about this one load is in the panel's own
+// context grid below it (see renderWaterfallContext).
 document.getElementById("page-subtitle").textContent = summary.pageUrl || "";
 
 const navRequest = requests.find((r) => r.performanceInitiatorType === "navigation" || resolveType(r) === "navigation" || resolveType(r) === "document");
@@ -1917,19 +1923,34 @@ function renderBrowserDevice() {
   ], rows));
 }
 
-// Identity of the sampled load. The action id is read off the request rows
-// rather than the summary: request events are scoped to the user action by
-// definition, while user_action.instance_id is null on the page-summary event.
-function renderContext() {
+const contextGrid = (id, rows) => setSlot(id, rows.map(([k, v]) =>
+  `<div><dt>${escHtml(k)}</dt><dd>${v}</dd></div>`
+).join(""));
+
+// Two context grids, split by what they are true of. The header one describes
+// the whole report — every aggregate on the page is scoped to this application
+// and this page. The waterfall one describes a single sampled load, and every
+// field in it (when it happened, on what browser, which action instance) is
+// true only of that one row set. Putting the second in the header claimed
+// report-wide scope for facts about one visit.
+function renderReportContext() {
+  contextGrid("report-context", [
+    ["Application", escHtml(summary.frontendName || "—")],
+    ["Page", escHtml(DATA.page || "—")],
+  ]);
+}
+
+// The action id is read off the request rows rather than the summary: request
+// events are scoped to the user action by definition, while
+// user_action.instance_id is null on the page-summary event.
+function renderWaterfallContext() {
   const uaId = (requests.find((r) => r.uaInstanceId) || {}).uaInstanceId || null;
   const captured = summary.startTime
     ? new Date(summary.startTime).toLocaleString(undefined,
         { dateStyle: "medium", timeStyle: "short" })
     : null;
-  const rows = [
-    ["Application", escHtml(summary.frontendName || "—")],
-    ["Page", escHtml(DATA.page || "—")],
-    ["Sampled load", escHtml(captured || "—")],
+  contextGrid("waterfall-context", [
+    ["Captured", escHtml(captured || "—")],
     ["Browser", escHtml([summary.browserName, summary.browserVersion].filter(Boolean).join(" ") || "—")],
     ["Platform", escHtml([summary.osName, summary.deviceType].filter(Boolean).join(" · ") || "—")],
     // The session id is deliberately not a row: it is 34 opaque characters, the
@@ -1937,14 +1958,12 @@ function renderContext() {
     // eye. It stays on summary.sessionId, where it is what a Users & Sessions
     // deep link would be built from.
     ["Action instance", `<span class="id">${escHtml(uaId || "—")}</span>`],
-  ];
-  setSlot("report-context", rows.map(([k, v]) =>
-    `<div><dt>${escHtml(k)}</dt><dd>${v}</dd></div>`
-  ).join(""));
+  ]);
 }
 
 function renderAggregates() {
-  renderContext();
+  renderReportContext();
+  renderWaterfallContext();
   renderSkipped();
   renderFindings();
   renderCwv();
