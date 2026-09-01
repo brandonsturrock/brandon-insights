@@ -453,9 +453,12 @@
      you scan down. Neutral ink, not a status hue: prevalence is not good or
      bad, it is how much of the population a row speaks for. The figure is
      always printed beside the bar, so the bar never carries the value alone. */
-  .cov { display: flex; align-items: center; gap: 8px; min-width: 190px; }
+  .cov { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 190px; }
   .cov-track {
-    position: relative; flex: 1 1 70px; min-width: 56px; height: 9px;
+    /* Flexible again, but the figure+chip slot beside it is fixed, so every
+       track in a column still resolves to the same length while filling
+       whatever width the column has. */
+    position: relative; flex: 1 1 auto; min-width: 56px; height: 9px;
     border-radius: 5px; background: var(--dt-bg-base);
     /* 40%, not 30%: the track outline is the only thing that shows an empty
        bar exists, and 30% sat at 2.78:1 against the page. 40% clears 3:1. */
@@ -464,6 +467,8 @@
   }
   .cov-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--text-subdued); }
   .cov-text { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text-default); }
+  /* Figure + chip share one fixed-width slot so the chips line up too. */
+  .cov-label { display: flex; align-items: center; gap: 6px; flex: 0 0 190px; }
   .cov-text .of { color: var(--text-subdued); }
   .chip {
     display: inline-block; border: 1px solid var(--border-default); border-radius: 3px;
@@ -600,6 +605,7 @@
        shrink to its text, and the signal survives to paper. */
     .cov { min-width: 0; gap: 4px; }
     .cov-track { display: none; }
+    .cov-label { flex: 0 1 auto; }
 
     /* The waterfall's controls, tooltips and sticky phase-pill overlay are
        interactive-only (hover state, scroll-relative positioning) and
@@ -1665,10 +1671,11 @@ function coverageCell(loads, total, markRare) {
   const rare = markRare && share < T.prevalence.rare;
   return `<div class="cov">` +
     `<div class="cov-track"><div class="cov-fill" style="width:${(Math.min(share, 1) * 100).toFixed(1)}%"></div></div>` +
+    `<div class="cov-label">` +
     `<span class="cov-text"><strong>${fmtPct(share)}</strong> ` +
     `<span class="of">${Math.round(loads).toLocaleString()} of ${Math.round(total).toLocaleString()}</span></span>` +
     (rare ? `<span class="chip rare" title="Below ${Math.round(T.prevalence.rare * 100)}% of loads — too few to generalise from">rare</span>` : "") +
-    `</div>`;
+    `</div></div>`;
 }
 
 function aggTable(cols, rows) {
