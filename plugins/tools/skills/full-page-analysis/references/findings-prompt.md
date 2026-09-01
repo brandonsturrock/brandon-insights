@@ -112,7 +112,7 @@ page-wide problem and one unlucky load:
 ## Formatting numbers in prose
 
 Match the report's own formatting exactly, so a number you write reads as
-the same fact as the number in the table above it:
+the same fact as the number in the table it refers to:
 
 - Milliseconds under 1000: `123ms`.
 - Milliseconds 1000 and over: `1.23s`.

@@ -457,20 +457,50 @@
 
 <div id="skipped-slot"></div>
 
-<!-- Aggregate sections. Every figure below is cross-session; the waterfall at
-     the foot of the page is the only single-load view in the report. Each
-     renderer writes into its own slot id, matching the waterfall's contract. -->
+<!-- Panel order is editorial, not technical: every renderer writes into its own
+     slot id, so these sections can be reordered freely without touching a
+     renderer. The order is headline aggregate (Core Web Vitals) -> the one
+     concrete load (waterfall) -> what to do about it (findings, analyst notes)
+     -> supporting detail. Rationale: a reader wants the page-wide verdict, then
+     a single real timeline to ground it, then the recommendations, and only
+     then the per-resource tables. Every figure here is cross-session except the
+     waterfall panel, which is a single load and says so in its own note. -->
+<section class="panel" id="cwv-panel">
+  <h2>Core Web Vitals</h2>
+  <p class="panel-note" id="cwv-note"></p>
+  <div class="table-scroll" id="cwv-slot"></div>
+</section>
+
+<section class="panel" id="waterfall-panel">
+  <h2>Resource waterfall</h2>
+  <p class="example-note">Single example load — not a page-wide measurement.</p>
+  <!-- Slot ids are a hard contract with the ported renderers: renderControls
+       writes to #controls-slot, renderWaterfall to #waterfall-slot,
+       #longtask-labels-slot, #legend-slot and #lcp-slot, and the hover handlers
+       to #tooltip, #line-tooltip and #ex-tooltip. Renaming any of them breaks
+       the port silently. #metrics-slot and #findings-slot are deliberately
+       absent — Phase 2 and Phase 3 replace those two panels.
+       #page-title / #page-subtitle are also part of the contract: the ported
+       static-header block (originally v1's assets/template.html, deleted in
+       Task 9 — see git history for line numbers) writes into them by id and
+       throws on null, which would abort every renderer below it. They carry
+       the sampled load's own title and its browser/device/timestamp context, which
+       is panel-scoped information, so they live inside the panel. -->
+  <div id="page-title" class="wf-instance-title"></div>
+  <div id="page-subtitle" class="subtitle"></div>
+  <div id="warn-banner-slot"></div>
+  <div id="controls-slot"></div>
+  <div id="waterfall-slot"></div>
+  <div id="longtask-labels-slot"></div>
+  <div id="legend-slot"></div>
+  <div id="lcp-slot"></div>
+</section>
+
 <section class="panel" id="findings-panel">
   <h2>Findings</h2>
   <div id="computed-findings"></div>
   <h2>Analyst notes</h2>
   <div class="exec-body">{{ANALYST_NOTES}}</div>
-</section>
-
-<section class="panel" id="cwv-panel">
-  <h2>Core Web Vitals</h2>
-  <p class="panel-note" id="cwv-note"></p>
-  <div class="table-scroll" id="cwv-slot"></div>
 </section>
 
 <section class="panel" id="ttfb-panel">
@@ -508,31 +538,6 @@
   <h2>Browser and device</h2>
   <p class="panel-note" id="browserdevice-note"></p>
   <div class="table-scroll" id="browserdevice-slot"></div>
-</section>
-
-<section class="panel" id="waterfall-panel">
-  <h2>Resource waterfall</h2>
-  <p class="example-note">Single example load — not a page-wide measurement.</p>
-  <!-- Slot ids are a hard contract with the ported renderers: renderControls
-       writes to #controls-slot, renderWaterfall to #waterfall-slot,
-       #longtask-labels-slot, #legend-slot and #lcp-slot, and the hover handlers
-       to #tooltip, #line-tooltip and #ex-tooltip. Renaming any of them breaks
-       the port silently. #metrics-slot and #findings-slot are deliberately
-       absent — Phase 2 and Phase 3 replace those two panels.
-       #page-title / #page-subtitle are also part of the contract: the ported
-       static-header block (originally v1's assets/template.html, deleted in
-       Task 9 — see git history for line numbers) writes into them by id and
-       throws on null, which would abort every renderer below it. They carry
-       the sampled load's own title and its browser/device/timestamp context, which
-       is panel-scoped information, so they live inside the panel. -->
-  <div id="page-title" class="wf-instance-title"></div>
-  <div id="page-subtitle" class="subtitle"></div>
-  <div id="warn-banner-slot"></div>
-  <div id="controls-slot"></div>
-  <div id="waterfall-slot"></div>
-  <div id="longtask-labels-slot"></div>
-  <div id="legend-slot"></div>
-  <div id="lcp-slot"></div>
 </section>
 <div id="tooltip" class="tooltip"></div>
 <div id="line-tooltip" class="tooltip"></div>

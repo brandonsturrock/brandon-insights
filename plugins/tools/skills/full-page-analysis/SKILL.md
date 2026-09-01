@@ -352,7 +352,8 @@ node <SKILL_BASE_DIR>/scripts/build-report.mjs \
 This reads the canonical JSON filenames from the data directory, applies
 the unit conversions and finding rules in `scripts/lib/normalize.mjs` and
 `scripts/lib/findings.mjs`, and renders the standalone HTML report (KPI
-cards, tables, computed findings, analyst notes, resource waterfall) with
+cards, Core Web Vitals, resource waterfall, computed findings, analyst notes,
+then the supporting resource/third-party/long-task/browser tables) with
 the Strato tokens inlined. If `--findings` is omitted the
 analyst-notes panel is left blank; do not omit it once Step 5 is done.
 
