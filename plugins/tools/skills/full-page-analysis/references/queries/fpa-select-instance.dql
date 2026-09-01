@@ -21,7 +21,11 @@ fetch user.events, from: {{.timeframe}}
     fetch user.events, from: {{.timeframe}}
     | filter frontend.name == "{{.frontend}}"
     | filter characteristics.has_request == true
-    | summarize count(), by: {user_action.instance_id, dt.rum.session.id}
+    | summarize requests = count(),
+                ok_nav = countIf(performance.initiator_type == "navigation"
+                                 AND toLong(http.response.status_code) < 400),
+                by: {user_action.instance_id, dt.rum.session.id}
+    | filter ok_nav > 0
   ], on: {user_action.instance_id, dt.rum.session.id}, prefix: "requests."
 | sort lcp_ms asc
 | limit 1

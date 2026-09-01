@@ -268,14 +268,18 @@ Compute the selection window from `p75_lcp`:
 - `high_bound = round(p75_lcp * 1.15)`
 
 Run `fpa-select-instance.dql` with `timeframe=TF`, `frontend=FRONTEND`,
-`page=PAGE`, `browser=BROWSER`, `low_bound`, `high_bound`. This join only
-returns instances with both a linked page_summary and at least one request —
-no separate validation step needed.
+`page=PAGE`, `browser=BROWSER`, `low_bound`, `high_bound`. The joins only
+return instances that have a linked page_summary, at least one request, and a
+navigation document request that returned under 400 — no separate validation
+step needed. That last condition is what keeps error pages (a 403/500 served
+as the document) out of the sample; such a load has a real LCP and would
+otherwise be selectable, but its waterfall describes the error page, not the
+page under analysis.
 
 - If 0 rows returned: widen to `low_bound = round(p75_lcp * 0.75)`,
   `high_bound = round(p75_lcp * 1.25)` and retry once.
-- If still 0: tell the user no instance with linked page_summary and
-  requests was found near p75 for this browser. Ask whether to try a
+- If still 0: tell the user no instance with a linked page_summary, requests,
+  and a successful document request was found near p75 for this browser. Ask whether to try a
   different browser or continue without a representative instance.
 
 Set `UA_INSTANCE_ID` from `user_action.instance_id` and `VIEW_INSTANCE_ID`
