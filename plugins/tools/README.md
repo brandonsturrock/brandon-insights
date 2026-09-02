@@ -7,7 +7,10 @@ Claude Code skills for Dynatrace RUM analysis workflows.
 | Skill | Description |
 |---|---|
 | [full-page-analysis](skills/full-page-analysis/README.md) | End-to-end page load diagnosis — LCP, TTFB, waterfall, recommendations |
-| [trending-report](skills/trending-report/README.md) | Monthly RUM review report — Core Web Vitals, traffic trends, errors |
+| [monthly-report](skills/monthly-report/SKILL.md) | Current-month RUM review PDF — daily traffic, Core Web Vitals, top pages, top errors |
+| [trending-report](skills/trending-report/README.md) | 6-month RUM trending PDF — traffic trends, Core Web Vitals over time, device/browser breakdown |
+| [user-journeys](skills/user-journeys/README.md) | Interactive Sankey diagram of session paths from Dynatrace RUM |
+| [setup](skills/setup/SKILL.md) | One-time dependency setup — installs dtctl, registers skills, authenticates environment |
 
 ## Prerequisites
 
