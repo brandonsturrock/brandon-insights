@@ -1,0 +1,45 @@
+# Attaches one zip per skill to every published release, so somebody who wants
+# a single skill can download it without cloning the repo or installing the
+# plugin. Publish a release in the GitHub UI and the assets appear on it.
+name: Release skill zips
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to attach the zips to
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  zip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build one zip per skill
+        run: |
+          mkdir dist
+          for skill in plugins/*/skills/*/; do
+            name=$(basename "$skill")
+            # Skill names are the download filename, so a name used by two
+            # plugins would silently overwrite. Fail instead.
+            if [ -e "dist/$name.zip" ]; then
+              echo "::error::two skills are both named '$name' — rename one"
+              exit 1
+            fi
+            # Zip from the skills dir so the archive unpacks as <name>/,
+            # ready to drop straight into ~/.claude/skills/.
+            (cd "$(dirname "$skill")" && zip -qr "$GITHUB_WORKSPACE/dist/$name.zip" "$name" -x '*.DS_Store')
+            echo "packed $name"
+          done
+
+      - name: Attach the zips to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: gh release upload "$TAG" dist/*.zip --clobber
