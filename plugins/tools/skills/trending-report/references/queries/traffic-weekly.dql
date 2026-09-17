@@ -1,0 +1,12 @@
+timeseries {
+    sessions = countDistinct(dt.frontend.session.active.estimated_count),
+    xhr = count(dt.frontend.user_action.count, filter: user_action.type == "same_view"),
+    navigations = count(dt.frontend.user_action.count, filter: user_action.type != "same_view"),
+    t = start()
+  }, from: -6M, to: now()@M, interval: 7d, filter: frontend.name == "{{.frontend}}"
+| fieldsAdd d = record(t=t[], sessions=sessions[], xhr=xhr[], navigations=navigations[])
+| expand d
+| fieldsAdd week = d[t], sessions = d[sessions], xhr = d[xhr], navigations = d[navigations]
+| fieldsRemove d
+| filterOut isNull(sessions) and isNull(xhr) and isNull(navigations)
+| sort week asc

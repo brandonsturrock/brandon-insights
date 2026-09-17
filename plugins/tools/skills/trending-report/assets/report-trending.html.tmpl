@@ -13,7 +13,7 @@
     {{REPORT_TITLE}}        - <title> text, e.g. "acme-shop — Trending Report"
     {{FRONTEND_NAME}}        - shown top-right of every page header
     {{ENVIRONMENT_NAME}}     - shown under frontend name; pass "" to omit (CSS :empty hides it)
-    {{DATE_RANGE_LABEL}}     - shown top-center under "TRENDING" and under frontend name, e.g. "Jan – Jun 2026"
+    {{DATE_RANGE_LABEL}}     - shown top-right under the frontend name, e.g. "Jan – Jun 2026"
     {{FINDINGS_TRAFFIC_HTML}}  - pre-rendered HTML (glue script runs markdown -> HTML, e.g. via `marked`)
                                  for the "## Traffic" section of the analyst notes. "" hides the panel.
     {{FINDINGS_CWV_HTML}}      - same, for the "## Core Web Vitals" section.
@@ -23,52 +23,60 @@
                                by chart id. Schema (all fields required unless noted; use [] / null for "no data"):
 
     DATA = {
-      kpis: [                                   // rendered as the KPI tile row by this template's own JS
-        { label: "Sessions", value: "1.2M", change: 4.3, color: "#7B61FF", lowerIsBetter: false },
-        ...                                      // color = left accent bar; change is a percent, can be null;
-      ],                                         // lowerIsBetter=true means a NEGATIVE change is the good/green case
-                                                  // (use true for LCP/INP/CLS/error-rate style KPIs, false for
-                                                  // traffic/session-count style KPIs)
+      kpis: [                                   // rendered as the plain (non-CWV) KPI tiles by this template's
+        { label: "Sessions", value: "1.2M", change: 4.3, lowerIsBetter: false },
+        ...                                      // own JS. change is a percent, can be null; lowerIsBetter=true
+      ],                                         // means a NEGATIVE change is the good/green case. The three CWV
+                                                  // KPIs (LCP/INP/CLS) are NOT listed here — the template derives
+                                                  // them straight from cwvMonthly's latest point and renders them
+                                                  // as threshold-scale metric-tiles, not plain figures (see the
+                                                  // "Page 1: KPI row" comment in <style> for why).
 
       trafficMonthly: {                          // bar-in-cell table, page 2 (matches the live app's User Traffic panel)
         labels: ["Jan 2026", "Feb 2026", ...],    // one row per month
         sessions: [12000, 13500, ...],            // each column's bar width is relative to that column's own max
         userActions: [34000, 36000, ...],
         pageLoads: [15000, 15800, ...],
-        pctDesktop: [62, 61, ...],                 // optional: renders a "Device Split" bar column (% desktop, filled bar)
+        pctDesktop: [62, 61, ...],                 // optional: renders a "% Desktop" bar column (thin/outlined style)
       },
 
-      cwvMonthly: {                               // bar-in-cell table, page 3 (LCP/INP/CLS columns, one row per month)
-        labels: ["Jan 2026", "Feb 2026", ...],     // bars are colored per-point by good/warn/poor threshold
+      cwvMonthly: {                               // page 1 KPI tiles (latest point) + page 3 status row (latest
+        labels: ["Jan 2026", "Feb 2026", ...],     // point) both read this same array; LCP/INP/CLS, one row per month
         lcp: [2200, 2600, ...],                    // ms
         inp: [180, 210, ...],                      // ms
         cls: [0.05, 0.09, ...],                     // unitless
       },
 
-      cwvWeekly: {                                // line chart w/ dashed good/poor threshold lines, page 3
-        labels: ["W1", "W2", ...],
-        lcp: [2200, ...], inp: [180, ...], cls: [0.05, ...],
+      cwvWeekly: {                                // page 3: two small-multiple line charts (LCP+INP share an ms
+        labels: ["W1", "W2", ...],                 // axis; CLS gets its own chart rather than a second y-axis on
+        lcp: [2200, ...], inp: [180, ...], cls: [0.05, ...],  // the same canvas — see the page 3 comment in <style>).
       },
 
-      browserPerf: {                              // page 4: grid of bar-in-cell tables, one panel per browser×device.
-        panels: [                                  // Selection policy (real apps can report 10+ browsers — showing
-          {                                        // all of them doesn't fit the page and buries the ones that carry
-            label: "Chrome · Desktop",             // real traffic): keep only the top N browser×device combos by
-            months: [                              // total visits over the period. N defaults to 6, overridable via
+      browserPerf: {                              // page 4: grid of up to 6 browser×device panels, ranked by
+        panels: [                                  // total visits over the period (see references/queries.md for
+          {                                        // the selection policy). null entries render as an empty slot.
+            label: "Chrome · Desktop",
+            months: [
               { label: "Jan 2026", visits: 12000, lcp: 2200, inp: 180, cls: 0.05 },
               ...                                   // one entry per month, same months/order as trafficMonthly.labels
             ],
           },
-          ...                                       // build-report.mjs's `--max-browsers <N>` flag.
+          ...                                       // build-report.mjs's `--max-browsers <N>` flag, default 6.
         ],
       },
     }
 
   The template's own <script> block (bottom of file) reads DATA on DOMContentLoaded and builds every
-  Chart.js chart + the KPI tile row. Tables are not used on this layout. Markdown->HTML conversion for
-  findings is the glue script's job (this template never runs a markdown parser) — vendor `marked` or
-  equivalent there, since bundling it here would just duplicate the "no CDN at render time" goal Chart.js
-  already solves.
+  Chart.js chart + every HTML component (KPI tiles, metric tiles, bar-in-cell tables, browser panels).
+  Markdown->HTML conversion for findings is the glue script's job (this template never runs a markdown
+  parser) — vendor `marked` or equivalent there, since bundling it here would just duplicate the
+  "no CDN at render time" goal Chart.js already solves.
+
+  Chart bootstrap note: every chart/metric-tile colour is read from the CSS custom properties in
+  styles/deck-base (via getComputedStyle) at DOMContentLoaded, never held as hex in this script. That
+  is what lets @media print's light-theme token override recolour the charts too — Chrome's
+  --print-to-pdf renders with print media active from first paint, so the computed styles the script
+  reads at DOMContentLoaded are already the light-theme values when the deck is being turned into a PDF.
 -->
 <script src="chart.umd.min.js"></script>
 <style>
@@ -79,237 +87,618 @@
   @font-face { font-family: DynatraceFlow; font-weight: 500; font-display: swap; src: url(https://dt-cdn.net/fonts/DTFlow-Medium-v1.2.1.woff2) format('woff2'); }
   @font-face { font-family: DynatraceFlow; font-weight: 600; font-display: swap; src: url(https://dt-cdn.net/fonts/DTFlow-Semibold-v1.2.1.woff2) format('woff2'); }
   @font-face { font-family: DynatraceFlow; font-weight: 700; font-display: swap; src: url(https://dt-cdn.net/fonts/DTFlow-Heavy-v1.2.1.woff2) format('woff2'); }
-  @page { size: A4 landscape; margin: 0; }
-  * { box-sizing: border-box; }
-  html, body {
-    margin: 0; padding: 0; background: #0f1117; color: #eee;
-    font-family: DynatraceFlow, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     Shared deck design layer — pasted verbatim from SCRATCH/deck-base.css.
+     Do not hand-edit rules in this block; fix them in the shared source and
+     re-paste into both report-trending.html.tmpl and report-cm.html.tmpl.
+     ═══════════════════════════════════════════════════════════════════════ */
+  :root {
+    --dt-bg-base:              #19192c; /* Colors.Background.Base.Default (dark) */
+    --dt-bg-container:         #212135; /* Colors.Background.Container.Neutral.Default (dark) */
+    --dt-bg-container-subtle:  #19192c; /* Colors.Background.Container.Neutral.Subdued (dark) */
+    --dt-text-primary:         #ebecff; /* Colors.Text.Neutral.Default — body text */
+    --dt-text-secondary:       #b1b2d2; /* Colors.Text.Neutral.Subdued — secondary text */
+    --dt-border-default:       #3b3b52; /* Colors.Border.Neutral.Default (dark) */
+    --dt-critical:             #ff999c; /* Colors.Text.Critical.Default (dark) */
+    --dt-warning:              #eea83f; /* Colors.Text.Warning.Default (dark) */
+    --dt-success:              #6fc3ba; /* Colors.Text.Success.Default (dark) */
+    --dt-primary:              #adb0ff; /* Colors.Text.Primary.Default (dark) — brand-accent text role */
+
+    --dt-font-sans: "DT Flow", DynatraceFlow, Roboto, Helvetica, sans-serif;
+    --dt-font-mono: "Roboto Mono", ui-monospace, monospace;
+
+    --dt-radius: 9px;
+    --dt-space-4: 4px;
+    --dt-space-8: 8px;
+    --dt-space-16: 16px;
+    --dt-space-32: 32px;
+  }
+  :root {
+    --bg-page:                 var(--dt-bg-base);
+    --bg-surface:              var(--dt-bg-container-subtle);
+    --bg-container:            var(--dt-bg-container);
+    --bg-container-emphasized: color-mix(in srgb, var(--dt-border-default) 45%, var(--dt-bg-container));
+    --bg-container-primary:    color-mix(in srgb, var(--dt-primary) 8%, var(--dt-bg-base));
+    --border-default:          var(--dt-border-default);
+    --border-subdued:          color-mix(in srgb, var(--dt-border-default) 55%, var(--dt-bg-base));
+    --text-default:            var(--dt-text-primary);
+    --text-subdued:            var(--dt-text-secondary);
+    --good:                    var(--dt-success);
+    --warning:                 var(--dt-warning);
+    --critical:                var(--dt-critical);
+
+    --rp-text-micro:   10px;
+    --rp-text-small:   12px;
+    --rp-text-body:    13px;
+    --rp-text-lead:    16px;
+    --rp-text-title:   20px;
+    --rp-text-display: 30px;
   }
 
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg-page);
+    color: var(--text-default);
+    font-family: var(--dt-font-sans);
+    font-size: var(--rp-text-body);
+    font-variant-numeric: tabular-nums;
+  }
+
+  @page { size: A4 landscape; margin: 0; }
   .page {
     width: 297mm; height: 210mm;
-    padding: 10mm 12mm;
-    background: #0f1117;
-    color: #eee;
-    display: flex;
-    flex-direction: column;
+    /* Centres the fixed-width sheet in a wider browser window. In print the page
+       box is the sheet, so auto resolves to 0 and this is a no-op. */
+    margin-inline: auto;
+    padding: 11mm 13mm 9mm;
+    background: var(--bg-page);
+    color: var(--text-default);
+    display: flex; flex-direction: column;
     page-break-after: always;
     position: relative;
     overflow: hidden;
   }
   .page:last-child { page-break-after: auto; }
 
-  /* texture / glow, purely decorative, matches the live app's PDF background */
-  .page::before {
-    content: ""; position: absolute; inset: 0; pointer-events: none;
-    background-image: radial-gradient(circle, rgba(20,150,255,0.05) 1px, transparent 1px);
-    background-size: 22px 22px;
+  .hdr {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    gap: var(--dt-space-16);
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-default);
+    flex: 0 0 auto;
   }
+  .hdr-left { display: flex; align-items: center; gap: 13px; }
+  .dt-logo { width: 132px; height: auto; display: block; flex: none; }
+  .brand-rule { width: 1px; align-self: stretch; min-height: 20px; background: var(--border-default); }
+  .brand-team {
+    font-size: var(--rp-text-small); font-weight: 700;
+    letter-spacing: .16em; text-transform: uppercase;
+    color: var(--text-subdued); white-space: nowrap;
+  }
+  .hdr-right { text-align: right; display: flex; flex-direction: column; gap: 2px; }
+  .hdr-right .kind {
+    font-size: var(--rp-text-micro); font-weight: 700;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--text-subdued);
+  }
+  .hdr-right .name { font-size: var(--rp-text-lead); font-weight: 600; color: var(--text-default); line-height: 1.1; }
+  .hdr-right .meta { font-size: var(--rp-text-small); color: var(--text-subdued); }
+  .hdr-right .meta:empty { display: none; }
 
-  .hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6mm; position: relative; }
-  .hdr-left { display: flex; align-items: center; gap: 10px; }
-  .hdr-left .brand { display: flex; align-items: center; gap: 8px; }
-  .hdr-left .brand svg { height: 18px; width: auto; color: #f4f6fb; flex-shrink: 0; }
-  .hdr-left .brand-sep { font-size: 14px; color: rgba(255,255,255,0.25); font-weight: 300; margin: 0 2px; }
-  .hdr-left .brand-sub { font-size: 11px; font-weight: 400; letter-spacing: 0.14em; color: #f4f6fb; text-transform: uppercase; white-space: nowrap; }
-  .hdr-left .divider { width: 1px; height: 22px; background: rgba(255,255,255,0.15); }
-  .hdr-center { position: absolute; left: 50%; transform: translateX(-50%); text-align: center; }
-  .hdr-center .kind { font-size: 18px; font-weight: 700; letter-spacing: 0.24em; color: #fff; text-transform: uppercase; }
-  .hdr-center .section { font-size: 11px; font-weight: 500; color: #b1b2d2; letter-spacing: 0.14em; text-transform: uppercase; margin-top: 3px; }
-  .hdr-right { text-align: right; }
-  .hdr-right .name { font-size: 16px; font-weight: 700; color: #f4f6fb; }
-  .hdr-right .env { font-size: 11px; color: #1496ff; margin-top: 2px; }
-  .hdr-right .env:empty { display: none; }
-  .hdr-right .range { font-size: 11px; color: #b1b2d2; margin-top: 2px; }
+  .page-title { flex: 0 0 auto; margin: 9px 0 var(--dt-space-16); }
+  .page-title h2 {
+    margin: 0; font-size: var(--rp-text-title); font-weight: 600;
+    letter-spacing: -.01em; color: var(--text-default);
+  }
+  .page-title .lede { margin: 3px 0 0; font-size: var(--rp-text-small); color: var(--text-subdued); }
+  .page-title .lede:empty { display: none; }
 
-  .accent-line { height: 2px; border-radius: 1px; margin-bottom: 6mm; background: linear-gradient(90deg, #1496ff 0%, rgba(20,150,255,0.35) 45%, rgba(20,150,255,0) 100%); }
+  .content { flex: 1; display: flex; flex-direction: column; gap: var(--dt-space-16); min-height: 0; }
 
-  .content { flex: 1; display: flex; flex-direction: column; gap: 4mm; min-height: 0; }
+  .ftr {
+    flex: 0 0 auto; display: flex; align-items: baseline; justify-content: space-between;
+    gap: var(--dt-space-16); margin-top: 10px; padding-top: 8px;
+    border-top: 1px solid var(--border-subdued);
+    font-size: var(--rp-text-micro); color: var(--text-subdued); letter-spacing: .05em;
+  }
+  .ftr .brand-name { color: var(--text-subdued); font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 
-  /* ── KPI tiles ─────────────────────────────────────────────────────────── */
-  .kpi-row { display: flex; gap: 12px; flex: 0 0 auto; }
+  .panel {
+    background: var(--bg-container);
+    border: 1px solid var(--border-default);
+    border-radius: var(--dt-radius);
+    padding: 13px 15px 11px;
+    display: flex; flex-direction: column; min-height: 0; min-width: 0;
+  }
+  .panel-title {
+    flex: 0 0 auto; margin: 0 0 9px;
+    font-size: var(--rp-text-micro); font-weight: 700;
+    text-transform: uppercase; letter-spacing: .1em; color: var(--text-subdued);
+  }
+  .panel-note { flex: 0 0 auto; margin: -5px 0 9px; font-size: var(--rp-text-small); color: var(--text-subdued); }
+  .panel-note strong { color: var(--text-default); font-weight: 600; }
+  .panel-row { display: flex; gap: var(--dt-space-16); flex: 1; min-height: 0; }
+  .empty-note { color: var(--text-subdued); font-size: var(--rp-text-small); font-style: italic; }
+
+  .kpi-row { display: flex; gap: var(--dt-space-8); flex: 0 0 auto; }
   .kpi-tile {
-    flex: 1; background: #1c1e2e; border: 1px solid rgba(20,150,255,0.16);
-    border-radius: 10px; padding: 14px 16px 12px; border-top: 3px solid var(--kpi-color, #1496ff);
+    flex: 1; min-width: 0;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: var(--dt-radius);
+    padding: 11px 14px 10px;
   }
-  .kpi-label { font-size: 11px; font-weight: 700; color: #b1b2d2; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
-  .kpi-value { font-size: 32px; font-weight: 700; color: #f4f6fb; line-height: 1; letter-spacing: -0.01em; }
-  .kpi-change { font-size: 12px; font-weight: 600; margin-top: 8px; }
-  .kpi-change.up { color: #2ECC85; }
-  .kpi-change.down { color: #E8345A; }
-  .kpi-change.neutral { color: #b1b2d2; }
+  .kpi-label {
+    font-size: var(--rp-text-micro); font-weight: 700; color: var(--text-subdued);
+    text-transform: uppercase; letter-spacing: .1em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .kpi-value {
+    margin-top: 7px;
+    font-size: var(--rp-text-display); font-weight: 700; line-height: 1;
+    letter-spacing: -.015em; color: var(--text-default);
+  }
+  .kpi-unit { font-size: var(--rp-text-small); font-weight: 600; color: var(--text-subdued); margin-left: 5px; letter-spacing: .04em; }
+  .kpi-change {
+    display: inline-flex; align-items: center; gap: 4px; margin-top: 9px;
+    font-size: var(--rp-text-small); font-weight: 700;
+    padding: 2px 7px; border-radius: 999px;
+    color: var(--kpi-accent, var(--text-subdued));
+    background: color-mix(in srgb, var(--kpi-accent, var(--text-subdued)) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--kpi-accent, var(--text-subdued)) 45%, transparent);
+  }
+  .kpi-change.good    { --kpi-accent: var(--good); }
+  .kpi-change.bad     { --kpi-accent: var(--critical); }
+  .kpi-change.neutral { --kpi-accent: var(--text-subdued); }
+  .kpi-change svg { flex: none; display: block; }
+  .kpi-sub { display: block; margin-top: 6px; font-size: var(--rp-text-micro); color: var(--text-subdued); }
 
-  /* ── Executive Summary analysis cards ─────────────────────────────────── */
-  .exec-grid {
-    flex: 1; min-height: 0;
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 12px;
+  .notes-body {
+    flex: 1; min-height: 0; overflow: hidden;
+    font-size: var(--rp-text-body); line-height: 1.55; color: var(--text-default);
   }
-  .exec-card {
-    background: #1c1e2e;
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 10px;
-    padding: 16px 18px 14px;
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
+  .notes-body ul { margin: 0; padding-left: 17px; }
+  .notes-body li { margin-bottom: 6px; }
+  .notes-body li:last-child { margin-bottom: 0; }
+  .notes-body p { margin: 0 0 7px; }
+  .notes-body p:last-child { margin-bottom: 0; }
+  .notes-body strong { font-weight: 600; }
+  .notes-body[contenteditable="true"]:focus { outline: 1px dashed var(--dt-primary); outline-offset: 4px; }
+
+  .mini-stats {
+    flex: 0 0 auto; margin-top: 12px; padding-top: 9px;
+    border-top: 1px solid var(--border-subdued);
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .mini-period { font-size: var(--rp-text-micro); font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--text-subdued); }
+  .mini-chips { display: flex; gap: 6px; align-items: stretch; }
+  .mini-chip {
+    flex: 1; min-width: 0; text-align: center;
+    background: var(--bg-page);
+    border: 1px solid var(--border-subdued);
+    border-radius: 6px; padding: 5px 7px;
+  }
+  .mini-chip-label {
+    font-size: var(--rp-text-micro); color: var(--text-subdued);
+    text-transform: uppercase; letter-spacing: .07em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .mini-chip-value { font-size: var(--rp-text-small); font-weight: 700; color: var(--text-default); line-height: 1.3; }
+
+  .status {
+    display: inline-flex; align-items: center; gap: 5px; flex: none;
+    font-size: var(--rp-text-micro); font-weight: 700;
+    padding: 2px 8px; border-radius: 999px;
+    color: var(--st-accent, var(--text-subdued));
+    background: color-mix(in srgb, var(--st-accent, var(--text-subdued)) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--st-accent, var(--text-subdued)) 45%, transparent);
+    text-transform: uppercase; letter-spacing: .06em; white-space: nowrap;
+  }
+  .status svg { flex: none; display: block; }
+  [data-rating="good"]              { --st-accent: var(--good); }
+  [data-rating="needs-improvement"] { --st-accent: var(--warning); }
+  [data-rating="poor"]              { --st-accent: var(--critical); }
+  [data-rating="none"]              { --st-accent: var(--text-subdued); }
+
+  .chip {
+    display: inline-block; border: 1px solid var(--border-default); border-radius: 3px;
+    padding: 0 5px; font-size: var(--rp-text-micro); font-weight: 700;
+    text-transform: uppercase; letter-spacing: .06em;
+    color: var(--text-subdued); background: var(--bg-surface); white-space: nowrap;
+  }
+
+  .metric-grid { display: grid; gap: var(--dt-space-8); grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  .metric-tile {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: var(--dt-radius);
+    padding: 12px 14px;
+  }
+  .metric-tile[data-rating="good"]              { --mt-accent: var(--good); }
+  .metric-tile[data-rating="needs-improvement"] { --mt-accent: var(--warning); }
+  .metric-tile[data-rating="poor"]              { --mt-accent: var(--critical); }
+  .metric-tile[data-rating="none"]              { --mt-accent: var(--text-subdued); }
+  .mt-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--dt-space-8); }
+  .mt-abbr { font-weight: 700; font-size: var(--rp-text-title); letter-spacing: .02em; }
+  .mt-name { color: var(--text-subdued); font-size: var(--rp-text-small); margin-top: 2px; }
+  .mt-value { margin-top: 11px; font-weight: 700; font-size: 26px; line-height: 1; color: var(--mt-accent); }
+  .mt-value-tag { font-size: var(--rp-text-small); font-weight: 600; color: var(--text-subdued); margin-left: 7px; letter-spacing: .04em; }
+  .mt-scale { position: relative; margin-top: 12px; height: 20px; }
+  .mt-track { display: flex; height: 8px; border-radius: 4px; overflow: hidden; }
+  .mt-zone { height: 100%; box-sizing: border-box; }
+  .mt-zone + .mt-zone { border-left: 2px solid var(--bg-surface); }
+  .mt-zone-good { width: 40%; background: color-mix(in srgb, var(--good) 45%, var(--dt-bg-base)); }
+  .mt-zone-ni   { width: 30%; background: color-mix(in srgb, var(--warning) 45%, var(--dt-bg-base)); }
+  .mt-zone-poor { width: 30%; background: color-mix(in srgb, var(--critical) 45%, var(--dt-bg-base)); }
+  .mt-mark {
+    position: absolute; top: 0; width: 2px; height: 8px; border-radius: 1px;
+    background: var(--text-subdued); transform: translateX(-1px);
+    box-shadow: 0 0 0 2px var(--bg-surface);
+  }
+  .mt-mark-p75 { width: 4px; height: 16px; top: -4px; transform: translateX(-2px); background: var(--mt-accent); }
+  .mt-bounds { display: flex; justify-content: space-between; gap: var(--dt-space-8); margin-top: 2px; font-size: var(--rp-text-micro); color: var(--text-subdued); }
+  .mt-tail {
+    display: flex; justify-content: space-between; gap: var(--dt-space-8);
+    margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--border-default);
+    font-size: var(--rp-text-small); color: var(--text-subdued);
+  }
+  .mt-tail b { color: var(--text-default); font-weight: 600; }
+
+  .rp-table { width: 100%; border-collapse: collapse; font-size: var(--rp-text-small); }
+  .rp-table th {
+    text-align: left; padding: 0 8px 6px; white-space: nowrap;
+    font-size: var(--rp-text-micro); font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--text-subdued); border-bottom: 1px solid var(--border-default);
+  }
+  .rp-table td { padding: 5px 8px; border-bottom: 1px solid var(--border-subdued); vertical-align: middle; }
+  .rp-table tbody tr:last-child td { border-bottom: none; }
+  .rp-table .num { text-align: right; white-space: nowrap; width: 1%; }
+  .rp-table .lead { font-size: var(--rp-text-body); font-weight: 600; }
+  .rp-table .path { font-family: var(--dt-font-mono); color: var(--text-default); }
+  .rp-table .nil { color: var(--text-subdued); }
+  .rp-table tr.current td { color: var(--text-default); font-weight: 600; }
+
+  .bar-cell { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .bar-track { flex: 1; min-width: 44px; }
+  .bar-fill { height: 18px; border-radius: 3px; min-width: 2px; background: var(--bar-accent, var(--text-subdued)); }
+  .bar-value { white-space: nowrap; font-size: var(--rp-text-small); color: var(--text-default); }
+  .bar-track.outlined {
+    position: relative; height: 9px; border-radius: 5px; background: var(--bg-page);
+    border: 1px solid color-mix(in srgb, var(--dt-text-secondary) 40%, var(--dt-border-default));
     overflow: hidden;
   }
-  /* Colored top accent bar per section */
-  .exec-card::before {
-    content: "";
-    position: absolute; top: 0; left: 0; right: 0; height: 3px;
-    border-radius: 10px 10px 0 0;
-  }
-  .exec-card--traffic::before  { background: linear-gradient(90deg, #7B61FF, rgba(123,97,255,0.3)); }
-  .exec-card--cwv::before      { background: linear-gradient(90deg, #F5A623, rgba(245,166,35,0.3)); }
-  .exec-card--browser::before  { background: linear-gradient(90deg, #00A98F, rgba(0,169,143,0.3)); }
+  .bar-track.outlined .bar-fill { height: 100%; border-radius: 0; }
 
-  .exec-section-label {
-    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.14em;
-    margin-bottom: 12px; padding-top: 4px;
-    display: flex; align-items: center; gap: 8px;
-  }
-  .exec-section-label::before {
-    content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto;
-  }
-  .exec-card--traffic .exec-section-label { color: #a99aff; }
-  .exec-card--cwv     .exec-section-label { color: #f7bf68; }
-  .exec-card--browser .exec-section-label { color: #3dd9bc; }
-  .exec-card--traffic .exec-section-label::before { background: #7B61FF; }
-  .exec-card--cwv     .exec-section-label::before { background: #F5A623; }
-  .exec-card--browser .exec-section-label::before { background: #00A98F; }
-
-  .exec-card .findings-body {
-    font-size: 13px; line-height: 1.6; color: #cdd0e8;
-    flex: 1; min-height: 0; overflow: hidden;
-  }
-  .exec-card .findings-body ul { margin: 0; padding-left: 16px; }
-  .exec-card .findings-body li { margin-bottom: 6px; }
-  .exec-card .findings-body li:last-child { margin-bottom: 0; }
-  .exec-card .findings-body p { margin: 0 0 6px; }
-
-  /* Mini-stat chips pinned to the bottom of each exec card */
-  .exec-mini-stats {
-    flex: 0 0 auto;
-    margin-top: 14px;
-    padding-top: 10px;
-    border-top: 1px solid rgba(255,255,255,0.07);
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .exec-mini-period {
-    font-size: 9px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.1em; color: #666e8c; white-space: nowrap;
-  }
-  .exec-mini-chips-row {
-    display: flex; gap: 6px; align-items: stretch;
-  }
-  .exec-mini-chip {
-    flex: 1; min-width: 0;
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 6px;
-    padding: 5px 8px;
-    display: flex; flex-direction: column; gap: 2px; align-items: center; text-align: center;
-  }
-  .exec-mini-chip-label {
-    font-size: 9px; color: #666e8c;
-    text-transform: uppercase; letter-spacing: 0.07em;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%;
-  }
-  .exec-mini-chip-value {
-    font-size: 15px; font-weight: 700; color: #f4f6fb; line-height: 1;
-  }
-
-  /* ── Detail page chart cards ───────────────────────────────────────────── */
-  .chart-card {
-    background: #1c1e2e; border: 1px solid rgba(20,150,255,0.16); border-radius: 10px;
-    padding: 12px 14px 10px; position: relative; display: flex; flex-direction: column; min-height: 0;
-  }
-  .chart-card::before {
-    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 10px 10px 0 0;
-    background: linear-gradient(90deg, rgba(20,150,255,0.5) 0%, transparent 60%);
-  }
-  .chart-title { font-size: 11px; font-weight: 700; color: #f4f6fb; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.85; margin-bottom: 8px; flex: 0 0 auto; }
-  .chart-row { display: flex; gap: 12px; flex: 1; min-height: 0; }
-  .chart-body { position: relative; flex: 1; min-height: 0; min-width: 0; }
-  .chart-body canvas { width: 100% !important; height: 100% !important; }
-
-  /* ── Flex bar chart — rows distribute evenly across full card height ─────
-     Used for Traffic (page 2) and CWV (page 3) tables. Replaces the HTML
-     <table> approach, which can't flex-grow <tr> elements to fill height. */
-  .flex-bars-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   .flex-bars { display: flex; flex-direction: column; flex: 1; min-height: 0; }
   .flex-bars-header {
-    display: flex; align-items: center; flex: 0 0 auto;
-    padding: 0 10px 6px; border-bottom: 1px solid rgba(255,255,255,0.07); margin-bottom: 2px;
+    display: flex; align-items: baseline; flex: 0 0 auto;
+    padding: 0 10px 6px; margin-bottom: 2px; border-bottom: 1px solid var(--border-default);
   }
-  .flex-bars-spacer { flex: 0 0 80px; }
-  .flex-bars-col-hdr { flex: 1; font-size: 10px; font-weight: 700; color: #b1b2d2; text-transform: uppercase; letter-spacing: 0.06em; }
+  .flex-bars-spacer { flex: 0 0 82px; }
+  .flex-bars-col-hdr {
+    flex: 1; font-size: var(--rp-text-micro); font-weight: 700;
+    color: var(--text-subdued); text-transform: uppercase; letter-spacing: .06em;
+  }
   .flex-bars-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-  .flex-bars-row { display: flex; align-items: center; flex: 1; min-height: 0; border-top: 1px solid rgba(255,255,255,0.05); }
+  .flex-bars-row { display: flex; align-items: center; flex: 1; min-height: 0; border-top: 1px solid var(--border-subdued); }
   .flex-bars-row:first-child { border-top: none; }
-  .flex-bars-row--current .flex-bars-row-label { color: #e8edf5; font-weight: 700; }
-  .flex-bars-row--current .flex-bars-value { color: #f4f6fb; font-weight: 700; }
-  .flex-bars-row--current .flex-bars-fill { filter: brightness(1.35); }
-  .flex-bars-row-label { flex: 0 0 80px; padding: 0 10px; color: #b1b2d2; font-size: 11px; }
-  .flex-bars-cell { flex: 1; display: flex; align-items: center; padding: 6px 10px; min-width: 0; border-left: 1px solid rgba(255,255,255,0.06); }
-  .flex-bars-track { flex: 1; display: flex; align-items: center; min-width: 0; }
-  .flex-bars-fill { height: 42px; border-radius: 3px; min-width: 2px; flex-shrink: 0; }
-  .flex-bars-value { white-space: nowrap; font-size: 11px; color: #e8edf5; padding-left: 6px; }
-  .flex-bars-device-cell { flex: 0 0 120px; padding: 4px 10px 4px 0; }
-  .flex-bars-device-track { background: rgba(255,255,255,0.06); border-radius: 2px; }
-  .flex-bars-device-fill {
-    height: 24px; border-radius: 2px; background: #7B61FF;
-    display: flex; align-items: center; justify-content: center;
-    color: #fff; font-size: 10px; font-weight: 700; min-width: 20px;
+  .flex-bars-row-label { flex: 0 0 82px; padding: 0 10px; color: var(--text-subdued); font-size: var(--rp-text-small); }
+  .flex-bars-cell { flex: 1; display: flex; align-items: center; padding: 5px 10px; min-width: 0; border-left: 1px solid var(--border-subdued); }
+  .flex-bars-row.current .flex-bars-row-label,
+  .flex-bars-row.current .bar-value { color: var(--text-default); font-weight: 700; }
+
+  .chart-body { position: relative; flex: 1; min-height: 0; min-width: 0; }
+  .chart-body canvas { width: 100% !important; height: 100% !important; }
+  .chart-legend { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 4px 14px; padding-top: 8px; align-items: center; font-size: var(--rp-text-micro); color: var(--text-subdued); }
+  .chart-legend .item { display: inline-flex; align-items: center; gap: 5px; }
+  .chart-legend .swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+  .chart-legend .dash { width: 14px; height: 0; border-top: 1px dashed currentColor; flex: none; }
+
+  .finding-row {
+    display: grid; grid-template-columns: 72px minmax(0, 1fr);
+    gap: 3px var(--dt-space-16); padding: 9px 0;
+    border-bottom: 1px solid var(--border-subdued);
   }
-  /* Compact variant: CWV page shares space with weekly chart */
-  .flex-bars--compact .flex-bars-fill { height: 18px; }
-  .flex-bars--compact .flex-bars-row-label { font-size: 10.5px; }
-  .flex-bars--compact .flex-bars-value { font-size: 10.5px; }
+  .finding-row:first-child { padding-top: 0; }
+  .finding-row:last-child { border-bottom: none; padding-bottom: 0; }
+  .finding-chip { grid-row: span 2; align-self: start; justify-self: start; margin-top: 1px; }
+  .finding-title { font-weight: 600; color: var(--text-default); }
+  .finding-evidence { color: var(--text-subdued); font-size: var(--rp-text-small); line-height: 1.5; overflow-wrap: anywhere; }
 
-  /* Bar-in-cell table — kept for browser performance panels only */
-  .bar-table { width: 100%; height: 100%; border-collapse: collapse; font-size: 12px; }
-  .bar-table th { text-align: left; font-size: 10px; font-weight: 700; color: #b1b2d2; text-transform: uppercase; letter-spacing: 0.06em; padding: 4px 10px 8px; }
-  .bar-table td { padding: 5px 10px; vertical-align: middle; white-space: nowrap; }
-  .bar-table .row-label { color: #b1b2d2; font-size: 12px; width: 1%; }
-  .bar-cell { display: flex; align-items: center; gap: 8px; }
-  .bar-track { flex: 1; min-width: 60px; }
-  .bar-fill { height: 20px; border-radius: 3px; min-width: 2px; }
-  .bar-value { color: #e8edf5; font-size: 11px; min-width: 42px; }
-
-  /* Browser Performance: grid of small bar-tables, one per browser×device */
-  .browser-perf-grid { flex: 1; min-height: 0; overflow: hidden; display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px 20px; }
-  .browser-panel { border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 6px 10px; min-width: 0; display: flex; flex-direction: column; }
-  .browser-panel .browser-panel-title {
-    font-size: 9px; font-weight: 700; color: #b1b2d2;
-    text-transform: uppercase; letter-spacing: 0.09em;
-    margin-bottom: 5px; padding-bottom: 5px; flex: 0 0 auto;
-    border-bottom: 1px solid rgba(255,255,255,0.08);
+  @media print {
+    :root {
+      --dt-bg-base:             #f9f9fa;
+      --dt-bg-container:        #f2f2f5;
+      --dt-bg-container-subtle: #f9f9fa;
+      --dt-text-primary:        #2f2f4f;
+      --dt-text-secondary:      #595a7d;
+      --dt-border-default:      #dadbe4;
+      --dt-critical:            #bb0731;
+      --dt-warning:             #855400;
+      --dt-success:             #2d6761;
+      --dt-primary:             #464cce;
+    }
+    .page { break-after: page; page-break-after: always; break-inside: avoid; page-break-inside: avoid; }
+    .page:last-child { break-after: auto; page-break-after: auto; }
+    .panel, .kpi-tile, .metric-tile, .mini-chip,
+    .bar-fill, .mt-zone, .mt-track, .status, .chip, .kpi-change {
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .notes-body[contenteditable="true"] { outline: none !important; }
   }
-  .browser-panel .bar-table { table-layout: fixed; width: 100%; flex: 1; }
-  .browser-panel .bar-table th { font-size: 9px; }
-  .browser-panel .bar-table td, .browser-panel .bar-table th { padding: 1px 6px; border-right: 1px solid rgba(255,255,255,0.06); }
-  .browser-panel .bar-table td:last-child, .browser-panel .bar-table th:last-child { border-right: none; }
-  .browser-panel .bar-table tbody tr { border-top: 1px solid rgba(255,255,255,0.05); }
-  .browser-panel .bar-table tbody tr:first-child { border-top: none; }
-  .browser-panel .bar-table .row-label { width: 50px; font-size: 9.5px; }
-  .browser-panel .bar-value { font-size: 9.5px; min-width: 30px; }
-  .browser-panel .bar-track { min-width: 46px; }
-  .browser-panel .bar-fill { height: 7px; }
-  .browser-panel--empty { background: rgba(255,255,255,0.02); border-color: rgba(255,255,255,0.04); }
-  .browser-panel .bar-table tbody tr.current-month .row-label { color: #e8edf5; font-weight: 700; }
-  .browser-panel .bar-table tbody tr.current-month .bar-value { color: #f4f6fb; font-weight: 700; }
-  .browser-panel .bar-table tbody tr.current-month .bar-fill { filter: brightness(1.35); }
 
-  .ftr { display: flex; align-items: center; justify-content: space-between; margin-top: 4mm; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.07); flex: 0 0 auto; }
-  .ftr span { font-size: 9px; color: #666e8c; letter-spacing: 0.05em; }
-  .ftr .brand-name { color: #1496ff; font-weight: 600; }
+  :root {
+    --rp-series-1: #5eafff;
+    --rp-series-2: #c39bff;
+    --rp-series-3: #6fc3ba;
+    --rp-series-4: #f2a0c8;
+    --rp-series-5: #f0c25a;
+    --rp-series-6: #9aa4c4;
+    --rp-grid:      color-mix(in srgb, var(--dt-border-default) 70%, transparent);
+    --rp-axis-text: var(--text-subdued);
+    --rp-threshold-good: color-mix(in srgb, var(--good) 70%, transparent);
+    --rp-threshold-poor: color-mix(in srgb, var(--critical) 70%, transparent);
+  }
+  @media print {
+    :root {
+      --rp-series-1: #1a72c4;
+      --rp-series-2: #6f3bbf;
+      --rp-series-3: #2d6761;
+      --rp-series-4: #b03b78;
+      --rp-series-5: #8a6200;
+      --rp-series-6: #6b7392;
+    }
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     Trending report — page-specific additions. Everything above this line
+     is the shared deck-base layer, pasted verbatim; only what is genuinely
+     specific to this 4-page layout lives below, and every colour here still
+     derives from the shared :root tokens.
+     ═══════════════════════════════════════════════════════════════════════ */
+
+  /* Canvas-facing colour twins. Everything ELSE in this file that carries
+     colour (bar-in-cell fills, the sparkline stroke, the .status chips) is
+     plain HTML/SVG and references a shared --rp-* token with a bare
+     var(--rp-series-1) — the browser's own cascade re-resolves that at
+     paint time under @media print, so it needs no JS help at all.
+     Chart.js draws to a <canvas>, which cannot take "var(--x)" as a colour
+     and has to be handed an actual resolved string. That string must come
+     from JS, and beforeprint is the only hook available to rebuild a chart
+     for print — but instrumented directly (see ctVar() in <script>): print
+     media has NOT been applied yet when beforeprint fires, so
+     getComputedStyle() in that handler still returns the SCREEN palette.
+     There is no later event that fires after print media applies but
+     before Chrome captures the page, so re-reading the cascade cannot be
+     made to work. The fix is to stop asking the cascade what theme is
+     active and hand the script both answers up front: every canvas colour
+     below exists as an unconditional pair, --ct-<name> (screen) and
+     --ct-<name>-print (print), neither wrapped in @media, so JS can pick
+     the right one by which lifecycle event is calling it rather than by
+     which theme it guesses is live. Values are the same screen/print pairs
+     as the --rp-series-* tokens above; color-mix() is pre-computed to a
+     literal rgba() here rather than left as a mix, so this block does not
+     also need the colour-probe workaround (see cssColor() in <script>) to
+     read cleanly as a value canvas can parse. */
+  :root {
+    --ct-axis-text:       #b1b2d2;
+    --ct-axis-text-print: #595a7d;
+    --ct-grid:            rgba(59, 59, 82, .7);
+    --ct-grid-print:      rgba(218, 219, 228, .7);
+    --ct-series-1: #5eafff; --ct-series-1-print: #1a72c4;
+    --ct-series-2: #c39bff; --ct-series-2-print: #6f3bbf;
+    --ct-series-3: #6fc3ba; --ct-series-3-print: #2d6761;
+    --ct-series-4: #f2a0c8; --ct-series-4-print: #b03b78;
+    --ct-series-5: #f0c25a; --ct-series-5-print: #8a6200;
+    --ct-series-6: #9aa4c4; --ct-series-6-print: #6b7392;
+    --ct-threshold-good:       rgba(111, 195, 186, .7);
+    --ct-threshold-good-print: rgba(45, 103, 97, .7);
+    --ct-threshold-poor:       rgba(255, 153, 156, .7);
+    --ct-threshold-poor-print: rgba(187, 7, 49, .7);
+    /* Same screen/print pair as --bg-container (the .panel background each
+       chart sits in), for the opaque-canvas backing fill in <script> — see
+       that comment for why a <canvas> needs a painted backing at all. */
+    --ct-panel-bg:       #212135;
+    --ct-panel-bg-print: #f2f2f5;
+  }
+
+  /* The build script's contenteditable patch (build-report.mjs) matches the
+     findings-body class attribute verbatim (see its regex), so the markup
+     below keeps that literal class name rather than renaming it to
+     notes-body. NOTE: deliberately not quoting that attribute the way the
+     regex spells it, right here in this comment — the regex runs on the
+     whole rendered file, this <style> block included, and a literal quoted
+     match sitting in a comment gets "fixed" too. The component itself is
+     identical to the shared layer's .notes-body — duplicated below under
+     the contract name instead of bending the regex to match a second
+     class. */
+  .findings-body { flex: 1; min-height: 0; overflow: hidden; font-size: var(--rp-text-body); line-height: 1.55; color: var(--text-default); }
+  .findings-body ul { margin: 0; padding-left: 17px; }
+  .findings-body li { margin-bottom: 6px; }
+  .findings-body li:last-child { margin-bottom: 0; }
+  .findings-body p { margin: 0 0 7px; }
+  .findings-body p:last-child { margin-bottom: 0; }
+  .findings-body strong { font-weight: 600; }
+  .findings-body code {
+    font-family: var(--dt-font-mono); font-size: .93em;
+    background: var(--bg-page); border: 1px solid var(--border-subdued);
+    border-radius: 3px; padding: 0 4px;
+  }
+  .findings-body[contenteditable="true"]:focus { outline: 1px dashed var(--dt-primary); outline-offset: 4px; }
+
+  /* v1 hid ENVIRONMENT_NAME under the frontend name in its own coloured
+     line; the shared masthead's .hdr-right only ships .kind/.name/.meta, so
+     environment gets one more subdued line here rather than overloading
+     .meta (which already carries the date range on every page). */
+  .hdr-right .env { font-size: var(--rp-text-small); color: var(--text-subdued); }
+  .hdr-right .env:empty { display: none; }
+
+  /* A slot that fills whatever vertical space its panel has left after the
+     title — used for the traffic bar-chart body, which is not a bare
+     <canvas> (so .chart-body's own canvas-sizing rule doesn't quite fit)
+     but still needs flex:1;min-height:0 to grow inside a fixed-height page.
+     display:flex is what actually makes that work: flex:1 only does
+     anything on an element whose PARENT is a flex container, and the
+     injected .flex-bars is this element's child, not itself — without this,
+     .flex-bars sat at its own content height (six rows) and the rest of
+     the panel below it was dead space. */
+  .slot-fill { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
+
+  /* ── Page 1: KPI row ──────────────────────────────────────────────────
+     Three plain kpi-tiles carry the traffic counters (a bare count has no
+     verdict to carry). LCP/INP/CLS do have one, so they render as the
+     shared .metric-tile instead of a fourth plain figure: a raw "2.4s"
+     next to a session count can't say whether 2.4s is good, and the
+     threshold-scale tile already says so in one glance, using the exact
+     same component the CWV page uses for its own status row. This block
+     only trims the full metric-tile down to KPI-row height — dropping the
+     name/bounds/tail rows the detail page has room for and shrinking the
+     value — the tile's HTML is identical in both places (see metricTile()
+     in <script>), only the CSS context differs. */
+  .kpi-row .metric-tile { flex: 1; min-width: 0; padding: 11px 14px 10px; }
+  .kpi-row .metric-tile .mt-name,
+  .kpi-row .metric-tile .mt-bounds,
+  .kpi-row .metric-tile .mt-tail { display: none; }
+  .kpi-row .metric-tile .mt-value { margin-top: 7px; font-size: 24px; }
+  .kpi-row .metric-tile .mt-scale { margin-top: 10px; }
+
+  /* Three analyst-note cards, one per topic. v1 gave each a coloured top
+     accent bar (purple/amber/teal) that meant nothing — the shared layer's
+     own rationale for dropping per-card colour (see the "Analyst-note
+     cards" comment above) applies here unchanged, so the topic is named by
+     .panel-title alone. */
+  .exec-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--dt-space-16); flex: 1; min-height: 0; }
+
+  /* ── Page 2: Traffic ──────────────────────────────────────────────────
+     Flex-bars rows here grow to fill the whole panel (six months in one
+     tall card), so the bar itself is drawn taller than the shared layer's
+     18px table default — sized for a compact table row, not a page that
+     gives this chart the full panel height. The % Desktop column keeps the
+     shared "outlined" (coverage-meter) treatment instead: it is a share of
+     a whole, not a magnitude, and FPA's own coverage bars use the same
+     thin/bordered style for exactly that distinction.
+
+     .bar-cell itself needs flex:1 in THIS context. The shared layer's
+     .bar-cell is normally a <td>'s only child — a block box, so it already
+     fills the cell's full width with no flex property of its own. Nested
+     inside .flex-bars-cell (a flex row, not a table cell), an unflexed
+     child only ever takes its min-content width, so .bar-track's own
+     flex:1 had nothing to grow into: every bar rendered at the track's
+     44px min-width regardless of value, which is why Sessions read the
+     same length in Feb and Jul. flex:1 here is what lets the track — and
+     therefore the bar-fill's width:N% — actually see the column's width. */
+  /* Six monthly points never filled an A4 page on their own, so the weekly
+     trend shares it. Stacked rather than side by side: both panels are
+     time series running left to right over the same period, so sharing the
+     full page width puts them on a common horizontal axis and lets the eye
+     drop straight from a month's bar to the weeks inside it. The table
+     takes the larger share for its four columns. minmax(0,…) on both
+     tracks is what lets the bar tracks and the canvas actually shrink to
+     their row instead of being floored by their content. */
+  .traffic-row { display: grid; grid-template-rows: minmax(0, 1.25fr) minmax(0, 1fr); gap: var(--dt-space-16); flex: 1; min-height: 0; }
+  .traffic-row .panel { min-width: 0; min-height: 0; }
+
+  .flex-bars-cell .bar-cell { flex: 1; min-width: 0; }
+  .flex-bars-cell .bar-fill { height: 28px; }
+  .flex-bars-cell .bar-track.outlined { height: 10px; }
+  .flex-bars-cell .bar-track.outlined .bar-fill { height: 100%; }
+
+  /* ── Page 3: Core Web Vitals ──────────────────────────────────────────
+     v1 crammed LCP/INP/CLS into one bar-in-cell table — three different
+     units sharing one row of bars per month, which is exactly the case the
+     shared layer's .metric-tile threshold scale exists to fix. Composition
+     here: a status row of the three metric-tiles for the latest month (the
+     "where do we stand" read, each metric on its own correctly-scaled
+     track) sits above three small-multiple line charts for the trend, one
+     per metric with its own axis. A shared ms axis for LCP and INP was the
+     first attempt, avoiding a second y-axis on one canvas — but LCP's
+     ~2,000ms range dwarfs INP's ~200ms one, so on a shared 0–2,500ms scale
+     INP draws as a flat line pinned to the axis floor: unreadable, which
+     defeats the point of a trend chart. Three single-metric panels (the
+     monthly deck's own page 3 does the same) is the actual fix, not a
+     second axis on the LCP+INP canvas — a dual-y-axis chart is never the
+     right read for two different units either way (see the dataviz skill's
+     "one axis" rule). The old monthly bar table is dropped entirely: the
+     weekly chart already covers the "how did we get here" story at finer
+     grain, so keeping both was two views of the same trend competing for
+     the same page. Each chart gets its own dashed good/poor threshold
+     lines now that it isn't sharing an axis with a metric those thresholds
+     don't apply to. */
+  .cwv-charts-row { display: flex; gap: var(--dt-space-16); flex: 1; min-height: 0; }
+  .cwv-charts-row .panel { flex: 1; min-width: 0; }
+
+  /* ── Page 4: Browser performance ──────────────────────────────────────
+     v1's per-panel 6-row × 4-column mini table needed 9px type to fit six
+     panels on the page — below this deck's 10px floor. The fix is
+     composition, not a smaller ramp.
+
+     v2 gave each panel one large visits sparkline plus a row of three CWV
+     verdict chips. That spent the panel's whole height on traffic, which
+     the grid order ALREADY encodes — panels are ranked by visits, so the
+     sparkline re-told the reader what the panel's position on the page had
+     said first. The page is titled Browser *Performance*, so the height now
+     goes to performance: one row per CWV metric, each pairing the shared
+     .status chip (the latest month's verdict — colour, shape and word
+     together, never colour alone) with that metric's own sparkline across
+     the period. Visits survive as a subdued figure in the header, because
+     "how much traffic is behind this" is still what decides whether a bad
+     verdict matters — it is context for the verdict, not the subject.
+
+     The chip column takes a fixed basis rather than sizing to content, so
+     the three chips in a panel — and therefore the three sparklines beside
+     them — each start on one x. That is what lets a panel read as three
+     parallel trends rather than three ragged rows. */
+  /* grid-auto-rows rather than a fixed grid-template-rows: the panel count is
+     data-dependent (4 on one tenant, 5 or 6 on another), and naming two rows
+     leaves any third row implicit and therefore auto-sized — it then takes its
+     content height while the named rows divide what is left, which rendered a
+     5-panel deck as two squashed rows above one enormous one. Sizing every row
+     through grid-auto-rows keeps them equal at any count.
+     minmax(0, 1fr), not 1fr, because a track's default minimum is auto: with
+     plain 1fr each row floors at its content height and the grid overruns the
+     fixed page. .browser-panel carries min-height: 0 for the same reason —
+     three metric rows are taller than the two-line card this grid used to
+     hold, and without both the bottom row runs through the footer. */
+  .browser-perf-grid { display: grid; grid-template-columns: repeat(2, 1fr); grid-auto-rows: minmax(0, 1fr); gap: var(--dt-space-16); flex: 1; min-height: 0; }
+  .browser-panel {
+    background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--dt-radius);
+    padding: 10px 13px; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 8px;
+  }
+  .bp-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--dt-space-8); flex: 0 0 auto; }
+  .browser-panel-title { font-size: var(--rp-text-small); font-weight: 700; color: var(--text-default); min-width: 0; }
+  .bp-visits { flex: none; font-size: var(--rp-text-micro); color: var(--text-subdued); text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; }
+  .bp-visits b { color: var(--text-default); font-weight: 700; }
+  .bp-metrics { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .bp-metric { display: flex; align-items: center; gap: 10px; flex: 1; min-height: 0; border-top: 1px solid var(--border-subdued); }
+  .bp-metric:first-child { border-top: none; }
+  /* Fixed basis, not content width — see the comment above. 104px clears the
+     widest chip the formatters can produce ("INP 866ms"). */
+  .bp-metric .status { flex: 0 0 104px; justify-content: flex-start; }
+  .bp-spark { flex: 1; min-width: 0; height: 100%; min-height: 22px; display: block; }
+  /* One month axis per panel, not one per sparkline: the three sparklines
+     share a months array and are already column-aligned on the same fixed
+     chip basis, so three identical label rows would be two rows of noise.
+     The spacer repeats that basis (and the row's 10px gap) so the labels sit
+     under the plot rather than under the chips. space-between puts the first
+     and last label at the ends, matching the sparkline's own first and last
+     point; the 2% viewBox padding is below the width of a label glyph, so
+     chasing it exactly would be false precision. */
+  .bp-months { display: flex; align-items: baseline; gap: 10px; flex: 0 0 auto; }
+  .bp-months-spacer { flex: 0 0 104px; }
+  .bp-months-axis {
+    flex: 1; min-width: 0; display: flex; justify-content: space-between;
+    font-size: var(--rp-text-micro); color: var(--text-subdued); letter-spacing: .04em;
+  }
+  .bp-months-axis span { white-space: nowrap; }
+  /* The good/poor boundaries behind a sparkline, drawn as the same dashed
+     hairline the page 3 charts use for a threshold and reading the same two
+     tokens, so a threshold looks identical wherever the deck draws one.
+     See the thresholdLines plugin for why filled bands lost to these. */
+  .bp-rule { stroke-width: 1; stroke-dasharray: 3 3; }
+  .bp-rule-good { stroke: var(--rp-threshold-good); }
+  .bp-rule-poor { stroke: var(--rp-threshold-poor); }
 </style>
 </head>
 <body>
@@ -318,37 +707,39 @@
   <section class="page" data-page="1">
     <header class="hdr">
       <div class="hdr-left">
-        <span class="brand"><!-- brand --></span>
-      </div>
-      <div class="hdr-center">
-        <div class="kind">Trending</div>
-        <div class="section">Executive Summary</div>
+        <svg class="dt-logo" viewBox="0 0 800 142" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Dynatrace"><g fill="currentColor"><path d="m578.6 37.2h-18.4c-5.2 0-8.8 1-11 3.2-2.2 2.1-3.3 5.8-3.3 10.8v63.6h-11v-64.4c.1-4.9.9-10.2 3.5-14.2 4.7-7.5 13.7-8.9 20.4-8.9h19.9v9.9z"/><path d="m507.6 104.8c-5.2 0-8.8-1-11-3.2-2.2-2.1-3.3-5.6-3.3-10.6v-53.8h23.1v-9.9h-23.1v-26.3h-11v90.6c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h19.9v-9.9z"/><path d="m219.3 1v26.2h-23.1c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h10.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2v-90.7zm-3.3 100.7c-2.2 2.1-5.8 3.2-11 3.2h-10c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-28.9c0-4.1 1.4-9.4 5.5-13.4 3.5-3.4 9.1-6 18.2-6h24.2v53.9c.1 4.9-1 8.4-3.2 10.6z"/><path d="m678.2 43.2c3.5-3.4 9.1-6 18.2-6h26.5v-9.9h-25.4c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h25.4v-9.9h-26.5c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-29c0-4.1 1.4-9.5 5.5-13.4z"/><path d="m470.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m652.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m317.8 27.2h-11.5l-27.9 72.6-27.9-72.6h-11.4l33.6 87.5-10.1 26.3h11.5z"/><path d="m392.2 56.9c0-1.2 0-12.5-8-20.4-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v57.9h11v-58.2c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v58.2h11c0-4.5 0-56.5 0-57.9z"/><path d="m791 36.5c-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v28.2c0 1.2 0 12.5 8 20.4 5.1 5 13.2 9.1 26.4 9.3h26v-10h-25.4c-8.7-.1-15.2-2.7-18.6-6-4-4-5.4-9.3-5.4-13.4v-10.3h59v-18.2c.1-1.2.1-12.5-8-20.4zm-50.9 28.7v-8.6c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v8.6z"/></g><g><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9-2.1 25.2-.8 42.1-.8 42.1l-35.5 33.7s-2.7-18.9-4.1-40.2c-.8-13.2-1.1-24.8-1.1-31.8 0-.4.2-.8.2-1.2 0-.5.6-5.2 5.2-9.6 5-4.8 41.9-33.7 41.3-30.9z" fill="#1496ff"/><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9 0 0-39.3-4.7-41.5 4.8 0-.5.7-6.3 5.3-10.7 5-4.8 42-34.8 41.4-32z" fill="#1284ea"/><path d="m1 53.1v2.2c.4-1.7 1.1-2.9 2.5-4.8 2.9-3.7 7.6-4.7 9.5-4.9 9.6-1.3 23.8-2.8 38.1-3.2 25.3-.8 42 1.3 42 1.3l35.5-33.7s-18.6-3.5-39.8-6c-13.9-1.7-26.1-2.6-33-3-.5 0-5.4-.6-10 3.8-5 4.8-30.4 28.9-40.6 38.6-4.6 4.4-4.2 9.3-4.2 9.7z" fill="#b4dc00"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4-25.3.8-42.1-1.3-42.1-1.3l-35.5 33.8s18.8 3.7 40 6.1c13 1.5 24.5 2.3 31.5 2.7.5 0 1.3-.4 1.8-.4s5.4-.9 10-5.3c5-4.8 35.2-39.3 32.4-39z" fill="#6f2da8"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4 0 0 2.7 39.5-6.8 41.2.5 0 7-.3 11.6-4.7 5-4.8 36.1-40.2 33.3-39.9z" fill="#591f91"/><path d="m84.5 141c-.7 0-1.4-.1-2.2-.1 1.8-.3 3-.9 4.9-2.3 3.8-2.7 5-7.4 5.4-9.3 1.7-9.5 4-23.6 5.1-37.9 2-25.2.8-42 .8-42l35.5-33.8s2.6 18.8 4.1 40.1c.9 13.9 1.2 26.2 1.3 33 0 .5.4 5.4-4.2 9.8-5 4.8-30.4 29-40.5 38.7-4.8 4.4-9.7 3.8-10.2 3.8z" fill="#73be28"/></g></svg>
+        <span class="brand-rule" aria-hidden="true"></span>
+        <span class="brand-team">Business Insights</span>
       </div>
       <div class="hdr-right">
+        <div class="kind">Trending Report</div>
         <div class="name">{{FRONTEND_NAME}}</div>
         <div class="env">{{ENVIRONMENT_NAME}}</div>
-        <div class="range">{{DATE_RANGE_LABEL}}</div>
+        <div class="meta">{{DATE_RANGE_LABEL}}</div>
       </div>
     </header>
-    <div class="accent-line"></div>
+    <div class="page-title">
+      <h2>Executive Summary</h2>
+      <p class="lede"></p>
+    </div>
     <div class="content">
       <div class="kpi-row" id="kpi-row"></div>
       <div class="exec-grid">
-        <div class="exec-card exec-card--traffic">
-          <div class="exec-section-label">Traffic</div>
+        <section class="panel">
+          <h3 class="panel-title">Traffic</h3>
           <div class="findings-body">{{FINDINGS_TRAFFIC_HTML}}</div>
-          <div class="exec-mini-stats" id="exec-mini-traffic"></div>
-        </div>
-        <div class="exec-card exec-card--cwv">
-          <div class="exec-section-label">Core Web Vitals</div>
+          <div class="mini-stats" id="mini-traffic"></div>
+        </section>
+        <section class="panel">
+          <h3 class="panel-title">Core Web Vitals</h3>
           <div class="findings-body">{{FINDINGS_CWV_HTML}}</div>
-          <div class="exec-mini-stats" id="exec-mini-cwv"></div>
-        </div>
-        <div class="exec-card exec-card--browser">
-          <div class="exec-section-label">Browser &amp; Device</div>
+          <div class="mini-stats" id="mini-cwv"></div>
+        </section>
+        <section class="panel">
+          <h3 class="panel-title">Browser &amp; Device</h3>
           <div class="findings-body">{{FINDINGS_BROWSER_HTML}}</div>
-          <div class="exec-mini-stats" id="exec-mini-browser"></div>
-        </div>
+          <div class="mini-stats" id="mini-browser"></div>
+        </section>
       </div>
     </div>
     <footer class="ftr">
@@ -361,23 +752,32 @@
   <section class="page" data-page="2">
     <header class="hdr">
       <div class="hdr-left">
-        <span class="brand"><!-- brand --></span>
-      </div>
-      <div class="hdr-center">
-        <div class="kind">Trending</div>
-        <div class="section">Traffic</div>
+        <svg class="dt-logo" viewBox="0 0 800 142" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Dynatrace"><g fill="currentColor"><path d="m578.6 37.2h-18.4c-5.2 0-8.8 1-11 3.2-2.2 2.1-3.3 5.8-3.3 10.8v63.6h-11v-64.4c.1-4.9.9-10.2 3.5-14.2 4.7-7.5 13.7-8.9 20.4-8.9h19.9v9.9z"/><path d="m507.6 104.8c-5.2 0-8.8-1-11-3.2-2.2-2.1-3.3-5.6-3.3-10.6v-53.8h23.1v-9.9h-23.1v-26.3h-11v90.6c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h19.9v-9.9z"/><path d="m219.3 1v26.2h-23.1c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h10.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2v-90.7zm-3.3 100.7c-2.2 2.1-5.8 3.2-11 3.2h-10c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-28.9c0-4.1 1.4-9.4 5.5-13.4 3.5-3.4 9.1-6 18.2-6h24.2v53.9c.1 4.9-1 8.4-3.2 10.6z"/><path d="m678.2 43.2c3.5-3.4 9.1-6 18.2-6h26.5v-9.9h-25.4c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h25.4v-9.9h-26.5c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-29c0-4.1 1.4-9.5 5.5-13.4z"/><path d="m470.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m652.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m317.8 27.2h-11.5l-27.9 72.6-27.9-72.6h-11.4l33.6 87.5-10.1 26.3h11.5z"/><path d="m392.2 56.9c0-1.2 0-12.5-8-20.4-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v57.9h11v-58.2c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v58.2h11c0-4.5 0-56.5 0-57.9z"/><path d="m791 36.5c-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v28.2c0 1.2 0 12.5 8 20.4 5.1 5 13.2 9.1 26.4 9.3h26v-10h-25.4c-8.7-.1-15.2-2.7-18.6-6-4-4-5.4-9.3-5.4-13.4v-10.3h59v-18.2c.1-1.2.1-12.5-8-20.4zm-50.9 28.7v-8.6c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v8.6z"/></g><g><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9-2.1 25.2-.8 42.1-.8 42.1l-35.5 33.7s-2.7-18.9-4.1-40.2c-.8-13.2-1.1-24.8-1.1-31.8 0-.4.2-.8.2-1.2 0-.5.6-5.2 5.2-9.6 5-4.8 41.9-33.7 41.3-30.9z" fill="#1496ff"/><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9 0 0-39.3-4.7-41.5 4.8 0-.5.7-6.3 5.3-10.7 5-4.8 42-34.8 41.4-32z" fill="#1284ea"/><path d="m1 53.1v2.2c.4-1.7 1.1-2.9 2.5-4.8 2.9-3.7 7.6-4.7 9.5-4.9 9.6-1.3 23.8-2.8 38.1-3.2 25.3-.8 42 1.3 42 1.3l35.5-33.7s-18.6-3.5-39.8-6c-13.9-1.7-26.1-2.6-33-3-.5 0-5.4-.6-10 3.8-5 4.8-30.4 28.9-40.6 38.6-4.6 4.4-4.2 9.3-4.2 9.7z" fill="#b4dc00"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4-25.3.8-42.1-1.3-42.1-1.3l-35.5 33.8s18.8 3.7 40 6.1c13 1.5 24.5 2.3 31.5 2.7.5 0 1.3-.4 1.8-.4s5.4-.9 10-5.3c5-4.8 35.2-39.3 32.4-39z" fill="#6f2da8"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4 0 0 2.7 39.5-6.8 41.2.5 0 7-.3 11.6-4.7 5-4.8 36.1-40.2 33.3-39.9z" fill="#591f91"/><path d="m84.5 141c-.7 0-1.4-.1-2.2-.1 1.8-.3 3-.9 4.9-2.3 3.8-2.7 5-7.4 5.4-9.3 1.7-9.5 4-23.6 5.1-37.9 2-25.2.8-42 .8-42l35.5-33.8s2.6 18.8 4.1 40.1c.9 13.9 1.2 26.2 1.3 33 0 .5.4 5.4-4.2 9.8-5 4.8-30.4 29-40.5 38.7-4.8 4.4-9.7 3.8-10.2 3.8z" fill="#73be28"/></g></svg>
+        <span class="brand-rule" aria-hidden="true"></span>
+        <span class="brand-team">Business Insights</span>
       </div>
       <div class="hdr-right">
+        <div class="kind">Trending Report</div>
         <div class="name">{{FRONTEND_NAME}}</div>
         <div class="env">{{ENVIRONMENT_NAME}}</div>
-        <div class="range">{{DATE_RANGE_LABEL}}</div>
+        <div class="meta">{{DATE_RANGE_LABEL}}</div>
       </div>
     </header>
-    <div class="accent-line"></div>
+    <div class="page-title">
+      <h2>Traffic</h2>
+      <p class="lede">Sessions, navigations and XHR requests by month, and the weekly session trend</p>
+    </div>
     <div class="content">
-      <div class="chart-card" style="flex: 1;">
-        <div class="chart-title">User Traffic</div>
-        <div class="flex-bars-wrap" id="table-trafficMonthly"></div>
+      <div class="traffic-row">
+        <section class="panel">
+          <h3 class="panel-title">User traffic</h3>
+          <div class="slot-fill" id="table-trafficMonthly"></div>
+        </section>
+        <section class="panel" id="panel-trafficWeekly">
+          <h3 class="panel-title">Weekly sessions</h3>
+          <div class="chart-body"><canvas id="chart-trafficWeekly"></canvas></div>
+          <div class="chart-legend" id="legend-trafficWeekly"></div>
+        </section>
       </div>
     </div>
     <footer class="ftr">
@@ -389,26 +789,40 @@
   <!-- ── Page 3: Core Web Vitals ─────────────────────────────────────── -->
   <section class="page" data-page="3">
     <header class="hdr">
-      <div class="hdr-left"><span class="brand"><!-- brand --></span></div>
-      <div class="hdr-center">
-        <div class="kind">Trending</div>
-        <div class="section">Core Web Vitals</div>
+      <div class="hdr-left">
+        <svg class="dt-logo" viewBox="0 0 800 142" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Dynatrace"><g fill="currentColor"><path d="m578.6 37.2h-18.4c-5.2 0-8.8 1-11 3.2-2.2 2.1-3.3 5.8-3.3 10.8v63.6h-11v-64.4c.1-4.9.9-10.2 3.5-14.2 4.7-7.5 13.7-8.9 20.4-8.9h19.9v9.9z"/><path d="m507.6 104.8c-5.2 0-8.8-1-11-3.2-2.2-2.1-3.3-5.6-3.3-10.6v-53.8h23.1v-9.9h-23.1v-26.3h-11v90.6c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h19.9v-9.9z"/><path d="m219.3 1v26.2h-23.1c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h10.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2v-90.7zm-3.3 100.7c-2.2 2.1-5.8 3.2-11 3.2h-10c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-28.9c0-4.1 1.4-9.4 5.5-13.4 3.5-3.4 9.1-6 18.2-6h24.2v53.9c.1 4.9-1 8.4-3.2 10.6z"/><path d="m678.2 43.2c3.5-3.4 9.1-6 18.2-6h26.5v-9.9h-25.4c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h25.4v-9.9h-26.5c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-29c0-4.1 1.4-9.5 5.5-13.4z"/><path d="m470.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m652.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m317.8 27.2h-11.5l-27.9 72.6-27.9-72.6h-11.4l33.6 87.5-10.1 26.3h11.5z"/><path d="m392.2 56.9c0-1.2 0-12.5-8-20.4-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v57.9h11v-58.2c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v58.2h11c0-4.5 0-56.5 0-57.9z"/><path d="m791 36.5c-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v28.2c0 1.2 0 12.5 8 20.4 5.1 5 13.2 9.1 26.4 9.3h26v-10h-25.4c-8.7-.1-15.2-2.7-18.6-6-4-4-5.4-9.3-5.4-13.4v-10.3h59v-18.2c.1-1.2.1-12.5-8-20.4zm-50.9 28.7v-8.6c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v8.6z"/></g><g><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9-2.1 25.2-.8 42.1-.8 42.1l-35.5 33.7s-2.7-18.9-4.1-40.2c-.8-13.2-1.1-24.8-1.1-31.8 0-.4.2-.8.2-1.2 0-.5.6-5.2 5.2-9.6 5-4.8 41.9-33.7 41.3-30.9z" fill="#1496ff"/><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9 0 0-39.3-4.7-41.5 4.8 0-.5.7-6.3 5.3-10.7 5-4.8 42-34.8 41.4-32z" fill="#1284ea"/><path d="m1 53.1v2.2c.4-1.7 1.1-2.9 2.5-4.8 2.9-3.7 7.6-4.7 9.5-4.9 9.6-1.3 23.8-2.8 38.1-3.2 25.3-.8 42 1.3 42 1.3l35.5-33.7s-18.6-3.5-39.8-6c-13.9-1.7-26.1-2.6-33-3-.5 0-5.4-.6-10 3.8-5 4.8-30.4 28.9-40.6 38.6-4.6 4.4-4.2 9.3-4.2 9.7z" fill="#b4dc00"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4-25.3.8-42.1-1.3-42.1-1.3l-35.5 33.8s18.8 3.7 40 6.1c13 1.5 24.5 2.3 31.5 2.7.5 0 1.3-.4 1.8-.4s5.4-.9 10-5.3c5-4.8 35.2-39.3 32.4-39z" fill="#6f2da8"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4 0 0 2.7 39.5-6.8 41.2.5 0 7-.3 11.6-4.7 5-4.8 36.1-40.2 33.3-39.9z" fill="#591f91"/><path d="m84.5 141c-.7 0-1.4-.1-2.2-.1 1.8-.3 3-.9 4.9-2.3 3.8-2.7 5-7.4 5.4-9.3 1.7-9.5 4-23.6 5.1-37.9 2-25.2.8-42 .8-42l35.5-33.8s2.6 18.8 4.1 40.1c.9 13.9 1.2 26.2 1.3 33 0 .5.4 5.4-4.2 9.8-5 4.8-30.4 29-40.5 38.7-4.8 4.4-9.7 3.8-10.2 3.8z" fill="#73be28"/></g></svg>
+        <span class="brand-rule" aria-hidden="true"></span>
+        <span class="brand-team">Business Insights</span>
       </div>
       <div class="hdr-right">
+        <div class="kind">Trending Report</div>
         <div class="name">{{FRONTEND_NAME}}</div>
         <div class="env">{{ENVIRONMENT_NAME}}</div>
-        <div class="range">{{DATE_RANGE_LABEL}}</div>
+        <div class="meta">{{DATE_RANGE_LABEL}}</div>
       </div>
     </header>
-    <div class="accent-line"></div>
+    <div class="page-title">
+      <h2>Core Web Vitals</h2>
+      <p class="lede">Current status against Google's thresholds, and the weekly trend across the period. Each chart is scaled to its own thresholds — the dashed rules — so height means severity, not milliseconds</p>
+    </div>
     <div class="content">
-      <div class="chart-card" style="flex: 1;">
-        <div class="chart-title">Core Web Vitals - Monthly</div>
-        <div class="flex-bars-wrap" id="table-cwvMonthly"></div>
-      </div>
-      <div class="chart-card" style="flex: 1;">
-        <div class="chart-title">Core Web Vitals - Historical</div>
-        <div class="chart-body"><canvas id="chart-cwvWeekly"></canvas></div>
+      <div class="metric-grid" id="cwv-status-row"></div>
+      <div class="cwv-charts-row">
+        <section class="panel">
+          <h3 class="panel-title">LCP — weekly</h3>
+          <div class="chart-body"><canvas id="chart-cwvWeeklyLcp"></canvas></div>
+          <div class="chart-legend" id="legend-cwvWeeklyLcp"></div>
+        </section>
+        <section class="panel">
+          <h3 class="panel-title">INP — weekly</h3>
+          <div class="chart-body"><canvas id="chart-cwvWeeklyInp"></canvas></div>
+          <div class="chart-legend" id="legend-cwvWeeklyInp"></div>
+        </section>
+        <section class="panel">
+          <h3 class="panel-title">CLS — weekly</h3>
+          <div class="chart-body"><canvas id="chart-cwvWeeklyCls"></canvas></div>
+          <div class="chart-legend" id="legend-cwvWeeklyCls"></div>
+        </section>
       </div>
     </div>
     <footer class="ftr">
@@ -420,23 +834,24 @@
   <!-- ── Page 4: Browser Performance ─────────────────────────────────── -->
   <section class="page" data-page="4">
     <header class="hdr">
-      <div class="hdr-left"><span class="brand"><!-- brand --></span></div>
-      <div class="hdr-center">
-        <div class="kind">Trending</div>
-        <div class="section">Browser Performance</div>
+      <div class="hdr-left">
+        <svg class="dt-logo" viewBox="0 0 800 142" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Dynatrace"><g fill="currentColor"><path d="m578.6 37.2h-18.4c-5.2 0-8.8 1-11 3.2-2.2 2.1-3.3 5.8-3.3 10.8v63.6h-11v-64.4c.1-4.9.9-10.2 3.5-14.2 4.7-7.5 13.7-8.9 20.4-8.9h19.9v9.9z"/><path d="m507.6 104.8c-5.2 0-8.8-1-11-3.2-2.2-2.1-3.3-5.6-3.3-10.6v-53.8h23.1v-9.9h-23.1v-26.3h-11v90.6c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h19.9v-9.9z"/><path d="m219.3 1v26.2h-23.1c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h10.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2v-90.7zm-3.3 100.7c-2.2 2.1-5.8 3.2-11 3.2h-10c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-28.9c0-4.1 1.4-9.4 5.5-13.4 3.5-3.4 9.1-6 18.2-6h24.2v53.9c.1 4.9-1 8.4-3.2 10.6z"/><path d="m678.2 43.2c3.5-3.4 9.1-6 18.2-6h26.5v-9.9h-25.4c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h25.4v-9.9h-26.5c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-29c0-4.1 1.4-9.5 5.5-13.4z"/><path d="m470.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m652.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m317.8 27.2h-11.5l-27.9 72.6-27.9-72.6h-11.4l33.6 87.5-10.1 26.3h11.5z"/><path d="m392.2 56.9c0-1.2 0-12.5-8-20.4-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v57.9h11v-58.2c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v58.2h11c0-4.5 0-56.5 0-57.9z"/><path d="m791 36.5c-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v28.2c0 1.2 0 12.5 8 20.4 5.1 5 13.2 9.1 26.4 9.3h26v-10h-25.4c-8.7-.1-15.2-2.7-18.6-6-4-4-5.4-9.3-5.4-13.4v-10.3h59v-18.2c.1-1.2.1-12.5-8-20.4zm-50.9 28.7v-8.6c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v8.6z"/></g><g><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9-2.1 25.2-.8 42.1-.8 42.1l-35.5 33.7s-2.7-18.9-4.1-40.2c-.8-13.2-1.1-24.8-1.1-31.8 0-.4.2-.8.2-1.2 0-.5.6-5.2 5.2-9.6 5-4.8 41.9-33.7 41.3-30.9z" fill="#1496ff"/><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9 0 0-39.3-4.7-41.5 4.8 0-.5.7-6.3 5.3-10.7 5-4.8 42-34.8 41.4-32z" fill="#1284ea"/><path d="m1 53.1v2.2c.4-1.7 1.1-2.9 2.5-4.8 2.9-3.7 7.6-4.7 9.5-4.9 9.6-1.3 23.8-2.8 38.1-3.2 25.3-.8 42 1.3 42 1.3l35.5-33.7s-18.6-3.5-39.8-6c-13.9-1.7-26.1-2.6-33-3-.5 0-5.4-.6-10 3.8-5 4.8-30.4 28.9-40.6 38.6-4.6 4.4-4.2 9.3-4.2 9.7z" fill="#b4dc00"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4-25.3.8-42.1-1.3-42.1-1.3l-35.5 33.8s18.8 3.7 40 6.1c13 1.5 24.5 2.3 31.5 2.7.5 0 1.3-.4 1.8-.4s5.4-.9 10-5.3c5-4.8 35.2-39.3 32.4-39z" fill="#6f2da8"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4 0 0 2.7 39.5-6.8 41.2.5 0 7-.3 11.6-4.7 5-4.8 36.1-40.2 33.3-39.9z" fill="#591f91"/><path d="m84.5 141c-.7 0-1.4-.1-2.2-.1 1.8-.3 3-.9 4.9-2.3 3.8-2.7 5-7.4 5.4-9.3 1.7-9.5 4-23.6 5.1-37.9 2-25.2.8-42 .8-42l35.5-33.8s2.6 18.8 4.1 40.1c.9 13.9 1.2 26.2 1.3 33 0 .5.4 5.4-4.2 9.8-5 4.8-30.4 29-40.5 38.7-4.8 4.4-9.7 3.8-10.2 3.8z" fill="#73be28"/></g></svg>
+        <span class="brand-rule" aria-hidden="true"></span>
+        <span class="brand-team">Business Insights</span>
       </div>
       <div class="hdr-right">
+        <div class="kind">Trending Report</div>
         <div class="name">{{FRONTEND_NAME}}</div>
         <div class="env">{{ENVIRONMENT_NAME}}</div>
-        <div class="range">{{DATE_RANGE_LABEL}}</div>
+        <div class="meta">{{DATE_RANGE_LABEL}}</div>
       </div>
     </header>
-    <div class="accent-line"></div>
+    <div class="page-title">
+      <h2>Browser &amp; Device Performance</h2>
+      <p class="lede">Top browser × device combinations by visits. Each trend is plotted against its own good and poor thresholds (dashed), so height means severity and all panels compare directly</p>
+    </div>
     <div class="content">
-      <div class="chart-card" style="flex: 1; min-height: 0;">
-        <div class="chart-title">Browser Performance</div>
-        <div class="browser-perf-grid" id="browser-perf-grid"></div>
-      </div>
+      <div class="browser-perf-grid" id="browser-perf-grid"></div>
     </div>
     <footer class="ftr">
       <span>CONFIDENTIAL · FOR CUSTOMER USE ONLY</span>
@@ -447,252 +862,665 @@
 <script>
 const DATA = {{DATA_JSON}};
 
-// ── shared palette / helpers ──────────────────────────────────────────────
-const SERIES_COLOR = { sessions: "#7B61FF", userActions: "#00A98F", pageLoads: "#1D8AB7", lcp: "#F5A623", inp: "#1496ff", cls: "#73be28" };
-const STATUS_COLOR = { good: "#2ECC85", warn: "#F5A623", poor: "#E8345A" };
-const THRESHOLDS = { lcp: { good: 2500, poor: 4000 }, inp: { good: 200, poor: 500 }, cls: { good: 0.1, poor: 0.25 } };
-function statusColor(metric, value) {
-  const t = THRESHOLDS[metric];
-  if (value == null) return "#4a5568";
-  if (value <= t.good) return STATUS_COLOR.good;
-  if (value <= t.poor) return STATUS_COLOR.warn;
-  return STATUS_COLOR.poor;
+// ── tokens → JS ────────────────────────────────────────────────────────
+// cssVar() is for plain, theme-independent tokens (the font stack) —
+// getPropertyValue on a custom property returns its DECLARED TEXT, which is
+// fine for a font stack but not for a colour that might be a color-mix().
+//
+// Every OTHER colour in this file is either (a) drawn to a <canvas> by
+// Chart.js, which needs an actual resolved colour string handed to it in
+// JS, or (b) plain HTML/SVG that references a shared --rp-* token with a
+// bare var(--rp-series-1) written straight into a style attribute — for
+// (b), the browser's own cascade re-resolves that at paint time under
+// @media print, so it needs no JS help and is never read with
+// getComputedStyle at all (see renderTrafficTable, sparklineSvg).
+//
+// For (a) — bootstrapChartDefaults() and every Chart.js dataset colour —
+// the naive approach is to read the CURRENT theme's tokens with
+// getComputedStyle and rebuild on "beforeprint" when the theme switches.
+// That fails: instrumented directly, matchMedia("print").matches is still
+// false inside a beforeprint handler, and there is no later event that
+// fires after @media print actually applies but before Chrome captures the
+// page — so getComputedStyle() in ANY handler here would return the SCREEN
+// palette, baking dark ink into a light-printed PDF. ctVar() sidesteps the
+// cascade entirely: every canvas colour exists as an explicit pair at
+// :root, --ct-<name> and --ct-<name>-print (see <style>), so the caller
+// hands in which one it wants instead of asking. cssColor() still resolves
+// through a hidden probe element rather than a bare getPropertyValue,
+// because a couple of the --ct-* values remain color-mix()-shaped and
+// getPropertyValue would hand Chart.js that function's literal source text.
+function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+let _colorProbe = null;
+function cssColor(name) {
+  if (!_colorProbe) {
+    _colorProbe = document.createElement("span");
+    _colorProbe.style.display = "none";
+    document.body.appendChild(_colorProbe);
+  }
+  _colorProbe.style.color = `var(${name})`;
+  return getComputedStyle(_colorProbe).color;
 }
-Chart.defaults.color = "#b1b2d2";
-Chart.defaults.borderColor = "rgba(255,255,255,0.08)";
-Chart.defaults.font.family = "DynatraceFlow, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif";
-Chart.defaults.animation = false;
-Chart.defaults.plugins.legend.labels.boxWidth = 10;
-Chart.defaults.plugins.legend.labels.font = { size: 10 };
+function ctVar(name, printing) { return cssColor(`--ct-${name}${printing ? "-print" : ""}`); }
 
-function renderKpis(kpis) {
-  const row = document.getElementById("kpi-row");
-  if (!row || !kpis) return;
-  row.innerHTML = kpis.map(k => {
-    const positive = k.change != null && (k.lowerIsBetter ? k.change < 0 : k.change > 0);
-    const neutral = k.change == null || k.change === 0;
-    const cls = neutral ? "neutral" : positive ? "up" : "down";
-    const arrow = k.change == null ? "" : (k.change >= 0 ? "▲" : "▼");
-    const changeHtml = k.change == null ? "" :
-      `<div class="kpi-change ${cls}">${arrow} ${Math.abs(k.change).toFixed(1)}% vs prior month</div>`;
-    return `<div class="kpi-tile" style="--kpi-color:${k.color}">
-      <div class="kpi-label">${k.label}</div>
-      <div class="kpi-value">${k.value}</div>
-      ${changeHtml}
-    </div>`;
-  }).join("");
+const CWV_THRESHOLDS = { lcp: { good: 2500, poor: 4000 }, inp: { good: 200, poor: 500 }, cls: { good: 0.1, poor: 0.25 } };
+function ratingFor(key, value) {
+  const t = CWV_THRESHOLDS[key];
+  if (value == null || !t) return "none";
+  if (value <= t.good) return "good";
+  if (value <= t.poor) return "needs-improvement";
+  return "poor";
 }
+// Position a value on its metric's own threshold scale, as a percentage of
+// the track. Anchors are fixed so every tile agrees: 0 -> 0%, good -> 40%,
+// poor -> 70%, twice the poor boundary -> 100% (clamped beyond that).
+// Ported unchanged from full-page-analysis/assets/report.html.tmpl.
+function thresholdPos(value, t) {
+  if (value == null || !(t.good > 0) || !(t.poor > t.good)) return null;
+  const v = Math.max(0, value);
+  if (v <= t.good) return 40 * (v / t.good);
+  if (v <= t.poor) return 40 + 30 * ((v - t.good) / (t.poor - t.good));
+  return Math.min(100, 70 + 30 * ((v - t.poor) / t.poor));
+}
+// Strato's status vocabulary is shape-first (circle+check / triangle+! /
+// diamond+X) so colour is never the sole carrier of a verdict. Reproduced
+// as inline SVG (currentColor) because this report ships as one
+// standalone file with no Strato runtime to import icons from.
+const RATING_SHAPES = {
+  good:
+    `<svg width="9" height="9" viewBox="0 0 12 12" aria-hidden="true">` +
+    `<circle cx="6" cy="6" r="5.25" fill="none" stroke="currentColor" stroke-width="1.5"/>` +
+    `<path d="M3.5 6.2 5.2 7.9 8.6 4.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  "needs-improvement":
+    `<svg width="9" height="9" viewBox="0 0 12 12" aria-hidden="true">` +
+    `<path d="M6 1.1 11.4 10.6H0.6Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>` +
+    `<path d="M6 4.5v2.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>` +
+    `<circle cx="6" cy="8.9" r=".85" fill="currentColor"/></svg>`,
+  poor:
+    `<svg width="9" height="9" viewBox="0 0 12 12" aria-hidden="true">` +
+    `<path d="M6 .9 11.1 6 6 11.1.9 6Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>` +
+    `<path d="M4.3 4.3 7.7 7.7M7.7 4.3 4.3 7.7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
+  none:
+    `<svg width="9" height="9" viewBox="0 0 12 12" aria-hidden="true">` +
+    `<circle cx="6" cy="6" r="5.25" fill="none" stroke="currentColor" stroke-width="1.5"/>` +
+    `<path d="M3.2 8.8 8.8 3.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
+};
+const RATING_WORDS = { good: "Good", "needs-improvement": "Needs work", poor: "Poor", none: "Not measured" };
 
-// ── bar-in-cell table renderer ────────────────────────────────────────────
 function compactFmt(n) {
   if (n == null || Number.isNaN(n)) return "—";
   if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(1) + "M";
   if (Math.abs(n) >= 1e3) return (n / 1e3).toFixed(1) + "k";
   return Math.round(n).toString();
 }
-
-function flexBarsHtml(rows, columns, compact) {
-  const compactClass = compact ? " flex-bars--compact" : "";
-  const maxByCol = {};
-  columns.forEach(c => {
-    maxByCol[c.key] = Math.max(0, ...rows.map(r => (typeof r.values[c.key] === "number" ? r.values[c.key] : 0)));
-  });
-  const header = `<div class="flex-bars-header">
-    <div class="flex-bars-spacer"></div>
-    ${columns.map(c => `<div class="flex-bars-col-hdr">${c.label}</div>`).join("")}
-  </div>`;
-  const body = rows.map((r, ri) => {
-    const isCurrent = ri === rows.length - 1;
-    const cells = columns.map(c => {
-      if (c.key === "__device") {
-        const pct = r.values.__device;
-        if (pct == null) return `<div class="flex-bars-cell"><div class="flex-bars-track"><span class="flex-bars-value">—</span></div></div>`;
-        return `<div class="flex-bars-cell"><div class="flex-bars-track"><div class="flex-bars-fill" style="width:${Math.max(pct * 0.72, 2)}%;background:#7B61FF"></div><span class="flex-bars-value">${Math.round(pct)}%</span></div></div>`;
-      }
-      const v = r.values[c.key];
-      if (v == null) return `<div class="flex-bars-cell"><div class="flex-bars-track"><span class="flex-bars-value">—</span></div></div>`;
-      const max = maxByCol[c.key];
-      const pct = max > 0 ? Math.max(2, (v / max) * 72) : 0;
-      const color = c.metric ? statusColor(c.metric, v) : c.color;
-      const text = c.format ? c.format(v) : v;
-      return `<div class="flex-bars-cell"><div class="flex-bars-track"><div class="flex-bars-fill" style="width:${pct}%;background:${color}"></div><span class="flex-bars-value">${text}</span></div></div>`;
-    }).join("");
-    return `<div class="flex-bars-row${isCurrent ? " flex-bars-row--current" : ""}"><div class="flex-bars-row-label">${r.label}</div>${cells}</div>`;
-  }).join("");
-  return `<div class="flex-bars${compactClass}">${header}<div class="flex-bars-body">${body}</div></div>`;
-}
 function fmtMsClient(ms) {
   if (ms == null || Number.isNaN(ms)) return "—";
   return ms >= 1000 ? (ms / 1000).toFixed(1) + "s" : Math.round(ms) + "ms";
 }
-function barTableHtml(rows, columns) {
-  const maxByCol = {};
-  columns.forEach((c) => {
-    maxByCol[c.key] = Math.max(0, ...rows.map((r) => (typeof r.values[c.key] === "number" ? r.values[c.key] : 0)));
-  });
-  const head = `<tr><th></th>${columns.map((c) => `<th>${c.label}</th>`).join("")}</tr>`;
-  const body = rows
-    .map((r, ri) => {
-      const cells = columns
-        .map((c) => {
-          const v = r.values[c.key];
-          if (v == null) return `<td>—</td>`;
-          const max = maxByCol[c.key];
-          const pct = max > 0 ? Math.max(2, (v / max) * 100) : 0;
-          const color = c.metric ? statusColor(c.metric, v) : c.color;
-          const text = c.format ? c.format(v) : v;
-          return `<td><div class="bar-cell"><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div><span class="bar-value">${text}</span></div></td>`;
-        })
-        .join("");
-      const isCur = ri === rows.length - 1;
-      return `<tr${isCur ? ` class="current-month"` : ""}><td class="row-label">${r.label}</td>${cells}</tr>`;
-    })
-    .join("");
-  return `<table class="bar-table"><thead>${head}</thead><tbody>${body}</tbody></table>`;
+function fmtCls(v) { return v == null || Number.isNaN(v) ? "—" : v.toFixed(2); }
+
+// ── the shared metric-tile, used both compact (page 1 KPI row) and full
+// (page 3 status row) — the CSS context (.kpi-row vs .metric-grid) is what
+// hides the name/bounds/tail rows in the compact case, not a second
+// template, so the two can never drift apart. ─────────────────────────────
+const CWV_METRICS = [
+  { key: "lcp", label: "LCP", name: "Largest Contentful Paint", fmt: fmtMsClient },
+  { key: "inp", label: "INP", name: "Interaction to Next Paint", fmt: fmtMsClient },
+  { key: "cls", label: "CLS", name: "Cumulative Layout Shift", fmt: fmtCls },
+];
+function metricTile(def, series, i) {
+  const value = series[def.key][i];
+  const prior = i > 0 ? series[def.key][i - 1] : null;
+  const rating = ratingFor(def.key, value);
+  const t = CWV_THRESHOLDS[def.key];
+  const pos = thresholdPos(value, t);
+  const mark = pos == null ? "" : `<span class="mt-mark mt-mark-p75" style="left:${pos.toFixed(2)}%" title="${def.fmt(value)}"></span>`;
+  const delta = prior != null && prior !== 0 && value != null ? ((value - prior) / prior) * 100 : null;
+  const deltaText = delta == null ? "—" : `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}%`;
+  return `<article class="metric-tile" data-rating="${rating}">
+    <div class="mt-head"><span class="mt-abbr">${def.label}</span>
+      <span class="status" data-rating="${rating}">${RATING_SHAPES[rating]}${RATING_WORDS[rating]}</span></div>
+    <div class="mt-name">${def.name}</div>
+    <div class="mt-value">${def.fmt(value)}<span class="mt-value-tag">p75</span></div>
+    <div class="mt-scale"><div class="mt-track">
+      <span class="mt-zone mt-zone-good"></span><span class="mt-zone mt-zone-ni"></span><span class="mt-zone mt-zone-poor"></span>
+    </div>${mark}</div>
+    <div class="mt-bounds"><span>good &le; ${def.fmt(t.good)}</span><span>poor &gt; ${def.fmt(t.poor)}</span></div>
+    <div class="mt-tail"><span>prior <b>${def.fmt(prior)}</b></span><span>&Delta; <b>${deltaText}</b></span></div>
+  </article>`;
 }
 
+function renderKpis() {
+  const row = document.getElementById("kpi-row");
+  if (!row) return;
+  const plainHtml = (DATA.kpis || []).map((k) => {
+    const neutral = k.change == null || k.change === 0;
+    const positive = k.lowerIsBetter ? k.change < 0 : k.change > 0;
+    const cls = neutral ? "neutral" : positive ? "good" : "bad";
+    // "vs prior month" wrapped the pill onto two lines at kpi-tile width —
+    // a wrapped pill reads as broken, and "MoM" is the standard shorthand
+    // for the same comparison in this deck's own audience.
+    const changeHtml = k.change == null ? "" :
+      `<div class="kpi-change ${cls}">${k.change >= 0 ? "▲" : "▼"} ${Math.abs(k.change).toFixed(1)}% MoM</div>`;
+    return `<div class="kpi-tile"><div class="kpi-label">${k.label}</div><div class="kpi-value">${k.value}</div>${changeHtml}</div>`;
+  }).join("");
+  const cwv = DATA.cwvMonthly;
+  const i = cwv && cwv.labels.length ? cwv.labels.length - 1 : -1;
+  const cwvHtml = i >= 0 ? CWV_METRICS.map((def) => metricTile(def, cwv, i)).join("") : "";
+  row.innerHTML = plainHtml + cwvHtml;
+}
+
+function renderCwvStatusRow() {
+  const el = document.getElementById("cwv-status-row");
+  if (!el) return;
+  const cwv = DATA.cwvMonthly;
+  if (!cwv || !cwv.labels.length) { el.innerHTML = `<p class="empty-note">No Core Web Vitals data for this period.</p>`; return; }
+  const i = cwv.labels.length - 1;
+  el.innerHTML = CWV_METRICS.map((def) => metricTile(def, cwv, i)).join("");
+}
+
+// ── flex-bars (page 2) ──────────────────────────────────────────────────
+// Bars below carry NO colour of their own — the shared layer's own rule for
+// .bar-fill ("neutral ink unless the cell is graded against a threshold, in
+// which case the renderer sets --bar-accent from the rating") applies here
+// unchanged. None of these four columns is a grading (the header already
+// names which column is which), so a per-column hue would be decorative,
+// not informative — exactly what the monthly deck's matching panel avoids,
+// and the two decks read as one system only if neither invents a colour
+// meaning the other doesn't have. Leaving `color` unset lets .bar-fill fall
+// through to its default, var(--bar-accent, var(--text-subdued)).
 function renderTrafficTable() {
   const d = DATA.trafficMonthly;
   const el = document.getElementById("table-trafficMonthly");
-  if (!d || !el) return;
-  const rows = d.labels.map((label, i) => ({
-    label,
-    values: {
-      sessions: d.sessions[i],
-      userActions: d.userActions[i],
-      pageLoads: d.pageLoads[i],
-      ...(d.pctDesktop ? { __device: d.pctDesktop[i] } : {}),
+  if (!el) return;
+  if (!d || !d.labels.length) { el.innerHTML = `<p class="empty-note">No traffic data for this period.</p>`; return; }
+  const columns = [
+    { key: "sessions", label: "Sessions" },
+    { key: "pageLoads", label: "Navigations" },
+    { key: "userActions", label: "XHR Requests" },
+  ];
+  // % Desktop is a share of a whole, not a magnitude, so it keeps the
+  // shared "outlined" (coverage-meter) treatment — same reason the monthly
+  // deck uses the thin bordered track for its own proportional columns.
+  if (d.pctDesktop) columns.push({ key: "pctDesktop", label: "% Desktop", max: 100, outlined: true, fmt: (v) => Math.round(v) + "%" });
+  const maxByCol = {};
+  columns.forEach((c) => { maxByCol[c.key] = c.max || Math.max(0, ...(d[c.key] || []).map((v) => (typeof v === "number" ? v : 0))); });
+  const header = `<div class="flex-bars-header"><div class="flex-bars-spacer"></div>${columns.map((c) => `<div class="flex-bars-col-hdr">${c.label}</div>`).join("")}</div>`;
+  const body = d.labels.map((label, i) => {
+    const isCurrent = i === d.labels.length - 1;
+    const cells = columns.map((c) => {
+      const v = d[c.key] ? d[c.key][i] : null;
+      const trackClass = c.outlined ? "bar-track outlined" : "bar-track";
+      if (v == null) return `<div class="flex-bars-cell"><div class="bar-cell"><div class="${trackClass}"></div><span class="bar-value">—</span></div></div>`;
+      const max = maxByCol[c.key];
+      const pct = max > 0 ? Math.max(2, (v / max) * 100) : 0;
+      const text = c.fmt ? c.fmt(v) : compactFmt(v);
+      return `<div class="flex-bars-cell"><div class="bar-cell"><div class="${trackClass}"><div class="bar-fill" style="width:${pct}%"></div></div><span class="bar-value">${text}</span></div></div>`;
+    }).join("");
+    return `<div class="flex-bars-row${isCurrent ? " current" : ""}"><div class="flex-bars-row-label">${label}</div>${cells}</div>`;
+  }).join("");
+  el.innerHTML = `<div class="flex-bars">${header}<div class="flex-bars-body">${body}</div></div>`;
+}
+
+// ── opaque canvas backing ─────────────────────────────────────────────
+// Chrome exports every <canvas> into a PDF as a vector transparency-group
+// form XObject. Poppler (pdftoppm, and every earlier render-and-Read check
+// in this file's history) composites that correctly, but Apple's
+// CoreGraphics — what macOS Preview and Quick Look use — renders the
+// group's region as FULLY TRANSPARENT instead, which paints as a white
+// hole wherever the group's bounding box lands (not necessarily over the
+// chart itself). Page 4's sparklines are plain SVG, not canvas, and are
+// unaffected; every Chart.js canvas on page 3 is.
+//
+// The fix is two parts, both required:
+//   1. Force an opaque backing store before Chart.js ever calls
+//      getContext("2d") itself — a canvas's context creation options are
+//      fixed on the FIRST getContext() call and ignored on every call
+//      after, so grabbing it here with {alpha:false} first is what makes
+//      Chart.js's own later getContext("2d") return the same opaque
+//      context rather than a transparent one. This alone removes the hole.
+//   2. An opaque context defaults its backing to BLACK, not to this deck's
+//      panel colour, so something has to paint over it every draw. That
+//      has to be a beforeDraw plugin rather than a one-off fill after
+//      chart creation, so it survives Chart.js's own resize/redraw passes
+//      (e.g. the beforeprint rebuild). It must use source-over (the
+//      canvas default) and run BEFORE the chart draws its own series —
+//      destination-over has nothing transparent left to composite under
+//      once the context is opaque, and paints the whole canvas over the
+//      series instead.
+// The fill colour is threaded through as a per-chart plugin option
+// (opts.bg, set from ctVar("panel-bg", printing) in baseChartOptions) —
+// reading getComputedStyle inside the plugin itself would hit the exact
+// beforeprint/dark-palette trap ctVar() exists to avoid.
+function forceOpaqueCanvases() {
+  document.querySelectorAll("canvas").forEach((c) => c.getContext("2d", { alpha: false }));
+}
+Chart.register({
+  id: "opaqueBacking",
+  beforeDraw(chart, args, opts) {
+    const ctx = chart.ctx;
+    ctx.save();
+    ctx.fillStyle = opts.bg;
+    ctx.fillRect(0, 0, chart.width, chart.height);
+    ctx.restore();
+  },
+});
+// Draws the good and poor boundary rules across a semantic-scale chart (see
+// renderCwvWeeklyCharts). Registered AFTER opaqueBacking so it draws over
+// that fill, and hooked on beforeDraw so both land under the series.
+// Colours arrive as a per-chart plugin option for the same reason
+// opaqueBacking's do: reading the cascade inside a plugin hits the
+// beforeprint dark-palette trap that ctVar() exists to dodge.
+//
+// Filled good/NI/poor bands were tried here and dropped. The panel is a dark
+// blue-purple, so at any alpha quiet enough to stay behind the series the
+// base dominates the mix and the three bands come out slate, brown and mauve
+// — related muds rather than teal, amber and red. Raising the fill until the
+// hues read takes roughly 30%, by which point the backdrop competes with the
+// 2px series on top of it. A dashed rule carries the same boundary at full
+// strength for a fraction of the ink, and matches the idiom page 4 already
+// uses for the identical boundaries.
+Chart.register({
+  id: "thresholdLines",
+  beforeDraw(chart, args, opts) {
+    if (!opts || !opts.rules || !chart.chartArea) return;
+    const { top, bottom, left, right } = chart.chartArea;
+    const y = chart.scales.y;
+    const ctx = chart.ctx;
+    const clampY = (v) => Math.max(top, Math.min(bottom, y.getPixelForValue(v)));
+    ctx.save();
+    opts.rules.forEach(({ at, color }) => {
+      const yAt = clampY(at);
+      ctx.beginPath();
+      ctx.setLineDash([4, 3]);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.moveTo(left, yAt + .5);
+      ctx.lineTo(right, yAt + .5);
+      ctx.stroke();
+    });
+    ctx.restore();
+  },
+});
+
+// ── weekly CWV: three small multiples, one metric each, never a shared
+// axis (see the page 3 comment in <style> for why a shared LCP+INP axis
+// didn't survive contact with the data, and the dataviz skill's "one axis"
+// rule for why a second y-axis on one canvas isn't the fix either). Legend
+// is hand-built HTML (shared .chart-legend/.item/.swatch/.dash), not
+// Chart.js's built-in legend plugin — Chart.js draws a dashed dataset's
+// legend swatch as a small filled+bordered box, which reads as a hatch
+// pattern rather than as the dashed line it represents; the shared .dash
+// element is the actual mark redrawn small. Being plain HTML it also picks
+// up var(--rp-series-N) directly with no printing-flag plumbing needed. */
+function baseChartOptions(yTitle, printing) {
+  const grid = ctVar("grid", printing);
+  const axisText = ctVar("axis-text", printing);
+  return {
+    responsive: true, maintainAspectRatio: false,
+    interaction: { mode: "index", intersect: false },
+    animation: false,
+    scales: {
+      x: { grid: { color: grid }, ticks: { color: axisText, font: { size: 10 } } },
+      y: { grid: { color: grid }, ticks: { color: axisText, font: { size: 10 } },
+           title: { display: true, text: yTitle, color: axisText, font: { size: 10 } } },
     },
-  }));
-  const columns = [
-    { key: "sessions", label: "Sessions", color: SERIES_COLOR.sessions, format: compactFmt },
-    { key: "userActions", label: "XHR Requests", color: SERIES_COLOR.userActions, format: compactFmt },
-    { key: "pageLoads", label: "Navigations", color: SERIES_COLOR.pageLoads, format: compactFmt },
-    ...(d.pctDesktop ? [{ key: "__device", label: "Device" }] : []),
-  ];
-  el.innerHTML = flexBarsHtml(rows, columns, false);
+    // opaqueBacking (registered once, below) needs the printing-correct
+    // panel colour per chart, not read off the cascade at draw time — see
+    // its registration comment for why.
+    plugins: { legend: { display: false }, opaqueBacking: { bg: ctVar("panel-bg", printing) } },
+  };
 }
-
-function renderCwvTable() {
-  const d = DATA.cwvMonthly;
-  const el = document.getElementById("table-cwvMonthly");
-  if (!d || !el) return;
-  const rows = d.labels.map((label, i) => ({ label, values: { lcp: d.lcp[i], inp: d.inp[i], cls: d.cls[i] } }));
-  const columns = [
-    { key: "lcp", label: "LCP p75", metric: "lcp", format: fmtMsClient },
-    { key: "inp", label: "INP p75", metric: "inp", format: fmtMsClient },
-    { key: "cls", label: "CLS p75", metric: "cls", format: (v) => v.toFixed(2) },
-  ];
-  el.innerHTML = flexBarsHtml(rows, columns, true);
+// ── the semantic threshold scale ─────────────────────────────────────────
+// These charts do NOT plot milliseconds. They plot thresholdPos() — the same
+// 0/40/70/100 anchoring the metric tiles and the page-4 sparklines use, where
+// good ends at 40, poor begins at 70, and twice the poor boundary is 100.
+//
+// Two earlier attempts failed on the same axis, in opposite directions. Left
+// to autoscale over the raw values plus flat threshold datasets, Chart.js
+// fits every dataset, so a "poor > 4.0s" line drags a chart whose data lives
+// at 700–1300ms onto a 0–4,000ms axis and irons the real trend flat. Scaling
+// to the data instead fixed the trend but pushed both LCP thresholds off the
+// canvas, so the one thing the page exists to answer — is this good? — had to
+// be read out of a legend note.
+//
+// Normalising the DATA rather than the axis settles both: both boundaries are
+// always on screen at the same place in every chart, the series keeps its
+// shape wherever it sits, and thresholdPos()'s own clamp at 100 keeps an
+// outlier (this tenant's 2,004ms INP week) inside the plot instead of
+// stretching it. The cost is that y is no longer a linear ms ramp, so the
+// ticks are the BOUNDARIES themselves — 0, good, poor, 2× poor — which is
+// what a reader actually wants to locate a point against. Raw values are not
+// lost: the tooltip prints the real measurement, and the metric tiles above
+// print the p75 figure.
+const ZONE_TICKS = [0, 40, 70, 100];
+function semanticScale(metric, series, printing) {
+  const t = CWV_THRESHOLDS[metric];
+  const fmt = CWV_METRICS.find((m) => m.key === metric).fmt;
+  // Tick -> the real value that position represents, so the axis reads in the
+  // metric's own unit even though the spacing is semantic.
+  const atTick = { 0: 0, 40: t.good, 70: t.poor, 100: t.poor * 2 };
+  return {
+    data: (series || []).map((v) => (typeof v === "number" ? thresholdPos(v, t) : null)),
+    ticks: ZONE_TICKS,
+    tickLabel: (v) => (atTick[v] === undefined ? "" : fmt(atTick[v])),
+    // Chart.js hands the tooltip the normalised y; the reader needs the
+    // measurement, so it is looked back up out of the source series.
+    rawAt: (i) => fmt((series || [])[i]),
+    // Both boundaries are drawn on every chart whether or not the data goes
+    // anywhere near them — "nowhere close to poor" is itself the answer the
+    // page exists to give, and it only reads if the line is there to be far
+    // from.
+    rules: [
+      { at: 40, color: ctVar("threshold-good", printing) },
+      { at: 70, color: ctVar("threshold-poor", printing) },
+    ],
+  };
 }
-
-function renderCwvWeekly() {
+// Legend items: [{ label, swatch }, { label, dash }].
+function legendHtml(items) {
+  return items.map((it) => {
+    if (it.dash) return `<span class="item"><span class="dash" style="border-top-color:var(${it.dash})"></span>${it.label}</span>`;
+    return `<span class="item"><span class="swatch" style="background:var(${it.swatch})"></span>${it.label}</span>`;
+  }).join("");
+}
+// Tracked so beforeprint can destroy and rebuild rather than layer a second
+// canvas draw on top of the first with the other theme's colours baked in.
+let lcpChart = null, inpChart = null, clsChart = null;
+function renderCwvWeeklyCharts(printing) {
   const d = DATA.cwvWeekly;
-  const el = document.getElementById("chart-cwvWeekly");
-  if (!d || !el) return;
-  new Chart(el, {
-    type: "line",
-    data: {
-      labels: d.labels,
-      datasets: [
-        { label: "LCP (ms)", data: d.lcp, borderColor: SERIES_COLOR.lcp, backgroundColor: SERIES_COLOR.lcp, yAxisID: "ms", tension: 0.35, pointRadius: 0 },
-        { label: "INP (ms)", data: d.inp, borderColor: SERIES_COLOR.inp, backgroundColor: SERIES_COLOR.inp, yAxisID: "ms", tension: 0.35, pointRadius: 0 },
-        { label: "CLS", data: d.cls, borderColor: SERIES_COLOR.cls, backgroundColor: SERIES_COLOR.cls, yAxisID: "cls", tension: 0.35, pointRadius: 0 },
-      ],
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      scales: {
-        ms: { type: "linear", position: "left", title: { display: true, text: "ms" } },
-        cls: { type: "linear", position: "right", grid: { drawOnChartArea: false }, title: { display: true, text: "CLS" } },
-      },
-    },
-  });
+  const els = {
+    lcp: document.getElementById("chart-cwvWeeklyLcp"),
+    inp: document.getElementById("chart-cwvWeeklyInp"),
+    cls: document.getElementById("chart-cwvWeeklyCls"),
+  };
+  if (!els.lcp || !els.inp || !els.cls) return;
+  forceOpaqueCanvases();
+  if (lcpChart) { lcpChart.destroy(); lcpChart = null; }
+  if (inpChart) { inpChart.destroy(); inpChart = null; }
+  if (clsChart) { clsChart.destroy(); clsChart = null; }
+  if (!d || !d.labels.length) {
+    Object.values(els).forEach((el) => { el.parentElement.innerHTML = `<p class="empty-note">No weekly data for this period.</p>`; });
+    return;
+  }
+  // One builder for all three: the metrics differ only in which series they
+  // read, which accent they take and which thresholds scale them.
+  const build = (canvas, metric, label, seriesVar) => {
+    const s = semanticScale(metric, d[metric], printing);
+    const o = baseChartOptions("vs thresholds", printing);
+    o.scales.y = Object.assign(o.scales.y, {
+      min: 0, max: 100,
+      ticks: Object.assign({}, o.scales.y.ticks, {
+        // An explicit tick list, because the positions that matter are the
+        // boundaries, not an even division of a scale that isn't linear.
+        callback: (v) => s.tickLabel(v),
+        autoSkip: false,
+      }),
+      afterBuildTicks: (axis) => { axis.ticks = s.ticks.map((v) => ({ value: v })); },
+    });
+    o.plugins = Object.assign({}, o.plugins, {
+      thresholdLines: { rules: s.rules },
+      tooltip: { callbacks: { label: (ctx) => `${label}: ${s.rawAt(ctx.dataIndex)}` } },
+    });
+    return new Chart(canvas, {
+      type: "line",
+      data: { labels: d.labels, datasets: [
+        { label, data: s.data, borderColor: ctVar(seriesVar, printing), backgroundColor: ctVar(seriesVar, printing), tension: .35, pointRadius: 0, borderWidth: 2, spanGaps: true },
+      ] },
+      options: o,
+    });
+  };
+  lcpChart = build(els.lcp, "lcp", "LCP", "series-1");
+  inpChart = build(els.inp, "inp", "INP", "series-2");
+  clsChart = build(els.cls, "cls", "CLS", "series-3");
+  // The two rules the chart draws, named with the boundary value they sit at.
+  const ruleLegend = (metric) => {
+    const t = CWV_THRESHOLDS[metric];
+    const fmt = CWV_METRICS.find((m) => m.key === metric).fmt;
+    return [
+      { label: `Good ≤ ${fmt(t.good)}`, dash: "--good" },
+      { label: `Poor > ${fmt(t.poor)}`, dash: "--critical" },
+    ];
+  };
+  document.getElementById("legend-cwvWeeklyLcp").innerHTML = legendHtml([{ label: "LCP", swatch: "--rp-series-1" }, ...ruleLegend("lcp")]);
+  document.getElementById("legend-cwvWeeklyInp").innerHTML = legendHtml([{ label: "INP", swatch: "--rp-series-2" }, ...ruleLegend("inp")]);
+  document.getElementById("legend-cwvWeeklyCls").innerHTML = legendHtml([{ label: "CLS", swatch: "--rp-series-3" }, ...ruleLegend("cls")]);
 }
 
+// ── browser panels (page 4): sparkline + status chips, see the page 4
+// comment in <style> for why this replaced the old per-month table. The
+// sparkline is plain SVG, so its stroke/fill is a literal var(--rp-series-1)
+// written into a style attribute (same reasoning as renderTrafficTable) —
+// no printing flag needed, the cascade already gets this right on its own.
+// The y axis is the metric's own THRESHOLD scale, not its data range — the
+// same 0/40/70/100 anchoring thresholdPos() gives the metric-tile track, so a
+// sparkline and a tile can never tell different stories about one number.
+// Scaling to the data instead (what this did first) makes every line fill the
+// panel whatever it holds: a 40ms LCP wobble and a 780ms INP collapse both
+// draw as full-height swings, and because each panel then sits on its own
+// invisible scale, four browsers side by side stop being comparable at all.
+// Anchored to thresholds, height means SEVERITY — healthy metrics lie flat
+// along the bottom, a regression visibly climbs past its poor rule — and
+// thresholdPos()'s own clamp at 100 keeps an extreme outlier inside the
+// viewBox instead of overflowing it.
+// The good and poor boundaries as two dashed rules, which is exactly how the
+// page 3 charts draw a threshold — same mark, same tokens, so the two pages
+// teach one visual language instead of two.
+// Filled good/NI/poor bands were the first attempt (the metric-tile track's
+// own idiom) and they did not survive being scaled up: an .mt-zone is 8px of
+// solid colour and IS the mark, whereas here the zones become three tall
+// blocks behind a line. Weak enough not to shout, teal and amber were
+// indistinguishable over the dark surface and the box read as "cool bottom,
+// warm top"; strong enough to tell apart, they mixed to brown and maroon and
+// became the loudest thing in the panel. Two hairlines carry the same
+// information — where the boundaries fall — and leave the series on top.
+function thresholdRules(plotTop, plotH) {
+  const plotBottom = plotTop + plotH;
+  return [[40, "good"], [70, "poor"]].map(([pct, name]) => {
+    const y = (plotBottom - (pct / 100) * plotH).toFixed(2);
+    return `<line class="bp-rule bp-rule-${name}" x1="0" y1="${y}" x2="100" y2="${y}" vector-effect="non-scaling-stroke"/>`;
+  }).join("");
+}
+function sparklineSvg(values, metricKey, colorVar, dotVar, label) {
+  const w = 100, h = 24, pad = 2;
+  const plotH = h - pad * 2;
+  const t = CWV_THRESHOLDS[metricKey];
+  const rules = thresholdRules(pad, plotH);
+  const empty = `<svg class="bp-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="${label || "Trend"}: not measured">${rules}</svg>`;
+  const nums = (values || []).map((v) => (typeof v === "number" ? v : null));
+  if (!t || nums.filter((v) => v != null).length < 2) return empty;
+  const step = (w - pad * 2) / (nums.length - 1);
+  const pts = nums.map((v, idx) => {
+    const pos = v == null ? null : thresholdPos(v, t);
+    if (pos == null) return null;
+    // thresholdPos runs 0 (perfect) → 100 (twice the poor boundary); SVG y
+    // grows downward, so it is inverted here to put "worse" nearer the top.
+    return [pad + idx * step, h - pad - (pos / 100) * plotH];
+  });
+  const path = pts.filter(Boolean).map((p) => p.join(",")).join(" ");
+  const last = pts[pts.length - 1];
+  // vector-effect="non-scaling-stroke" is load-bearing, not decoration: this
+  // svg's viewBox (100×24) gets stretched non-uniformly by preserveAspectRatio
+  // ="none" to fill whatever box .bp-spark ends up — now a fairly tall one,
+  // since bp-visits flexes to fill the panel's spare height (see the page 4
+  // comment in <style>). Without it, stroke-width scales with that stretch
+  // like everything else in the coordinate system, so the declared "2" was
+  // rendering roughly 4px tall: louder than the LCP/INP/CLS verdict chips
+  // underneath it, which are the actual point of the panel. With it, the
+  // declared width is the final on-screen width regardless of how the box
+  // is stretched — the same weight as the page 3 chart lines.
+  // The stroke is a neutral series colour while the end dot takes the rating
+  // accent: the verdict is the LATEST month's, but the line spans the whole
+  // period, so colouring the whole stroke by it would claim every earlier
+  // month shared that verdict. Callers that want one colour just omit dotVar.
+  const dot = last ? `<circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="1.5" style="fill:var(${dotVar || colorVar})"/>` : "";
+  return `<svg class="bp-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="${label || "Metric"} trend against its thresholds">${rules}
+    <polyline points="${path}" fill="none" style="stroke:var(${colorVar})" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>${dot}
+  </svg>`;
+}
+// The rating drives three things that must never disagree — the chip's hue,
+// its shape glyph and the sparkline's end dot — so all three read the accent
+// off this one map rather than each deciding for itself.
+const RATING_ACCENTS = { good: "--good", "needs-improvement": "--warning", poor: "--critical", none: "--text-subdued" };
+const BP_MIN_VISITS = 10;
+function latestMonth(p) { return (p.months || [])[(p.months || []).length - 1] || {}; }
 function renderBrowserPerfPanels() {
   const d = DATA.browserPerf;
   const el = document.getElementById("browser-perf-grid");
-  if (!d || !el || !d.panels) return;
-  const columns = [
-    { key: "visits", label: "Visits", color: SERIES_COLOR.sessions, format: compactFmt },
-    { key: "lcp", label: "LCP", metric: "lcp", format: fmtMsClient },
-    { key: "inp", label: "INP", metric: "inp", format: fmtMsClient },
-    { key: "cls", label: "CLS", metric: "cls", format: (v) => v.toFixed(2) },
-  ];
-  el.innerHTML = d.panels
-    .map((p) => {
-      if (p === null) return `<div class="browser-panel browser-panel--empty"></div>`;
-      const rows = p.months.map((m) => ({ label: m.label, values: { visits: m.visits, lcp: m.lcp, inp: m.inp, cls: m.cls } }));
-      return `<div class="browser-panel"><div class="browser-panel-title">${p.label}</div>${barTableHtml(rows, columns)}</div>`;
-    })
-    .join("");
+  if (!el) return;
+  // build-report.mjs pads panels to a fixed slot count with null entries
+  // (see its comment) — that padding suited the old fixed table grid;
+  // here a null slot would just be a blank dashed card that reads as a
+  // broken render, so real panels are laid out and the rest of the grid
+  // simply isn't drawn instead.
+  const all = (d && d.panels ? d.panels : []).filter((p) => p !== null);
+  // SKILL.md's long-tail rule: a combination with a handful of visits is a
+  // sparkline drawn through noise and three "not measured" chips, which reads
+  // as a broken panel rather than as a real finding. Drop them — but fall back
+  // to the unfiltered set rather than emptying the page, since on a genuinely
+  // low-traffic frontend every combination can sit under the floor.
+  const viable = all.filter((p) => (latestMonth(p).visits || 0) >= BP_MIN_VISITS);
+  const panels = viable.length ? viable : all;
+  if (!panels.length) { el.innerHTML = `<p class="empty-note">No browser/device data for this period.</p>`; return; }
+  el.innerHTML = panels.map((p) => {
+    const latest = latestMonth(p);
+    const rows = [["lcp", "LCP", fmtMsClient], ["inp", "INP", fmtMsClient], ["cls", "CLS", fmtCls]]
+      .map(([key, label, fmt]) => {
+        const rating = ratingFor(key, latest[key]);
+        const series = (p.months || []).map((m) => m[key]);
+        return `<div class="bp-metric">
+          <span class="status" data-rating="${rating}">${RATING_SHAPES[rating]}${label} ${fmt(latest[key])}</span>
+          ${sparklineSvg(series, key, "--rp-series-1", RATING_ACCENTS[rating], label)}
+        </div>`;
+      }).join("");
+    // "Mar 2026" six times across a ~350px plot overruns; the year is already
+    // on every page header, so the axis carries the month alone.
+    const months = (p.months || []).map((m) => `<span>${String(m.label || "").replace(/\s+\d{4}$/, "")}</span>`).join("");
+    return `<div class="browser-panel">
+      <div class="bp-head">
+        <div class="browser-panel-title">${p.label}</div>
+        <div class="bp-visits"><b>${compactFmt(latest.visits)}</b> visits</div>
+      </div>
+      <div class="bp-metrics">${rows}</div>
+      <div class="bp-months"><span class="bp-months-spacer"></span><div class="bp-months-axis">${months}</div></div>
+    </div>`;
+  }).join("");
 }
 
-function chip(label, value, color) {
-  const valStyle = color ? ` style="color:${color}"` : "";
-  return `<div class="exec-mini-chip"><div class="exec-mini-chip-label">${label}</div><div class="exec-mini-chip-value"${valStyle}>${value}</div></div>`;
+function chip(label, value) {
+  return `<div class="mini-chip"><div class="mini-chip-label">${label}</div><div class="mini-chip-value">${value}</div></div>`;
 }
-
-function chipsRow(chips) {
-  return `<div class="exec-mini-chips-row">${chips}</div>`;
+function miniStats(period, chipsHtml) {
+  return `<div class="mini-period">${period}</div><div class="mini-chips">${chipsHtml}</div>`;
 }
-
 function renderExecMiniStats() {
   const tm = DATA.trafficMonthly;
   const cwv = DATA.cwvMonthly;
   const bp = DATA.browserPerf;
   if (!tm || !tm.labels.length) return;
   const i = tm.labels.length - 1;
-  const period = `<span class="exec-mini-period">${tm.labels[i]}</span>`;
+  const period = tm.labels[i];
 
-  const trafficEl = document.getElementById("exec-mini-traffic");
-  if (trafficEl) trafficEl.innerHTML = period + chipsRow(
-    chip("Sessions", compactFmt(tm.sessions[i]), "#a99aff") +
-    chip("XHR Requests", compactFmt(tm.userActions[i]), "#3dd9bc") +
-    chip("Navigations", compactFmt(tm.pageLoads[i]), "#4db8e8")
+  const trafficEl = document.getElementById("mini-traffic");
+  if (trafficEl) trafficEl.innerHTML = miniStats(period,
+    chip("Sessions", compactFmt(tm.sessions[i])) +
+    chip("Navigations", compactFmt(tm.pageLoads[i])) +
+    chip("XHR Requests", compactFmt(tm.userActions[i]))
   );
 
-  const cwvEl = document.getElementById("exec-mini-cwv");
-  if (cwvEl && cwv) {
-    const lcp = cwv.lcp[i], inp = cwv.inp[i], cls = cwv.cls[i];
-    cwvEl.innerHTML = period + chipsRow(
-      chip("LCP p75", fmtMsClient(lcp), statusColor("lcp", lcp)) +
-      chip("INP p75", fmtMsClient(inp), statusColor("inp", inp)) +
-      chip("CLS p75", cls != null ? cls.toFixed(2) : "—", statusColor("cls", cls))
+  const cwvEl = document.getElementById("mini-cwv");
+  if (cwvEl && cwv && cwv.labels.length) {
+    cwvEl.innerHTML = miniStats(period,
+      chip("LCP p75", fmtMsClient(cwv.lcp[i])) +
+      chip("INP p75", fmtMsClient(cwv.inp[i])) +
+      chip("CLS p75", fmtCls(cwv.cls[i]))
     );
   }
 
-  const browserEl = document.getElementById("exec-mini-browser");
+  const browserEl = document.getElementById("mini-browser");
   if (browserEl && bp && bp.panels) {
-    const latestLabel = tm.labels[i];
-    const ranked = bp.panels
-      .filter(p => p !== null)
-      .map(p => ({
-        label: p.label.replace(/\s*[·•]\s*(desktop|mobile)/i, "").trim(),
-        visits: (p.months.find(m => m.label === latestLabel) || {}).visits || 0,
-      }))
-      .sort((a, b) => b.visits - a.visits)
-      .slice(0, 3);
-    browserEl.innerHTML = period + chipsRow(ranked.map(r =>
-      `<div class="exec-mini-chip"><div class="exec-mini-chip-label" style="font-size:8px">${r.label}</div><div class="exec-mini-chip-value" style="font-size:13px">${r.visits > 0 ? compactFmt(r.visits) : "—"}</div></div>`
-    ).join(""));
+    const ranked = bp.panels.filter((p) => p !== null).map((p) => ({
+      label: p.label.replace(/\s*[·•]\s*(desktop|mobile)/i, "").replace(/^Microsoft\s+/i, "").trim(),
+      visits: (p.months.find((m) => m.label === period) || {}).visits || 0,
+    })).sort((a, b) => b.visits - a.visits).slice(0, 3);
+    browserEl.innerHTML = miniStats(period, ranked.map((r) => chip(r.label, r.visits > 0 ? compactFmt(r.visits) : "—")).join(""));
   }
 }
 
-const DT_LOGO_SVG = `<svg enable-background="new 0 0 800 142" viewBox="0 0 800 142" xmlns="http://www.w3.org/2000/svg"><g fill="currentColor"><path d="m578.6 37.2h-18.4c-5.2 0-8.8 1-11 3.2-2.2 2.1-3.3 5.8-3.3 10.8v63.6h-11v-64.4c.1-4.9.9-10.2 3.5-14.2 4.7-7.5 13.7-8.9 20.4-8.9h19.9v9.9z"/><path d="m507.6 104.8c-5.2 0-8.8-1-11-3.2-2.2-2.1-3.3-5.6-3.3-10.6v-53.8h23.1v-9.9h-23.1v-26.3h-11v90.6c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h19.9v-9.9z"/><path d="m219.3 1v26.2h-23.1c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h10.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2v-90.7zm-3.3 100.7c-2.2 2.1-5.8 3.2-11 3.2h-10c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-28.9c0-4.1 1.4-9.4 5.5-13.4 3.5-3.4 9.1-6 18.2-6h24.2v53.9c.1 4.9-1 8.4-3.2 10.6z"/><path d="m678.2 43.2c3.5-3.4 9.1-6 18.2-6h26.5v-9.9h-25.4c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h25.4v-9.9h-26.5c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-29c0-4.1 1.4-9.5 5.5-13.4z"/><path d="m470.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m652.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m317.8 27.2h-11.5l-27.9 72.6-27.9-72.6h-11.4l33.6 87.5-10.1 26.3h11.5z"/><path d="m392.2 56.9c0-1.2 0-12.5-8-20.4-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v57.9h11v-58.2c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v58.2h11c0-4.5 0-56.5 0-57.9z"/><path d="m791 36.5c-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v28.2c0 1.2 0 12.5 8 20.4 5.1 5 13.2 9.1 26.4 9.3h26v-10h-25.4c-8.7-.1-15.2-2.7-18.6-6-4-4-5.4-9.3-5.4-13.4v-10.3h59v-18.2c.1-1.2.1-12.5-8-20.4zm-50.9 28.7v-8.6c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v8.6z"/></g><g><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9-2.1 25.2-.8 42.1-.8 42.1l-35.5 33.7s-2.7-18.9-4.1-40.2c-.8-13.2-1.1-24.8-1.1-31.8 0-.4.2-.8.2-1.2 0-.5.6-5.2 5.2-9.6 5-4.8 41.9-33.7 41.3-30.9z" fill="#1496ff"/><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9 0 0-39.3-4.7-41.5 4.8 0-.5.7-6.3 5.3-10.7 5-4.8 42-34.8 41.4-32z" fill="#1284ea"/><path d="m1 53.1v2.2c.4-1.7 1.1-2.9 2.5-4.8 2.9-3.7 7.6-4.7 9.5-4.9 9.6-1.3 23.8-2.8 38.1-3.2 25.3-.8 42 1.3 42 1.3l35.5-33.7s-18.6-3.5-39.8-6c-13.9-1.7-26.1-2.6-33-3-.5 0-5.4-.6-10 3.8-5 4.8-30.4 28.9-40.6 38.6-4.6 4.4-4.2 9.3-4.2 9.7z" fill="#b4dc00"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4-25.3.8-42.1-1.3-42.1-1.3l-35.5 33.8s18.8 3.7 40 6.1c13 1.5 24.5 2.3 31.5 2.7.5 0 1.3-.4 1.8-.4s5.4-.9 10-5.3c5-4.8 35.2-39.3 32.4-39z" fill="#6f2da8"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4 0 0 2.7 39.5-6.8 41.2.5 0 7-.3 11.6-4.7 5-4.8 36.1-40.2 33.3-39.9z" fill="#591f91"/><path d="m84.5 141c-.7 0-1.4-.1-2.2-.1 1.8-.3 3-.9 4.9-2.3 3.8-2.7 5-7.4 5.4-9.3 1.7-9.5 4-23.6 5.1-37.9 2-25.2.8-42 .8-42l35.5-33.8s2.6 18.8 4.1 40.1c.9 13.9 1.2 26.2 1.3 33 0 .5.4 5.4-4.2 9.8-5 4.8-30.4 29-40.5 38.7-4.8 4.4-9.7 3.8-10.2 3.8z" fill="#73be28"/></g></svg>`;
+function bootstrapChartDefaults(printing) {
+  Chart.defaults.color = ctVar("axis-text", printing);
+  Chart.defaults.borderColor = ctVar("grid", printing);
+  Chart.defaults.font.family = cssVar("--dt-font-sans") || "sans-serif";
+  Chart.defaults.font.size = 10;
+  // Must finish synchronously: beforeprint has to leave the canvas in its
+  // final state before Chrome captures the page, and Chart.js's default
+  // animation runs across several requestAnimationFrame ticks — capture
+  // could land mid-fade otherwise.
+  Chart.defaults.animation = false;
+}
 
-document.addEventListener("DOMContentLoaded", () => {
-  document.querySelectorAll(".hdr-left .brand").forEach(el => {
-    el.innerHTML = DT_LOGO_SVG + `<span class="brand-sep">|</span><span class="brand-sub">Business Insights</span>`;
+// renderKpis/renderExecMiniStats/renderTrafficTable/renderCwvStatusRow/
+// renderBrowserPerfPanels bake colour into plain HTML/SVG as a literal
+// var(--rp-series-N) reference (see each function's own comment) — the
+// cascade re-resolves those correctly on its own under @media print, with
+// no "printing" flag and no re-render needed, so calling them again here
+// is only ever about re-running the DOM diff cheaply, never about colour.
+// bootstrapChartDefaults() and renderCwvWeeklyCharts() are the two
+// functions that draw to a <canvas> and therefore DO need to be told which
+// theme to bake in explicitly (see ctVar()'s comment for why beforeprint
+// can't be asked instead) — printing=false at DOMContentLoaded and
+// afterprint, printing=true at beforeprint.
+// Same destroy-and-rebuild contract as the CWV weekly charts: a canvas bakes
+// its colours in, so the print pass needs a fresh chart rather than a redraw.
+let trafficWeeklyChart = null;
+function renderTrafficWeeklyChart(printing) {
+  const d = DATA.trafficWeekly;
+  const panel = document.getElementById("panel-trafficWeekly");
+  const el = document.getElementById("chart-trafficWeekly");
+  if (!panel || !el) return;
+  // A data directory captured before traffic-weekly.json existed still
+  // renders — the page falls back to the monthly table alone.
+  // Hiding the panel alone would leave its grid track holding empty space, so
+  // the row collapses to a single column and the table reclaims the page.
+  const row = panel.parentElement;
+  const lede = document.querySelector('[data-page="2"] .lede');
+  if (!d || !d.labels || !d.labels.length) {
+    panel.style.display = "none";
+    row.style.gridTemplateColumns = "minmax(0, 1fr)";
+    if (lede) lede.textContent = "Sessions, navigations and XHR requests by month";
+    return;
+  }
+  panel.style.display = "";
+  row.style.gridTemplateColumns = "";
+  forceOpaqueCanvases();
+  if (trafficWeeklyChart) trafficWeeklyChart.destroy();
+  const opts = baseChartOptions("sessions", printing);
+  opts.scales.y.ticks.callback = (v) => compactFmt(v);
+  trafficWeeklyChart = new Chart(el, {
+    type: "line",
+    data: { labels: d.labels, datasets: [{
+      label: "Sessions", data: d.sessions,
+      borderColor: ctVar("series-1", printing), backgroundColor: ctVar("series-1", printing),
+      borderWidth: 2, pointRadius: 0, tension: .25, spanGaps: true,
+    }] },
+    options: opts,
   });
-  renderKpis(DATA.kpis);
-  renderTrafficTable();
-  renderCwvTable();
-  renderCwvWeekly();
-  renderBrowserPerfPanels();
+  document.getElementById("legend-trafficWeekly").innerHTML = legendHtml([{ label: "Sessions", swatch: "--rp-series-1" }]);
+}
+
+function renderAll(printing) {
+  bootstrapChartDefaults(printing);
+  renderKpis();
   renderExecMiniStats();
-});
+  renderTrafficTable();
+  renderTrafficWeeklyChart(printing);
+  renderCwvStatusRow();
+  renderCwvWeeklyCharts(printing);
+  renderBrowserPerfPanels();
+}
+
+document.addEventListener("DOMContentLoaded", () => renderAll(false));
+window.addEventListener("beforeprint", () => renderAll(true));
+window.addEventListener("afterprint", () => renderAll(false));
 </script>
 </body>
 </html>

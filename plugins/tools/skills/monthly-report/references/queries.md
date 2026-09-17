@@ -317,17 +317,22 @@ fetch user.events, from: (now()-1M)@M, to: now()@M
     lcp_b9  = countIf(lcp_ms >= 9000  and lcp_ms < 10000),
     lcp_b10 = countIf(lcp_ms >= 10000),
     lcp_total = countIf(isNotNull(lcp_ms)),
-    inp_b0  = countIf(inp_ms < 1000),
-    inp_b1  = countIf(inp_ms >= 1000  and inp_ms < 2000),
-    inp_b2  = countIf(inp_ms >= 2000  and inp_ms < 3000),
-    inp_b3  = countIf(inp_ms >= 3000  and inp_ms < 4000),
-    inp_b4  = countIf(inp_ms >= 4000  and inp_ms < 5000),
-    inp_b5  = countIf(inp_ms >= 5000  and inp_ms < 6000),
-    inp_b6  = countIf(inp_ms >= 6000  and inp_ms < 7000),
-    inp_b7  = countIf(inp_ms >= 7000  and inp_ms < 8000),
-    inp_b8  = countIf(inp_ms >= 8000  and inp_ms < 9000),
-    inp_b9  = countIf(inp_ms >= 9000  and inp_ms < 10000),
-    inp_b10 = countIf(inp_ms >= 10000),
+    // INP gets its own 100ms-wide scale (0-1s + a tail), not LCP's 1000ms-wide
+    // one — INP's good/poor thresholds (200ms/500ms) are two orders of
+    // magnitude below LCP's, and 1000ms-wide buckets put essentially every
+    // real INP sample in bucket 0 alone. 100ms steps land both thresholds
+    // exactly on a bucket edge (b1/b2 and b4/b5).
+    inp_b0  = countIf(inp_ms < 100),
+    inp_b1  = countIf(inp_ms >= 100   and inp_ms < 200),
+    inp_b2  = countIf(inp_ms >= 200   and inp_ms < 300),
+    inp_b3  = countIf(inp_ms >= 300   and inp_ms < 400),
+    inp_b4  = countIf(inp_ms >= 400   and inp_ms < 500),
+    inp_b5  = countIf(inp_ms >= 500   and inp_ms < 600),
+    inp_b6  = countIf(inp_ms >= 600   and inp_ms < 700),
+    inp_b7  = countIf(inp_ms >= 700   and inp_ms < 800),
+    inp_b8  = countIf(inp_ms >= 800   and inp_ms < 900),
+    inp_b9  = countIf(inp_ms >= 900   and inp_ms < 1000),
+    inp_b10 = countIf(inp_ms >= 1000),
     inp_total = countIf(isNotNull(inp_ms)),
     cls_b0  = countIf(cls_val < 0.1),
     cls_b1  = countIf(cls_val >= 0.1 and cls_val < 0.2),
@@ -346,9 +351,11 @@ fetch user.events, from: (now()-1M)@M, to: now()@M
 **Output columns:** single row with `lcp_b0`..`lcp_b10` + `lcp_total`,
 `inp_b0`..`inp_b10` + `inp_total`, `cls_b0`..`cls_b10` + `cls_total` (all raw
 counts). Buckets are already in real units (the `lcp_ms`/`inp_ms`/`cls_val`
-fields divide out ns/×10000 in-query) — bucket boundaries: LCP/INP 1000ms-wide
-buckets 0–10s+; CLS 0.1-wide buckets 0–1.0+. No further conversion needed;
-just compute `% = bucket / total` per metric for the histogram.
+fields divide out ns/×10000 in-query) — bucket boundaries: LCP 1000ms-wide
+buckets 0–10s+; INP its own 100ms-wide buckets 0–1s+ (see `INP_BUCKETS` in
+build-report.mjs — LCP's scale would put nearly every INP sample in bucket 0);
+CLS 0.1-wide buckets 0–1.0+. No further conversion needed; just compute
+`% = bucket / total` per metric for the histogram.
 
 ---
 

@@ -1,0 +1,402 @@
+{
+  "kpis": [
+    {
+      "label": "Sessions",
+      "value": "482K",
+      "change": 6.4,
+      "lowerIsBetter": false
+    },
+    {
+      "label": "XHR Requests",
+      "value": "1.3M",
+      "change": 3.1,
+      "lowerIsBetter": false
+    },
+    {
+      "label": "Navigations",
+      "value": "610K",
+      "change": -2.7,
+      "lowerIsBetter": false
+    }
+  ],
+  "trafficMonthly": {
+    "labels": [
+      "Feb 2026",
+      "Mar 2026",
+      "Apr 2026",
+      "May 2026",
+      "Jun 2026",
+      "Jul 2026"
+    ],
+    "sessions": [
+      420000,
+      435000,
+      448000,
+      461000,
+      453000,
+      482000
+    ],
+    "userActions": [
+      1150000,
+      1180000,
+      null,
+      1260000,
+      1240000,
+      1300000
+    ],
+    "pageLoads": [
+      540000,
+      555000,
+      570000,
+      585000,
+      582000,
+      610000
+    ],
+    "pctDesktop": [
+      62,
+      61,
+      60,
+      null,
+      58,
+      57
+    ]
+  },
+  "trafficWeekly": {
+    "labels": [
+      "Jun 2",
+      "Jun 9",
+      "Jun 16",
+      "Jun 23",
+      "Jun 30",
+      "Jul 7",
+      "Jul 14",
+      "Jul 21"
+    ],
+    "sessions": [
+      31200,
+      33800,
+      32400,
+      35100,
+      34200,
+      36900,
+      35600,
+      38100
+    ]
+  },
+  "cwvMonthly": {
+    "labels": [
+      "Feb 2026",
+      "Mar 2026",
+      "Apr 2026",
+      "May 2026",
+      "Jun 2026",
+      "Jul 2026"
+    ],
+    "lcp": [
+      4300,
+      3900,
+      3100,
+      2600,
+      2350,
+      2100
+    ],
+    "inp": [
+      560,
+      480,
+      260,
+      210,
+      190,
+      170
+    ],
+    "cls": [
+      0.28,
+      0.22,
+      0.14,
+      0.09,
+      0.07,
+      0.05
+    ]
+  },
+  "cwvWeekly": {
+    "labels": [
+      "Jun 2",
+      "Jun 9",
+      "Jun 16",
+      "Jun 23",
+      "Jun 30",
+      "Jul 7",
+      "Jul 14",
+      "Jul 21"
+    ],
+    "lcp": [
+      2420,
+      2390,
+      null,
+      2280,
+      2240,
+      2200,
+      2150,
+      2100
+    ],
+    "inp": [
+      205,
+      200,
+      198,
+      194,
+      192,
+      188,
+      180,
+      170
+    ],
+    "cls": [
+      0.08,
+      0.078,
+      0.075,
+      0.072,
+      null,
+      0.068,
+      0.06,
+      0.05
+    ]
+  },
+  "browserPerf": {
+    "panels": [
+      {
+        "label": "Chrome \u00b7 Desktop",
+        "months": [
+          {
+            "label": "Feb 2026",
+            "visits": 210000,
+            "lcp": 3900,
+            "inp": 480,
+            "cls": 0.22
+          },
+          {
+            "label": "Mar 2026",
+            "visits": 216000,
+            "lcp": 3500,
+            "inp": 420,
+            "cls": 0.18
+          },
+          {
+            "label": "Apr 2026",
+            "visits": 221000,
+            "lcp": 2800,
+            "inp": 240,
+            "cls": 0.12
+          },
+          {
+            "label": "May 2026",
+            "visits": 228000,
+            "lcp": 2400,
+            "inp": 200,
+            "cls": 0.08
+          },
+          {
+            "label": "Jun 2026",
+            "visits": 224000,
+            "lcp": 2200,
+            "inp": 185,
+            "cls": 0.06
+          },
+          {
+            "label": "Jul 2026",
+            "visits": 239000,
+            "lcp": 2050,
+            "inp": 165,
+            "cls": 0.05
+          }
+        ]
+      },
+      {
+        "label": "Safari \u00b7 Mobile",
+        "months": [
+          {
+            "label": "Feb 2026",
+            "visits": 98000,
+            "lcp": 4600,
+            "inp": 590,
+            "cls": 0.31
+          },
+          {
+            "label": "Mar 2026",
+            "visits": 101000,
+            "lcp": 4300,
+            "inp": 540,
+            "cls": 0.27
+          },
+          {
+            "label": "Apr 2026",
+            "visits": 104500,
+            "lcp": 3800,
+            "inp": 460,
+            "cls": 0.21
+          },
+          {
+            "label": "May 2026",
+            "visits": 108000,
+            "lcp": 3400,
+            "inp": 420,
+            "cls": 0.17
+          },
+          {
+            "label": "Jun 2026",
+            "visits": 106500,
+            "lcp": null,
+            "inp": 400,
+            "cls": 0.15
+          },
+          {
+            "label": "Jul 2026",
+            "visits": 112000,
+            "lcp": 3100,
+            "inp": 380,
+            "cls": 0.13
+          }
+        ]
+      },
+      {
+        "label": "Chrome \u00b7 Mobile",
+        "months": [
+          {
+            "label": "Feb 2026",
+            "visits": 76000,
+            "lcp": 3600,
+            "inp": 410,
+            "cls": 0.19
+          },
+          {
+            "label": "Mar 2026",
+            "visits": 79500,
+            "lcp": 3200,
+            "inp": 360,
+            "cls": 0.15
+          },
+          {
+            "label": "Apr 2026",
+            "visits": 82000,
+            "lcp": 2700,
+            "inp": 260,
+            "cls": 0.1
+          },
+          {
+            "label": "May 2026",
+            "visits": 85500,
+            "lcp": 2450,
+            "inp": 220,
+            "cls": 0.09
+          },
+          {
+            "label": "Jun 2026",
+            "visits": 84000,
+            "lcp": 2300,
+            "inp": 205,
+            "cls": 0.08
+          },
+          {
+            "label": "Jul 2026",
+            "visits": 89000,
+            "lcp": 2200,
+            "inp": 195,
+            "cls": 0.07
+          }
+        ]
+      },
+      {
+        "label": "Firefox \u00b7 Desktop",
+        "months": [
+          {
+            "label": "Feb 2026",
+            "visits": 24000,
+            "lcp": 2800,
+            "inp": 260,
+            "cls": 0.1
+          },
+          {
+            "label": "Mar 2026",
+            "visits": 24500,
+            "lcp": 2700,
+            "inp": 250,
+            "cls": 0.09
+          },
+          {
+            "label": "Apr 2026",
+            "visits": 25000,
+            "lcp": 2600,
+            "inp": 230,
+            "cls": 0.08
+          },
+          {
+            "label": "May 2026",
+            "visits": 25400,
+            "lcp": 2500,
+            "inp": 210,
+            "cls": 0.075
+          },
+          {
+            "label": "Jun 2026",
+            "visits": 24800,
+            "lcp": 2450,
+            "inp": 205,
+            "cls": 0.07
+          },
+          {
+            "label": "Jul 2026",
+            "visits": 26000,
+            "lcp": 2400,
+            "inp": 200,
+            "cls": 0.065
+          }
+        ]
+      },
+      {
+        "label": "Edge \u00b7 Desktop",
+        "months": [
+          {
+            "label": "Feb 2026",
+            "visits": 11000,
+            "lcp": 3000,
+            "inp": 300,
+            "cls": 0.12
+          },
+          {
+            "label": "Mar 2026",
+            "visits": 11800,
+            "lcp": 2900,
+            "inp": 280,
+            "cls": 0.11
+          },
+          {
+            "label": "Apr 2026",
+            "visits": 12200,
+            "lcp": 2750,
+            "inp": 260,
+            "cls": 0.1
+          },
+          {
+            "label": "May 2026",
+            "visits": 12600,
+            "lcp": 2600,
+            "inp": 240,
+            "cls": 0.09
+          },
+          {
+            "label": "Jun 2026",
+            "visits": 12100,
+            "lcp": 2500,
+            "inp": 220,
+            "cls": 0.08
+          },
+          {
+            "label": "Jul 2026",
+            "visits": 13200,
+            "lcp": 2400,
+            "inp": 210,
+            "cls": 0.075
+          }
+        ]
+      },
+      null
+    ]
+  }
+}

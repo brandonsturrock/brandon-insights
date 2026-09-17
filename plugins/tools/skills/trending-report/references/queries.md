@@ -1,6 +1,6 @@
 # Trending Report — Queries
 
-Four DQL queries for the trending report. Each uses `{{.frontend}}` as the
+Five DQL queries for the trending report. Each uses `{{.frontend}}` as the
 only template variable (Go-template syntax). Run each with:
 
 ```bash
@@ -21,6 +21,7 @@ envelope (e.g. field-override warnings from timeseries queries).
 | 2 | `cwv-monthly.dql` | `cwv-monthly.json` |
 | 3 | `cwv-weekly.dql` | `cwv-weekly.json` |
 | 4 | `browser-perf-monthly.dql` | `browser-perf-monthly.json` |
+| 5 | `traffic-weekly.dql` | `traffic-weekly.json` |
 
 ## Unit conversions
 
@@ -150,3 +151,37 @@ timeseries {
 **Output columns:** `Visits`, `Largest Contentful Paint` (ms), `Interaction to Next Paint` (ms), `Cumulative Layout Shift` (**÷10000**), `device.type`, `browser.name`, `month`. All 6 months kept — panels trend the full period.
 
 **Selection policy:** group by `{browser.name, device.type}`, rank by latest-month visits descending, keep top N (default 6). Exclude combos where current and previous month both have negligible visits (≤10). Remaining slots pad to N as blank cards.
+
+---
+
+## 5. `traffic-weekly.dql` — 6-month weekly sessions
+
+**Feeds:** Traffic page, Weekly sessions trend chart.
+
+```dql
+timeseries {
+    sessions = countDistinct(dt.frontend.session.active.estimated_count),
+    xhr = count(dt.frontend.user_action.count, filter: user_action.type == "same_view"),
+    navigations = count(dt.frontend.user_action.count, filter: user_action.type != "same_view"),
+    t = start()
+  }, from: -6M, to: now()@M, interval: 7d, filter: frontend.name == "{{.frontend}}"
+| fieldsAdd d = record(t=t[], sessions=sessions[], xhr=xhr[], navigations=navigations[])
+| expand d
+| fieldsAdd week = d[t], sessions = d[sessions], xhr = d[xhr], navigations = d[navigations]
+| fieldsRemove d
+| filterOut isNull(sessions) and isNull(xhr) and isNull(navigations)
+| sort week asc
+```
+
+**Output columns:** `week` (bucket start), `sessions`, `xhr`, `navigations`. ~26 rows.
+
+Bucketing matches `cwv-weekly.dql` exactly (`interval: 7d`, same window), so the
+weekly x-axis on the Traffic page lines up with the Core Web Vitals charts.
+
+**Only `sessions` is plotted.** `xhr` and `navigations` are returned because they
+cost nothing extra, but they are frequently null for much of the window and the
+monthly table on the same page already carries both.
+
+**Optional file.** `build-report.mjs` tolerates `traffic-weekly.json` being absent
+(data directories captured before this query existed): the chart panel is hidden
+and the Traffic page falls back to the monthly table alone.

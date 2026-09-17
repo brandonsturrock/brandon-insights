@@ -194,7 +194,7 @@ more...", advance the window by 3 and ask again. Highest sessions first. Set
 
 ### 2. Run the queries
 
-The 4 pre-written `.dql` files live in `references/queries/` inside the skill
+The 5 pre-written `.dql` files live in `references/queries/` inside the skill
 base directory. Run each directly — no temp file needed:
 
 ```bash
@@ -209,6 +209,7 @@ Files and their canonical output names (contract for `build-report.mjs`):
 | `cwv-monthly.dql` | `cwv-monthly.json` |
 | `cwv-weekly.dql` | `cwv-weekly.json` |
 | `browser-perf-monthly.dql` | `browser-perf-monthly.json` |
+| `traffic-weekly.dql` | `traffic-weekly.json` |
 
 - **Output location:** use `/tmp/<frontend>-trending-<YYYY-MM>/` as the data
   directory (query JSONs and findings.txt) and

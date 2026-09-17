@@ -7,8 +7,8 @@
   CONTRACT for scripts/build-report.mjs (owned by another workstream).
   This file is the 5-PAGE "Current Month" report layout:
     Page 1: Executive Summary (KPI row + 2×2 findings grid)
-    Page 2: Traffic (daily sessions chart + device compare table)
-    Page 3: Core Web Vitals (tier bars + distribution histograms + daily trend charts)
+    Page 2: Traffic (daily stacked-bar chart + device compare table)
+    Page 3: Core Web Vitals (3 metric-tile summaries + 3 distribution histograms + 3 daily trend charts)
     Page 4: Top Pages (page performance scorecard table)
     Page 5: Errors (JS/request rate charts + error count chart + exception/request-error tables)
 
@@ -19,8 +19,8 @@
     {{REPORT_TITLE}}         - <title> text, e.g. "acme-shop — March 2026 Review"
     {{FRONTEND_NAME}}         - shown top-right of every page header
     {{ENVIRONMENT_NAME}}      - shown under frontend name; pass "" to omit (CSS :empty hides it)
-    {{DATE_RANGE_LABEL}}      - shown top-center and header, e.g. "March 2026"
-    {{GENERATED_AT}}          - footer-adjacent timestamp string
+    {{DATE_RANGE_LABEL}}      - shown under the page section title on every page, e.g. "March 2026"
+    {{GENERATED_AT}}          - footer timestamp on page 1, e.g. "2026-04-01 09:00 UTC"
     {{FINDINGS_TRAFFIC_HTML}} - pre-rendered HTML (glue script markdown -> HTML) for "## Traffic" notes.
     {{FINDINGS_CWV_HTML}}     - same, for "## Core Web Vitals" notes.
     {{FINDINGS_PAGES_HTML}}   - same, for "## Pages" (Top Pages) notes.
@@ -29,7 +29,13 @@
                                 below. Schema (all required unless noted; use [] / null for "no data"):
 
     DATA = {
-      kpis: [ { label, value, change, color, lowerIsBetter }, ... ],   // same shape as trending template
+      kpis: [ { label, value, change, color, lowerIsBetter }, ... ],   // same shape as trending template.
+                                                                        // `color` is accepted for schema
+                                                                        // stability with the trending deck but
+                                                                        // is NOT rendered here — v2 dropped the
+                                                                        // per-metric accent bar (see .kpi-tile
+                                                                        // note in deck-base.css); the verdict
+                                                                        // hue now lives entirely on the delta chip.
 
       cmDailyDevice: {                              // stacked bar chart, page 2
         labels: ["1", "2", ... "31"],                // day-of-month labels
@@ -40,17 +46,16 @@
         { deviceType: "Mobile",  sessions: 31000, pageLoads: 29800, lcpP75: 3100, inpP75: 260, clsP75: 0.09 },
       ],
 
-      cmCwvTier: {                                    // horizontal 100%-stacked bar, page 3 (units: % 0-100)
-        lcp: { good: 72, ni: 18, poor: 10 },
-        inp: { good: 81, ni: 12, poor: 7 },
-        cls: { good: 90, ni: 7,  poor: 3 },
+      cmCwvTier: {                                    // good/NI/poor % breakdown, folded into the page-3
+        lcp: { good: 72, ni: 18, poor: 10 },           // metric-tile's mt-tail line (units: % 0-100) instead of
+        inp: { good: 81, ni: 12, poor: 7 },            // a standalone 100%-stacked bar — see the page-3 CSS
+        cls: { good: 90, ni: 7,  poor: 3 },            // comment for why.
       },
       cmCwvDistribution: {                             // 3 small histograms, 11 buckets each, page 3
         lcp: { buckets: ["0-1s","1-2s",...,"10s+"], counts: [.. 11 numbers ..], p75: 2200 },
         inp: { buckets: [...11 labels...],           counts: [...11...],        p75: 180 },
         cls: { buckets: ["0-0.1",...,"1.0+"],        counts: [...11...],        p75: 0.04 },
-      },                                                // p75 is shown as a text label (see note below), not a
-                                                         // rendered vertical ref-line, to avoid the annotation plugin
+      },                                                // p75 also drives the page-3 metric-tile value + marker.
       cmDailyCwv: {                                     // 3 line charts (device-split + threshold lines), page 3
         labels: ["1", "2", ... "31"],
         lcp: { desktop: [...], mobile: [...] },
@@ -66,8 +71,8 @@
         labels: ["1", "2", ... "31"],
         jsErrorRate: [0.4, 0.6, ...], reqErrorRate: [1.1, 0.9, ...],
       },
-      cmErrorCounts: {                                   // stacked bar chart, page 5
-        labels: ["1", "2", ... "31"],
+      cmErrorCounts: {                                   // stacked bar chart, page 5 — folded to top 5 + "Other"
+        labels: ["1", "2", ... "31"],                     // by the template's own script (see foldErrorTypes)
         byType: { "JS Error": [3,5,...], "Timeout": [1,0,...] },   // any number of series, keyed by error type
       },
       topExceptionRows: [                                // table, page 5 (top 5 rendered)
@@ -78,136 +83,881 @@
       ],
     }
 
-  The template's own <script> block builds every Chart.js chart, the KPI row, and every table from DATA
-  on DOMContentLoaded. Markdown -> HTML conversion for findings is the glue script's job.
+  The template's own <script> block builds every Chart.js chart, the KPI row, every table, and the page-3
+  metric tiles from DATA on DOMContentLoaded (and again on `beforeprint`, so PDF export re-reads the light
+  print tokens rather than keeping the dark screen colours baked into the first paint — see buildEverything).
+  Markdown -> HTML conversion for findings is the glue script's job.
 -->
 <script src="chart.umd.min.js"></script>
 <style>
   /* DT Flow, Dynatrace's brand font, served from Dynatrace's own public CDN
      (same URL @dynatrace/strato-components' AppRoot.css loads it from) —
-     requires network access at render time; falls back to system fonts if unreachable. */
+     requires network access at render time; falls back to system fonts if unreachable.
+     Registered as "DynatraceFlow", the name deck-base.css's --dt-font-sans stack falls
+     through to after "DT Flow" (a locally-installed family this file never declares). */
   @font-face { font-family: DynatraceFlow; font-weight: 400; font-display: swap; src: url(https://dt-cdn.net/fonts/DTFlow-Regular-v1.2.1.woff2) format('woff2'); }
   @font-face { font-family: DynatraceFlow; font-weight: 500; font-display: swap; src: url(https://dt-cdn.net/fonts/DTFlow-Medium-v1.2.1.woff2) format('woff2'); }
   @font-face { font-family: DynatraceFlow; font-weight: 600; font-display: swap; src: url(https://dt-cdn.net/fonts/DTFlow-Semibold-v1.2.1.woff2) format('woff2'); }
   @font-face { font-family: DynatraceFlow; font-weight: 700; font-display: swap; src: url(https://dt-cdn.net/fonts/DTFlow-Heavy-v1.2.1.woff2) format('woff2'); }
-  @page { size: A4 landscape; margin: 0; }
-  * { box-sizing: border-box; }
-  html, body {
-    margin: 0; padding: 0; background: #0f1117; color: #eee;
-    font-family: DynatraceFlow, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     Shared design layer — pasted verbatim from SCRATCH/deck-base.css.
+     See that file's own header comment for provenance. Nothing below this
+     block until the "Report-specific additions" marker may hold a raw colour;
+     every value here and beyond derives from the ten Strato roles in Layer 1.
+     ═══════════════════════════════════════════════════════════════════════ */
+
+  /* ── Layer 1: Strato tokens ────────────────────────────────────────────────
+     Dynatrace Strato design tokens, extracted from @dynatrace/strato-design-tokens
+     (v1.6.0). Development-time extraction only — the package is NOT a dependency
+     of this skill. Each value cites the Strato role it came from, verified against
+     the package's own generated DARK stylesheet (styles/variables-dark.css).
+     The screen surface is a dark theme, so the dark variant of every role is used;
+     @media print at the bottom re-declares this same block at its light values.
+
+     Nothing below this block holds a raw colour of its own. Every semantic alias
+     and colour-mix derives from these ten roles, which is the whole reason one
+     print override can invert the document without touching another rule. */
+  :root {
+    --dt-bg-base:              #19192c; /* Colors.Background.Base.Default (dark) */
+    --dt-bg-container:         #212135; /* Colors.Background.Container.Neutral.Default (dark) */
+    --dt-bg-container-subtle:  #19192c; /* Colors.Background.Container.Neutral.Subdued (dark) */
+    --dt-text-primary:         #ebecff; /* Colors.Text.Neutral.Default — body text */
+    --dt-text-secondary:       #b1b2d2; /* Colors.Text.Neutral.Subdued — secondary text */
+    --dt-border-default:       #3b3b52; /* Colors.Border.Neutral.Default (dark) */
+    --dt-critical:             #ff999c; /* Colors.Text.Critical.Default (dark) */
+    --dt-warning:              #eea83f; /* Colors.Text.Warning.Default (dark) */
+    --dt-success:              #6fc3ba; /* Colors.Text.Success.Default (dark) */
+    --dt-primary:              #adb0ff; /* Colors.Text.Primary.Default (dark) — brand-accent text role */
+
+    /* Typography.Text.Base.Default.Family / Typography.Code.Base.Default.Family.
+       "DT Flow" leads the stack as the family name the @font-face rules above
+       declare; "DynatraceFlow" follows as the name a machine with the font
+       installed system-wide exposes; Roboto/Helvetica are the real fallbacks,
+       which is the normal case outside Dynatrace. */
+    --dt-font-sans: "DT Flow", DynatraceFlow, Roboto, Helvetica, sans-serif;
+    --dt-font-mono: "Roboto Mono", ui-monospace, monospace;
+
+    /* Borders.Radius.Container.Default */
+    --dt-radius: 9px;
+    /* Spacings.Size8 / Size16 / Size32 — confirmed 1:1 in px against variables.css. */
+    --dt-space-4: 4px;
+    --dt-space-8: 8px;
+    --dt-space-16: 16px;
+    --dt-space-32: 32px;
   }
 
+  /* ── Layer 2: semantic aliases + type ramp ────────────────────────────────
+     Derived shades use colour-mix over the tokens — no new hex anywhere below.
+     Because the surface ramp runs dark base → lighter container, every mix over
+     --dt-bg-base lightens; under the print override the same mixes darken, and
+     each was checked to hold its contrast ratio in both directions. */
+  :root {
+    --bg-page:                 var(--dt-bg-base);
+    --bg-surface:              var(--dt-bg-container-subtle);
+    --bg-container:            var(--dt-bg-container);
+    --bg-container-emphasized: color-mix(in srgb, var(--dt-border-default) 45%, var(--dt-bg-container));
+    --bg-container-primary:    color-mix(in srgb, var(--dt-primary) 8%, var(--dt-bg-base));
+    --border-default:          var(--dt-border-default);
+    --border-subdued:          color-mix(in srgb, var(--dt-border-default) 55%, var(--dt-bg-base));
+    --text-default:            var(--dt-text-primary);
+    --text-subdued:            var(--dt-text-secondary);
+    --good:                    var(--dt-success);
+    --warning:                 var(--dt-warning);
+    --critical:                var(--dt-critical);
+
+    /* One type ramp for the whole deck, replacing the ad-hoc
+       9/9.5/10/10.5/11/12/13/15/16/18/32px sizes the v1 decks accumulated.
+       A page is 297mm ≈ 1122px wide at 96dpi, so these px values are close to
+       what a reader actually sees on a printed page — the ramp is deliberately
+       one step larger than the portrait document's, because a landscape page is
+       read at arm's length or projected, not held. */
+    --rp-text-micro:   10px;  /* column headers, chip text, footer */
+    --rp-text-small:   12px;  /* dense labels, table cells, axis text */
+    --rp-text-body:    13px;  /* body / analyst notes */
+    --rp-text-lead:    16px;  /* emphasised numbers, panel subject */
+    --rp-text-title:   20px;  /* page section heading */
+    --rp-text-display: 30px;  /* KPI figures */
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg-page);
+    color: var(--text-default);
+    font-family: var(--dt-font-sans);
+    font-size: var(--rp-text-body);
+    /* Every figure in this deck is a number in a column or a number beside a
+       bar, so proportional digits are never wanted anywhere in it. */
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── Page ──────────────────────────────────────────────────────────────────
+     A fixed A4-landscape canvas per topic. The deck is authored at print size
+     rather than reflowed, so what a reviewer sees in the browser is what lands
+     in the PDF — the point of keeping pages at all. `overflow: hidden` is the
+     contract that makes that true: content that does not fit is a layout bug to
+     fix at build time, not something the page silently grows to swallow.
+
+     The v1 decks painted a blue radial-dot texture over every page. It is gone:
+     it read as a screen-app background rather than as a document, it fought the
+     chart marks it sat underneath, and it was the one place in the file that
+     used a raw brand hue as decoration instead of as data. */
+  @page { size: A4 landscape; margin: 0; }
   .page {
     width: 297mm; height: 210mm;
-    padding: 10mm 12mm;
-    background: #0f1117;
-    color: #eee;
-    display: flex;
-    flex-direction: column;
+    /* Centres the fixed-width sheet in a wider browser window. In print the page
+       box is the sheet, so auto resolves to 0 and this is a no-op. */
+    margin-inline: auto;
+    padding: 11mm 13mm 9mm;
+    background: var(--bg-page);
+    color: var(--text-default);
+    display: flex; flex-direction: column;
     page-break-after: always;
     position: relative;
     overflow: hidden;
   }
   .page:last-child { page-break-after: auto; }
 
-  .page::before {
-    content: ""; position: absolute; inset: 0; pointer-events: none;
-    background-image: radial-gradient(circle, rgba(20,150,255,0.05) 1px, transparent 1px);
-    background-size: 22px 22px;
+  /* ── Masthead ──────────────────────────────────────────────────────────────
+     Logo, a hairline divider, the team lockup, then the document's own subject
+     on the far side. Deliberately quiet — a deliverable looks official because
+     the mark is placed with confidence and the rule under it is crisp, not
+     because the branding is large.
+
+     v1 centred a 24px-tracked "TRENDING" between the two halves, which made the
+     kind of document the loudest text on every page while the application name —
+     the thing a reader needs to know — sat small in the corner. The kind now
+     rides as an eyebrow over the section name on the left of the rule, and the
+     application takes the display line on the right. */
+  .hdr {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    gap: var(--dt-space-16);
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-default);
+    flex: 0 0 auto;
   }
+  .hdr-left { display: flex; align-items: center; gap: 13px; }
+  .dt-logo { width: 132px; height: auto; display: block; flex: none; }
+  /* The wordmark group is fill="currentColor" so it picks up the document ink and
+     inverts with the print override; the logo mark keeps its fixed brand colours,
+     the one place in this file where a hue is not a design token and must not be. */
+  .brand-rule { width: 1px; align-self: stretch; min-height: 20px; background: var(--border-default); }
+  /* An all-caps lockup, not UI copy — the one place the deck shouts, and it
+     shouts quietly: tracked out, small, and in the secondary ink so it sits
+     beside the mark rather than competing with it. */
+  .brand-team {
+    font-size: var(--rp-text-small); font-weight: 700;
+    letter-spacing: .16em; text-transform: uppercase;
+    color: var(--text-subdued); white-space: nowrap;
+  }
+  .hdr-right { text-align: right; display: flex; flex-direction: column; gap: 2px; }
+  .hdr-right .kind {
+    font-size: var(--rp-text-micro); font-weight: 700;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--text-subdued);
+  }
+  .hdr-right .name { font-size: var(--rp-text-lead); font-weight: 600; color: var(--text-default); line-height: 1.1; }
+  .hdr-right .meta { font-size: var(--rp-text-small); color: var(--text-subdued); }
+  /* Passed as "" when there is no environment to name; :empty then removes the
+     row rather than leaving a gap where a value should be. */
+  .hdr-right .meta:empty { display: none; }
 
-  .hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6mm; position: relative; }
-  .hdr-left { display: flex; align-items: center; gap: 10px; }
-  .hdr-left .brand { display: flex; align-items: center; gap: 8px; }
-  .hdr-left .brand svg { height: 18px; width: auto; color: #f4f6fb; flex-shrink: 0; }
-  .hdr-left .brand-sep { font-size: 14px; color: rgba(255,255,255,0.25); font-weight: 300; margin: 0 2px; }
-  .hdr-left .brand-sub { font-size: 11px; font-weight: 400; letter-spacing: 0.14em; color: #f4f6fb; text-transform: uppercase; white-space: nowrap; }
-  .hdr-center { position: absolute; left: 50%; transform: translateX(-50%); text-align: center; }
-  .hdr-center .kind { font-size: 18px; font-weight: 700; letter-spacing: 0.24em; color: #fff; text-transform: uppercase; }
-  .hdr-center .section { font-size: 11px; font-weight: 500; color: #b1b2d2; letter-spacing: 0.14em; text-transform: uppercase; margin-top: 3px; }
-  .hdr-right { text-align: right; }
-  .hdr-right .name { font-size: 16px; font-weight: 700; color: #f4f6fb; }
-  .hdr-right .env { font-size: 11px; color: #1496ff; margin-top: 2px; }
-  .hdr-right .env:empty { display: none; }
-  .hdr-right .range { font-size: 11px; color: #b1b2d2; margin-top: 2px; }
+  /* Section name for the page, sitting between the masthead rule and the first
+     panel so it is the thing a reader lands on after the letterhead. */
+  .page-title { flex: 0 0 auto; margin: 9px 0 var(--dt-space-16); }
+  .page-title h2 {
+    margin: 0; font-size: var(--rp-text-title); font-weight: 600;
+    letter-spacing: -.01em; color: var(--text-default);
+  }
+  .page-title .lede { margin: 3px 0 0; font-size: var(--rp-text-small); color: var(--text-subdued); }
+  .page-title .lede:empty { display: none; }
 
-  .accent-line { height: 2px; border-radius: 1px; margin-bottom: 6mm; background: linear-gradient(90deg, #1496ff 0%, rgba(20,150,255,0.35) 45%, rgba(20,150,255,0) 100%); }
+  .content { flex: 1; display: flex; flex-direction: column; gap: var(--dt-space-16); min-height: 0; }
 
-  .content { flex: 1; display: flex; flex-direction: column; gap: 4mm; min-height: 0; }
-  .row { display: flex; gap: 12px; min-height: 0; }
+  /* ── Footer ────────────────────────────────────────────────────────────────
+     A hairline, the lockup, and the page's own position in the deck. The page
+     number is the part that earns the row: a printed deck gets separated, and a
+     page with no number cannot be put back. */
+  .ftr {
+    flex: 0 0 auto; display: flex; align-items: baseline; justify-content: space-between;
+    gap: var(--dt-space-16); margin-top: 10px; padding-top: 8px;
+    border-top: 1px solid var(--border-subdued);
+    font-size: var(--rp-text-micro); color: var(--text-subdued); letter-spacing: .05em;
+  }
+  .ftr .brand-name { color: var(--text-subdued); font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 
-  .kpi-row { display: flex; gap: 12px; flex: 0 0 auto; }
+  /* ── Panel ─────────────────────────────────────────────────────────────────
+     One card idiom for everything on a page: chart, table, notes. v1 ran three
+     near-identical card classes (.kpi-tile, .exec-card, .chart-card) that each
+     drew their own border colour, radius and gradient top-accent. The gradients
+     are gone — a fading brand-blue bar on top of every card is chrome that says
+     nothing about the card's contents, and with one per card it stopped
+     distinguishing anything at all. What distinguishes a panel now is its
+     heading and, where the content is graded, its status accent. */
+  .panel {
+    background: var(--bg-container);
+    border: 1px solid var(--border-default);
+    border-radius: var(--dt-radius);
+    padding: 13px 15px 11px;
+    display: flex; flex-direction: column; min-height: 0; min-width: 0;
+  }
+  .panel-title {
+    flex: 0 0 auto; margin: 0 0 9px;
+    font-size: var(--rp-text-micro); font-weight: 700;
+    text-transform: uppercase; letter-spacing: .1em; color: var(--text-subdued);
+  }
+  /* A short sentence under a panel title, for the qualifier a title cannot carry
+     ("p75 across N loads", "top 10 by visits"). */
+  .panel-note { flex: 0 0 auto; margin: -5px 0 9px; font-size: var(--rp-text-small); color: var(--text-subdued); }
+  .panel-note strong { color: var(--text-default); font-weight: 600; }
+  .panel-row { display: flex; gap: var(--dt-space-16); flex: 1; min-height: 0; }
+  .empty-note { color: var(--text-subdued); font-size: var(--rp-text-small); font-style: italic; }
+
+  /* ── KPI tiles ─────────────────────────────────────────────────────────────
+     The figure is the tile. Label above it in the subdued ink, delta below in a
+     chip whose hue is the verdict — and the verdict is never colour alone: the
+     chip carries an arrow glyph and the delta keeps its sign, so the tile reads
+     stripped of colour and in print.
+
+     v1 hung a 3px accent bar off each tile's top edge in a per-KPI hue. It is
+     dropped: the hue was decorative (assigned per metric, not per state), and it
+     collided with the delta chip, which is the one thing in the tile that a hue
+     should mean something in. */
+  .kpi-row { display: flex; gap: var(--dt-space-8); flex: 0 0 auto; }
   .kpi-tile {
-    flex: 1; background: #1c1e2e; border: 1px solid rgba(20,150,255,0.16);
-    border-radius: 10px; padding: 14px 16px 12px; border-top: 3px solid var(--kpi-color, #1496ff);
+    flex: 1; min-width: 0;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: var(--dt-radius);
+    padding: 11px 14px 10px;
   }
-  .kpi-label { font-size: 11px; font-weight: 700; color: #b1b2d2; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
-  .kpi-value { font-size: 32px; font-weight: 700; color: #f4f6fb; line-height: 1; letter-spacing: -0.01em; }
-  .kpi-change { font-size: 12px; font-weight: 600; margin-top: 8px; }
-  .kpi-change.up { color: #2ECC85; }
-  .kpi-change.down { color: #E8345A; }
-  .kpi-change.neutral { color: #b1b2d2; }
+  .kpi-label {
+    font-size: var(--rp-text-micro); font-weight: 700; color: var(--text-subdued);
+    text-transform: uppercase; letter-spacing: .1em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .kpi-value {
+    margin-top: 7px;
+    font-size: var(--rp-text-display); font-weight: 700; line-height: 1;
+    letter-spacing: -.015em; color: var(--text-default);
+  }
+  .kpi-unit { font-size: var(--rp-text-small); font-weight: 600; color: var(--text-subdued); margin-left: 5px; letter-spacing: .04em; }
+  /* One accent per delta chip, set from the direction+goodness the renderer
+     resolved, and consumed by text, fill and border so the three cannot
+     disagree. --kpi-accent is set inline by the renderer. */
+  .kpi-change {
+    display: inline-flex; align-items: center; gap: 4px; margin-top: 9px;
+    font-size: var(--rp-text-small); font-weight: 700;
+    padding: 2px 7px; border-radius: 999px;
+    color: var(--kpi-accent, var(--text-subdued));
+    background: color-mix(in srgb, var(--kpi-accent, var(--text-subdued)) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--kpi-accent, var(--text-subdued)) 45%, transparent);
+  }
+  .kpi-change.good    { --kpi-accent: var(--good); }
+  .kpi-change.bad     { --kpi-accent: var(--critical); }
+  .kpi-change.neutral { --kpi-accent: var(--text-subdued); }
+  .kpi-change svg { flex: none; display: block; }
+  .kpi-sub { display: block; margin-top: 6px; font-size: var(--rp-text-micro); color: var(--text-subdued); }
 
-  .chart-card {
-    background: #1c1e2e; border: 1px solid rgba(20,150,255,0.16); border-radius: 10px;
-    padding: 12px 14px 10px; position: relative; display: flex; flex-direction: column; min-height: 0;
+  /* ── Analyst-note cards ───────────────────────────────────────────────────
+     Prose written by a person, edited in place in the HTML before the PDF is
+     rendered. Each card is a .panel; the section it belongs to is named by its
+     title, not by a coloured top bar in a hue picked per section (v1's
+     purple/amber/teal, none of which meant anything — amber in particular read
+     as a warning state on a card that might be reporting good news). */
+  .notes-body {
+    flex: 1; min-height: 0; overflow: hidden;
+    font-size: var(--rp-text-body); line-height: 1.55; color: var(--text-default);
   }
-  .chart-card::before {
-    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 10px 10px 0 0;
-    background: linear-gradient(90deg, rgba(20,150,255,0.5) 0%, transparent 60%);
+  .notes-body ul { margin: 0; padding-left: 17px; }
+  .notes-body li { margin-bottom: 6px; }
+  .notes-body li:last-child { margin-bottom: 0; }
+  .notes-body p { margin: 0 0 7px; }
+  .notes-body p:last-child { margin-bottom: 0; }
+  .notes-body strong { font-weight: 600; }
+  /* --border-default is nowhere near the 3:1 an interactive-component outline
+     needs; --dt-primary is the link/emphasis role and clears it, so an editable
+     region borrowing it reads as "this is interactive", which is the point. */
+  .notes-body[contenteditable="true"]:focus { outline: 1px dashed var(--dt-primary); outline-offset: 4px; }
+
+  /* Mini-stat chips pinned to the bottom of a notes card: the two or three
+     figures the prose above refers to, so a reader can check the claim without
+     turning the page. */
+  .mini-stats {
+    flex: 0 0 auto; margin-top: 12px; padding-top: 9px;
+    border-top: 1px solid var(--border-subdued);
+    display: flex; flex-direction: column; gap: 6px;
   }
-  .chart-title { font-size: 11px; font-weight: 700; color: #f4f6fb; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.85; margin-bottom: 8px; flex: 0 0 auto; }
-  .chart-subtitle { font-size: 10px; color: #b1b2d2; margin-bottom: 6px; flex: 0 0 auto; }
-  .chart-row { display: flex; gap: 12px; flex: 1; min-height: 0; }
+  .mini-period { font-size: var(--rp-text-micro); font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--text-subdued); }
+  .mini-chips { display: flex; gap: 6px; align-items: stretch; }
+  .mini-chip {
+    flex: 1; min-width: 0; text-align: center;
+    background: var(--bg-page);
+    border: 1px solid var(--border-subdued);
+    border-radius: 6px; padding: 5px 7px;
+  }
+  .mini-chip-label {
+    font-size: var(--rp-text-micro); color: var(--text-subdued);
+    text-transform: uppercase; letter-spacing: .07em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .mini-chip-value { font-size: var(--rp-text-small); font-weight: 700; color: var(--text-default); line-height: 1.3; }
+
+  /* ── Status chip + rating vocabulary ──────────────────────────────────────
+     Strato's status vocabulary: colour is never the only carrier of a verdict.
+     Each chip pairs its hue with a shaped icon (circle+check ideal,
+     triangle+exclamation warning, diamond+X critical) and the rating spelled
+     out, so the chip survives greyscale printing and colour-blind readers. */
+  .status {
+    display: inline-flex; align-items: center; gap: 5px; flex: none;
+    font-size: var(--rp-text-micro); font-weight: 700;
+    padding: 2px 8px; border-radius: 999px;
+    color: var(--st-accent, var(--text-subdued));
+    background: color-mix(in srgb, var(--st-accent, var(--text-subdued)) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--st-accent, var(--text-subdued)) 45%, transparent);
+    text-transform: uppercase; letter-spacing: .06em; white-space: nowrap;
+  }
+  .status svg { flex: none; display: block; }
+  [data-rating="good"]              { --st-accent: var(--good); }
+  [data-rating="needs-improvement"] { --st-accent: var(--warning); }
+  [data-rating="poor"]              { --st-accent: var(--critical); }
+  [data-rating="none"]              { --st-accent: var(--text-subdued); }
+
+  /* A bordered label for a categorical tag in a dense row (device type, browser,
+     HTTP method). Neutral by default — a tag is not a verdict. */
+  .chip {
+    display: inline-block; border: 1px solid var(--border-default); border-radius: 3px;
+    padding: 0 5px; font-size: var(--rp-text-micro); font-weight: 700;
+    text-transform: uppercase; letter-spacing: .06em;
+    color: var(--text-subdued); background: var(--bg-surface); white-space: nowrap;
+  }
+
+  /* ── Core Web Vitals metric tile ──────────────────────────────────────────
+     Ported from the portrait report, where it replaced a percentile table, and
+     the reasoning carries over unchanged: LCP/INP/TTFB are milliseconds and CLS
+     is a unitless shift score, so no shared numeric axis can hold them. Each
+     tile normalises its metric against its OWN good/poor boundaries, which pins
+     every threshold to the same x in every tile — good ends at 40%, poor begins
+     at 70%. The axis is semantic rather than numeric: "how far into unacceptable
+     is this" reads straight across all three, while every printed figure stays
+     in its own unit. */
+  .metric-grid { display: grid; gap: var(--dt-space-8); grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  .metric-tile {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: var(--dt-radius);
+    padding: 12px 14px;
+  }
+  /* One accent per tile, set from the rating and consumed by the value, the
+     status chip and the p75 marker, so the three can never disagree. */
+  .metric-tile[data-rating="good"]              { --mt-accent: var(--good); }
+  .metric-tile[data-rating="needs-improvement"] { --mt-accent: var(--warning); }
+  .metric-tile[data-rating="poor"]              { --mt-accent: var(--critical); }
+  .metric-tile[data-rating="none"]              { --mt-accent: var(--text-subdued); }
+  .mt-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--dt-space-8); }
+  .mt-abbr { font-weight: 700; font-size: var(--rp-text-title); letter-spacing: .02em; }
+  .mt-name { color: var(--text-subdued); font-size: var(--rp-text-small); margin-top: 2px; }
+  .mt-value { margin-top: 11px; font-weight: 700; font-size: 26px; line-height: 1; color: var(--mt-accent); }
+  .mt-value-tag { font-size: var(--rp-text-small); font-weight: 600; color: var(--text-subdued); margin-left: 7px; letter-spacing: .04em; }
+  /* The track carries the three threshold zones; markers sit in the same
+     positioning context but outside the track's overflow, so a marker at 0% or
+     100% is not clipped in half. */
+  .mt-scale { position: relative; margin-top: 12px; height: 20px; }
+  .mt-track { display: flex; height: 8px; border-radius: 4px; overflow: hidden; }
+  /* A 2px gap of the tile surface separates adjacent fills, so the boundary
+     between two zones is a real edge rather than two mixed colours meeting.
+     border-box keeps the percentage widths honest once the border is added. */
+  .mt-zone { height: 100%; box-sizing: border-box; }
+  .mt-zone + .mt-zone { border-left: 2px solid var(--bg-surface); }
+  /* Zone fills stay quieter than the markers — they are a reference backdrop,
+     not data — but each is mixed only part-way toward the page base so the three
+     remain tellable apart at 8px tall. */
+  .mt-zone-good { width: 40%; background: color-mix(in srgb, var(--good) 45%, var(--dt-bg-base)); }
+  .mt-zone-ni   { width: 30%; background: color-mix(in srgb, var(--warning) 45%, var(--dt-bg-base)); }
+  .mt-zone-poor { width: 30%; background: color-mix(in srgb, var(--critical) 45%, var(--dt-bg-base)); }
+  /* 2px surface ring, so a marker landing on a zone boundary or overlapping a
+     neighbour stays legible as its own mark. */
+  .mt-mark {
+    position: absolute; top: 0; width: 2px; height: 8px; border-radius: 1px;
+    background: var(--text-subdued); transform: translateX(-1px);
+    box-shadow: 0 0 0 2px var(--bg-surface);
+  }
+  .mt-mark-p75 { width: 4px; height: 16px; top: -4px; transform: translateX(-2px); background: var(--mt-accent); }
+  .mt-bounds { display: flex; justify-content: space-between; gap: var(--dt-space-8); margin-top: 2px; font-size: var(--rp-text-micro); color: var(--text-subdued); }
+  .mt-tail {
+    display: flex; justify-content: space-between; gap: var(--dt-space-8);
+    margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--border-default);
+    font-size: var(--rp-text-small); color: var(--text-subdued);
+  }
+  .mt-tail b { color: var(--text-default); font-weight: 600; }
+
+  /* ── Table ─────────────────────────────────────────────────────────────────
+     One table idiom for every tabular panel in the deck, and deliberately the
+     same row language as the portrait report: a hairline per row rather than
+     zebra, uppercase micro column heads over a full-weight rule, tabular
+     numerals on every figure, numeric columns shrunk to their content so the
+     slack lands in the label column and the figures stay one scannable block. */
+  .rp-table { width: 100%; border-collapse: collapse; font-size: var(--rp-text-small); }
+  .rp-table th {
+    text-align: left; padding: 0 8px 6px; white-space: nowrap;
+    font-size: var(--rp-text-micro); font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--text-subdued); border-bottom: 1px solid var(--border-default);
+  }
+  .rp-table td { padding: 5px 8px; border-bottom: 1px solid var(--border-subdued); vertical-align: middle; }
+  .rp-table tbody tr:last-child td { border-bottom: none; }
+  .rp-table .num { text-align: right; white-space: nowrap; width: 1%; }
+  .rp-table .lead { font-size: var(--rp-text-body); font-weight: 600; }
+  .rp-table .path { font-family: var(--dt-font-mono); color: var(--text-default); }
+  /* The em dash is the mandated null mark and the one glyph that must stay
+     legible, so it takes the subdued ink rather than a dimmer one: it is already
+     distinct from a figure by shape and does not need to be faint as well. */
+  .rp-table .nil { color: var(--text-subdued); }
+  /* A row that is the current/latest period, called out so the eye can find
+     "now" in a table of months without counting down it. */
+  .rp-table tr.current td { color: var(--text-default); font-weight: 600; }
+
+  /* ── Bar-in-cell ───────────────────────────────────────────────────────────
+     The deck's signature device: it turns a numeric column you skim past into a
+     bar you scan down. Each column's bar is relative to that column's own max,
+     which is why the figure is always printed beside the bar — the bar shows
+     shape within a column, the number carries the value. Neutral ink unless the
+     cell is graded against a threshold, in which case the renderer sets
+     --bar-accent from the rating. */
+  .bar-cell { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .bar-track { flex: 1; min-width: 44px; }
+  .bar-fill { height: 18px; border-radius: 3px; min-width: 2px; background: var(--bar-accent, var(--text-subdued)); }
+  .bar-value { white-space: nowrap; font-size: var(--rp-text-small); color: var(--text-default); }
+  /* A track outline is the only thing that shows an empty or near-empty bar
+     exists. 40% clears 3:1 against the panel; 30% did not. */
+  .bar-track.outlined {
+    position: relative; height: 9px; border-radius: 5px; background: var(--bg-page);
+    border: 1px solid color-mix(in srgb, var(--dt-text-secondary) 40%, var(--dt-border-default));
+    overflow: hidden;
+  }
+  .bar-track.outlined .bar-fill { height: 100%; border-radius: 0; }
+
+  /* Flex-bar rows: the same bar-in-cell language, but as flex rows rather than a
+     <table>, because a fixed-height page needs the rows to grow to fill the card
+     and <tr> cannot flex. Used where the panel owns the full page height. */
+  .flex-bars { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .flex-bars-header {
+    display: flex; align-items: baseline; flex: 0 0 auto;
+    padding: 0 10px 6px; margin-bottom: 2px; border-bottom: 1px solid var(--border-default);
+  }
+  .flex-bars-spacer { flex: 0 0 82px; }
+  .flex-bars-col-hdr {
+    flex: 1; font-size: var(--rp-text-micro); font-weight: 700;
+    color: var(--text-subdued); text-transform: uppercase; letter-spacing: .06em;
+  }
+  .flex-bars-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .flex-bars-row { display: flex; align-items: center; flex: 1; min-height: 0; border-top: 1px solid var(--border-subdued); }
+  .flex-bars-row:first-child { border-top: none; }
+  .flex-bars-row-label { flex: 0 0 82px; padding: 0 10px; color: var(--text-subdued); font-size: var(--rp-text-small); }
+  .flex-bars-cell { flex: 1; display: flex; align-items: center; padding: 5px 10px; min-width: 0; border-left: 1px solid var(--border-subdued); }
+  /* The current period is marked by weight and full-strength ink, not by a
+     brightness filter on the fill (v1's approach) — a filter changes a data
+     mark's colour to say something about its row, which is exactly what a
+     threshold hue in the same column already means. */
+  .flex-bars-row.current .flex-bars-row-label,
+  .flex-bars-row.current .bar-value { color: var(--text-default); font-weight: 700; }
+
+  /* ── Chart ─────────────────────────────────────────────────────────────────
+     Chart.js draws into a canvas that fills whatever the flex row gives it.
+     Every chart's colours, grid ink and font come from these same tokens, read
+     out of the computed style by the template's script rather than hard-coded,
+     which is what lets the print override recolour the charts too. */
   .chart-body { position: relative; flex: 1; min-height: 0; min-width: 0; }
   .chart-body canvas { width: 100% !important; height: 100% !important; }
+  .chart-legend { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 4px 14px; padding-top: 8px; align-items: center; font-size: var(--rp-text-micro); color: var(--text-subdued); }
+  .chart-legend .item { display: inline-flex; align-items: center; gap: 5px; }
+  .chart-legend .swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+  .chart-legend .dash { width: 14px; height: 0; border-top: 1px dashed currentColor; flex: none; }
 
-  /* exec summary findings grid */
-  .exec-grid { flex: 1; display: flex; gap: 12px; min-height: 0; }
-  .exec-col { flex: 1; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
-  .exec-card {
-    flex: 1; background: #1c1e2e; border: 1px solid rgba(20,150,255,0.16); border-radius: 10px;
-    padding: 12px 14px 10px; position: relative; display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+  /* ── Findings ──────────────────────────────────────────────────────────────
+     One row per rule result: a severity chip in a fixed-width left column
+     spanning both text lines, the title, then the evidence sentence. That puts
+     every title on the same x, so a reader scans titles down one edge and drops
+     into the evidence only where it matters. Title and evidence sit on separate
+     lines because a 600-weight title running inline with a subdued sentence
+     stops being scannable. */
+  .finding-row {
+    display: grid; grid-template-columns: 72px minmax(0, 1fr);
+    gap: 3px var(--dt-space-16); padding: 9px 0;
+    border-bottom: 1px solid var(--border-subdued);
   }
-  .exec-card::before {
-    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 10px 10px 0 0;
-    background: linear-gradient(90deg, var(--exec-accent, rgba(20,150,255,0.5)) 0%, transparent 60%);
-  }
-  .exec-section-label {
-    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em;
-    color: var(--exec-accent-text, #1496ff); margin-bottom: 6px; flex: 0 0 auto;
-  }
-  .exec-body { flex: 1; overflow: hidden; font-size: 12px; line-height: 1.55; color: #e8edf5; }
-  .exec-body ul { margin: 0; padding-left: 16px; }
-  .exec-body li { margin-bottom: 3px; }
-  .exec-body p { margin: 0 0 4px; }
-  .exec-empty { font-size: 12px; color: #666e8c; font-style: italic; }
+  .finding-row:first-child { padding-top: 0; }
+  .finding-row:last-child { border-bottom: none; padding-bottom: 0; }
+  .finding-chip { grid-row: span 2; align-self: start; justify-self: start; margin-top: 1px; }
+  .finding-title { font-weight: 600; color: var(--text-default); }
+  .finding-evidence { color: var(--text-subdued); font-size: var(--rp-text-small); line-height: 1.5; overflow-wrap: anywhere; }
 
-  /* chart pages: table wrapper */
-  .dt-table-wrap { flex: 1; min-height: 0; overflow: hidden; }
-  table.dt-table { width: 100%; border-collapse: collapse; font-size: 11px; }
-  table.dt-table th {
-    text-align: left; font-size: 10px; font-weight: 700; color: #b1b2d2; text-transform: uppercase;
-    letter-spacing: 0.05em; padding: 5px 8px; border-bottom: 1px solid rgba(255,255,255,0.14);
+  /* ── Print ─────────────────────────────────────────────────────────────────
+     The HTML is the review copy; the PDF is what a stakeholder gets. The screen
+     canvas is dark, and browsers print text colour but not background colour by
+     default — so a dark deck printed as-is would put #ebecff text on white
+     paper, and forcing the dark surfaces through would flood the page with ink.
+     Neither is acceptable, so print re-declares the same ten Strato roles at
+     their LIGHT values (read from the same package, styles/variables.css).
+     That is one block; every alias and colour-mix below :root re-derives from
+     it automatically, because nothing under :root holds a raw colour.
+
+     Chart colours are read from the computed style at build time, so the
+     template's script must resolve them AFTER this override applies — see
+     buildEverything()/`beforeprint` in the <script> block below. */
+  @media print {
+    :root {
+      --dt-bg-base:             #f9f9fa; /* Colors.Background.Base.Default (light) */
+      --dt-bg-container:        #f2f2f5; /* Colors.Background.Container.Neutral.Default (light) */
+      --dt-bg-container-subtle: #f9f9fa; /* Colors.Background.Container.Neutral.Subdued (light) */
+      --dt-text-primary:        #2f2f4f; /* Colors.Text.Neutral.Default (light) */
+      --dt-text-secondary:      #595a7d; /* Colors.Text.Neutral.Subdued (light) */
+      --dt-border-default:      #dadbe4; /* Colors.Border.Neutral.Default (light) */
+      --dt-critical:            #bb0731; /* Colors.Text.Critical.Default (light) */
+      --dt-warning:             #855400; /* Colors.Text.Warning.Default (light) */
+      --dt-success:             #2d6761; /* Colors.Text.Success.Default (light) */
+      --dt-primary:             #464cce; /* Colors.Text.Primary.Default (light) */
+    }
+    /* The page canvas is already exactly one sheet, so nothing may split and
+       nothing may add a second sheet after the last one. */
+    .page { break-after: page; page-break-after: always; break-inside: avoid; page-break-inside: avoid; }
+    .page:last-child { break-after: auto; page-break-after: auto; }
+    /* Panel surfaces are a light wash over a light page; they need
+       print-color-adjust to survive, and at these values they cost almost no
+       ink — the alternative is every card losing its edge on paper. */
+    .panel, .kpi-tile, .metric-tile, .mini-chip,
+    .bar-fill, .mt-zone, .mt-track, .status, .chip, .kpi-change {
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .notes-body[contenteditable="true"] { outline: none !important; }
   }
-  table.dt-table td { padding: 5px 8px; color: #e8edf5; border-bottom: 1px solid rgba(255,255,255,0.05); }
-  table.dt-table tbody tr:nth-child(even) { background: rgba(255,255,255,0.025); }
-  table.dt-table td.num, table.dt-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
 
-  /* CWV stoplight (horizontal 100%-stacked bar per metric) */
-  #stoplight { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
-  .stoplight-row { display: flex; align-items: stretch; gap: 10px; flex: 1; min-height: 0; }
-  .stoplight-label { width: 34px; font-size: 11px; font-weight: 700; color: #b1b2d2; flex: 0 0 auto; display: flex; align-items: center; }
-  .stoplight-bar { flex: 1; border-radius: 4px; overflow: hidden; display: flex; height: 38px; align-self: center; }
-  .stoplight-seg { display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: rgba(0,0,0,0.75); }
-  .stoplight-seg.poor { color: #fff; }
-  .stoplight-legend { display: flex; gap: 14px; justify-content: center; margin-top: 4px; flex: 0 0 auto; }
-  .stoplight-legend span { font-size: 10px; color: #b1b2d2; }
-  .stoplight-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; }
+  /* ── Chart series palette ──────────────────────────────────────────────────
+     The ten Strato roles cover surfaces, ink and the three status hues, and
+     nothing else — a status hue must never be spent on a series, or "mobile"
+     ends up drawn in the same amber that means "needs improvement" two panels
+     away. So series get their own small categorical ramp, declared here as
+     tokens for the same reason every other colour is: the print override can
+     then swap the whole ramp for its light-canvas variant in one block, and the
+     template's script reads the resolved values off the computed style rather
+     than holding hex of its own.
 
-  .ftr { display: flex; align-items: center; justify-content: space-between; margin-top: 4mm; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.07); flex: 0 0 auto; }
-  .ftr span { font-size: 9px; color: #666e8c; letter-spacing: 0.05em; }
-  .ftr .brand-name { color: #1496ff; font-weight: 600; }
+     Six is the cap. Every chart in both decks tops out at four series except
+     the error-type stack, which the renderer must fold into "top 5 + Other".
+
+     Values are the light-canvas variants below (see @media print) and are
+     chosen for separation at 2px line weight and at a 4mm bar, checked in
+     greyscale and against deuteranopia — a stacked bar whose two segments are
+     the same value in grey is a stacked bar that says nothing on a photocopy. */
+  :root {
+    --rp-series-1: #5eafff;  /* primary series — traffic, desktop, LCP */
+    --rp-series-2: #c39bff;  /* secondary — page loads, mobile, INP */
+    --rp-series-3: #6fc3ba;  /* tertiary — user actions, CLS */
+    --rp-series-4: #f2a0c8;
+    --rp-series-5: #f0c25a;
+    --rp-series-6: #9aa4c4;  /* always the "Other" bucket — deliberately the
+                                quietest, since it is a residue, not a category */
+    /* Grid lines and axis ink are surface furniture, not data, and must sit
+       under every series without competing. */
+    --rp-grid:      color-mix(in srgb, var(--dt-border-default) 70%, transparent);
+    --rp-axis-text: var(--text-subdued);
+    /* Threshold reference lines on a CWV chart: the same status hues as the
+       tiles, dashed, drawn under the series. Colour agrees with the tiles by
+       construction because it is the same token. */
+    --rp-threshold-good: color-mix(in srgb, var(--good) 70%, transparent);
+    --rp-threshold-poor: color-mix(in srgb, var(--critical) 70%, transparent);
+  }
+  @media print {
+    :root {
+      --rp-series-1: #1a72c4;
+      --rp-series-2: #6f3bbf;
+      --rp-series-3: #2d6761;
+      --rp-series-4: #b03b78;
+      --rp-series-5: #8a6200;
+      --rp-series-6: #6b7392;
+    }
+  }
+
+  /* ── Reading a token from JS ───────────────────────────────────────────────
+     Any token above whose value is a colour-mix() CANNOT be handed straight to
+     Chart.js. getComputedStyle().getPropertyValue() on a custom property returns
+     its *declared* text, so `--rp-grid` comes back as the literal string
+     "color-mix(in srgb, #3b3b52 70%, transparent)" — and canvas strokeStyle
+     silently ignores a value it cannot parse, keeping whatever colour was set
+     before it. That is what painted every chart gridline near-black.
+
+     So resolve through a probe element instead, which forces the browser to
+     compute the mix down to an rgb() before JS ever sees it:
+
+       const probe = document.createElement("span");
+       probe.style.display = "none";
+       document.body.appendChild(probe);
+       const cssVar = (name) => {
+         probe.style.color = `var(${name})`;
+         return getComputedStyle(probe).color;
+       };
+
+     Use this for every token a chart consumes, not just the mixed ones — a plain
+     token resolves through it unchanged, and a single accessor means a token can
+     later gain a colour-mix without breaking a chart that reads it. The probe
+     must be re-read on `beforeprint`, since the print override changes what the
+     same name resolves to. */
+
+  /* ── Chart colours across the theme swap: why a probe is not enough ───────
+     The probe above solves colour-mix() resolution. It does NOT solve *which
+     theme* is resolved, and that is the harder half.
+
+     Measured in this repo's own render path (Chrome headless --print-to-pdf, a
+     two-line test page):
+
+         beforeprint fires:                    YES
+         matchMedia("print").matches inside:   false
+
+     So at `beforeprint` the print stylesheet has NOT been applied yet. Any
+     getComputedStyle() call in that handler returns the SCREEN (dark) values,
+     which is precisely what a chart rebuild there bakes into a light-printed
+     PDF — near-black gridlines on white paper. Re-reading later does not help
+     either: there is no event that fires after print media applies but before
+     the page is captured.
+
+     The fix is to stop asking the cascade what theme it is in and hand JS both
+     palettes up front. Every token a chart consumes is declared TWICE at :root,
+     in the screen value and a `-print` twin, both always present in both media:
+
+       --ct-grid / --ct-grid-print, --ct-axis-text / --ct-axis-text-print,
+       --ct-series-1 / --ct-series-1-print, … and the two threshold hues.
+
+     The accessor then picks the set, and the print set is chosen by the caller
+     rather than sniffed from the environment:
+
+       const ctVar = (name, printing) =>
+         resolve(`--ct-${name}${printing ? "-print" : ""}`);   // resolve = probe
+
+     Charts build with `printing = false` on DOMContentLoaded and are destroyed
+     and rebuilt with `printing = true` inside `beforeprint`. Because the values
+     come from a token that is live in both media, the handler no longer depends
+     on what the cascade has got round to applying. `Chart.defaults.animation`
+     must stay `false` so the rebuild completes synchronously inside the handler,
+     before the capture. Rebuild on `afterprint` with `printing = false` so a
+     reader who cancels the browser's print dialog is not left with a light-inked
+     chart on the dark screen copy.
+
+     The same applies to any colour JS bakes into markup it generates — an inline
+     `background:` on a legend swatch or a bar fill is a snapshot of one theme and
+     has to be re-emitted on the same two events. Colours that stay in CSS
+     (everything in the rules above) need none of this: the cascade handles them,
+     which is the argument for keeping colour in CSS wherever a chart does not
+     force your hand. */
+
+  /* ── A transparent canvas is invisible in Preview, not just uncoloured ─────
+     Chrome exports every <canvas> into a PDF as a vector transparency-group
+     form XObject. Poppler (pdftoppm, and every earlier render check in this
+     file's history) composites that correctly, which is exactly why it never
+     caught this. Apple's CoreGraphics (Preview, `sips`, Quick Look) does not:
+     it leaves the group's region fully transparent (alpha 0) and paints
+     transparent as white. Measured on this deck's own output: 8.74% of a
+     chart-heavy page transparent under CoreGraphics, 0% under poppler for the
+     identical PDF. The holes are placed by the transparency group's bounding
+     box, not by which element visually overlaps it, so they can land over a
+     neighbouring masthead corner as easily as over the chart itself.
+
+     The fix is an opaque backing store, forced before Chart.js ever touches
+     the canvas:
+
+       document.querySelectorAll("canvas").forEach(c => c.getContext("2d", { alpha: false }));
+
+     Chart.js's own later `getContext("2d")` call returns this same cached
+     context — a canvas's rendering context is fixed for its lifetime — so this
+     one pass at script load covers every chart, including ones rebuilt later.
+
+     An opaque context defaults to BLACK, not transparent, so something has to
+     paint the panel colour under the data on every single frame. That has to
+     be a Chart.js plugin's `beforeDraw`, not a one-off paint after the initial
+     build: Chart.js's own resize/redraw passes repaint the canvas and would
+     just paint back over a one-off fill. `source-over` (the default composite
+     operation), not `destination-over` — there is no transparent area left for
+     destination-over to land in on an opaque backing, and painting with it
+     measured out to a fully black canvas. And the fill colour has to come from
+     the same printing-flag system as every other chart-facing token, not from
+     getComputedStyle() at draw time: reading the panel background inside
+     `beforeprint` hits the exact theme-timing trap --ct-grid already exists to
+     avoid, and would paint a dark panel fill onto light print paper. */
+  :root {
+    /* Literal hex, not var() onto --dt-* — a var() chain here would still flip
+       under @media print exactly like --rp-grid does, which is the one thing
+       these tokens must NOT do. Values are the same screen/print pairs as the
+       --rp-* tokens above and in @media print; duplicated as fixed literals so
+       both halves are live in both media regardless of which stylesheet the
+       cascade has got round to applying. */
+    --ct-grid:             color-mix(in srgb, #3b3b52 70%, transparent);
+    --ct-grid-print:       color-mix(in srgb, #dadbe4 70%, transparent);
+    --ct-axis-text:        #b1b2d2;
+    --ct-axis-text-print:  #595a7d;
+    --ct-series-1:         #5eafff; --ct-series-1-print: #1a72c4;
+    --ct-series-2:         #c39bff; --ct-series-2-print: #6f3bbf;
+    --ct-series-3:         #6fc3ba; --ct-series-3-print: #2d6761;
+    --ct-series-4:         #f2a0c8; --ct-series-4-print: #b03b78;
+    --ct-series-5:         #f0c25a; --ct-series-5-print: #8a6200;
+    --ct-series-6:         #9aa4c4; --ct-series-6-print: #6b7392;
+    --ct-critical:         #ff999c; --ct-critical-print: #bb0731;
+    --ct-good:             #6fc3ba; --ct-good-print:     #2d6761;
+    --ct-threshold-good:       color-mix(in srgb, #6fc3ba 70%, transparent);
+    --ct-threshold-good-print: color-mix(in srgb, #2d6761 70%, transparent);
+    --ct-threshold-poor:       color-mix(in srgb, #ff999c 70%, transparent);
+    --ct-threshold-poor-print: color-mix(in srgb, #bb0731 70%, transparent);
+    /* Panel background — see the "transparent canvas" comment above for why
+       a chart canvas needs this at all (an opaque 2D context defaults to
+       black and has to be painted every frame). */
+    --ct-panel-bg:       #212135; /* Colors.Background.Container.Neutral.Default (dark) */
+    --ct-panel-bg-print: #f2f2f5; /* Colors.Background.Container.Neutral.Default (light) */
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     Report-specific additions — everything below is specific to the
+     current-month layout and is not part of the shared deck-base.css block
+     above. Every colour here is still a var() onto the ten Strato roles or
+     the series palette; nothing raw.
+     ═══════════════════════════════════════════════════════════════════════ */
+
+  /* A chart canvas is measured by Chart.js against its immediate parent at
+     the moment `new Chart()` runs; deck-base.css already gives `.chart-body`
+     `min-width: 0` (so a flex item can shrink below its content's natural
+     size instead of forcing the row wider) but no upper clip. A canvas that
+     is ever measured or resized wider than that box — a stale
+     ResizeObserver tick, a rebuild racing a reflow — has nowhere to go but
+     visibly past the panel, since neither `.chart-body` nor `.panel` clips
+     its own content. `.page` already treats "content that doesn't fit" as a
+     build-time bug rather than something to silently grow around; the same
+     contract belongs one level down, at the one element a chart actually
+     draws into. */
+  .chart-body { overflow: hidden; }
+
+  /* Page 1: four analyst-note panels read as quadrants, not a list — a CSS
+     grid (not the flex two-column-of-two v1 used) gives all four an equal
+     share of the page's remaining height regardless of which one's prose
+     happens to run longer, so a short "Errors" note doesn't leave its card
+     visibly emptier than "Traffic" next to it. */
+  .findings-grid {
+    display: grid; grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, 1fr);
+    gap: var(--dt-space-16); flex: 1; min-height: 0;
+  }
+  .findings-grid .panel { min-height: 0; }
+
+  /* Page 3: three metrics side by side under one panel roof (distribution
+     histograms, daily trends). A bare chart-body has no way to say which of
+     the three columns is LCP vs. INP vs. CLS other than the axis units, so
+     each gets a micro label — the same eyebrow language as .panel-title, one
+     level down. */
+  .chart-col { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+  .chart-col-title {
+    flex: 0 0 auto; margin: 0 0 4px; text-align: center;
+    font-size: var(--rp-text-micro); font-weight: 700;
+    text-transform: uppercase; letter-spacing: .06em; color: var(--text-subdued);
+  }
+
+  /* The Experience Summary row was taking roughly twice the height of either
+     chart row below it (three full metric-tiles, each with its own head,
+     name line, value, scale, bounds and tail), which left the daily-trend
+     line charts under 60px of plot height — flat, indistinguishable ribbons
+     with unreadable threshold dashes. This page's tiles only need to repeat
+     what a reader can already see on page 1's KPI row plus the tier split;
+     `.compact` tightens the internal spacing so the row reads as a strip of
+     reference figures rather than a fourth chart competing for the same
+     space as the two rows that actually carry shape (distribution across the
+     month, change day over day) — the whole reason page 3 exists. */
+  .metric-grid.compact .metric-tile { padding: 8px 12px; }
+  .metric-grid.compact .mt-name { display: none; }
+  .metric-grid.compact .mt-value { margin-top: 5px; font-size: 21px; }
+  .metric-grid.compact .mt-scale { margin-top: 7px; height: 16px; }
+  .metric-grid.compact .mt-bounds { margin-top: 1px; }
+  .metric-grid.compact .mt-tail { margin-top: 6px; padding-top: 6px; }
+
+  /* A plain-text threshold grade for a table cell: the same --st-accent a
+     .status chip or .metric-tile consumes, but spent on the figure itself
+     rather than a pill, because a scorecard row with six graded columns
+     already has an accent-coloured .bar-fill in the same row — a chip per
+     cell on top of that reads as six separate alerts instead of one row's
+     worth of context. Weight carries the same "this is a verdict, not just a
+     number" signal a chip's border would, at a fraction of the width. */
+  .grade[data-rating] { color: var(--st-accent); font-weight: 600; }
+
+  /* A bar-in-cell column needs real width to show proportion between rows;
+     deck-base's `.num` (right-align + shrink-to-content) is right for a plain
+     figure but wrong for a bar, so bar columns carry both classes and this
+     rule un-shrinks them. See the renderTable() comment for what went wrong
+     without it. */
+  .rp-table .bar-col { width: auto; }
+
+  /* An exception message is open-ended analyst/stack-trace text with no
+     natural length limit — sized-for-content would give this table a
+     different height than Top Request Errors beside it on every real
+     dataset. One line, clipped, keeps both tables the same height instead.
+
+     `white-space: nowrap` alone tells the browser's table auto-layout that
+     this cell wants to be as wide as its full, untruncated text — `overflow`
+     and `text-overflow` only clip what gets *painted*, not what the layout
+     algorithm reserves space for, so the table itself grew wider than its
+     panel and the real overflow surfaced three columns over, as Source/Path
+     text silently cut off (no ellipsis) at the page edge. table-layout:fixed
+     switches these two tables to CSS-specified column widths — the narrow
+     columns get an explicit width below, and Message/Path (unspecified)
+     split whatever's left, so cropping only ever happens in the one column
+     it's meant to. */
+  #table-topExceptions, #table-topRequestErrors { table-layout: fixed; }
+  /* Column 1 holds a bar-cell (bar-track min-width 44px + gap + a 2-3 digit
+     value), not a bare number — a width tighter than that doesn't shrink the
+     bar, it just lets the bar-cell's own content paint past the cell
+     boundary and collide with the next column's text. */
+  #table-topExceptions th:nth-child(1), #table-topExceptions td:nth-child(1),
+  #table-topRequestErrors th:nth-child(1), #table-topRequestErrors td:nth-child(1) { width: 86px; }
+  #table-topExceptions th:nth-child(2), #table-topExceptions td:nth-child(2) { width: 104px; }
+  #table-topExceptions th:nth-child(4), #table-topExceptions td:nth-child(4) { width: 140px; }
+  #table-topRequestErrors th:nth-child(2), #table-topRequestErrors td:nth-child(2) { width: 66px; }
+  #table-topRequestErrors th:nth-child(3), #table-topRequestErrors td:nth-child(3) { width: 56px; }
+  .rp-table td.msg {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* `.path` is a <span>, and `overflow`/`text-overflow` on an inline element
+     with no width of its own is a no-op — that's why Source/Path text kept
+     bleeding past the card edge even with `white-space: nowrap` (which DOES
+     apply to inline text) already set below: nowrap stopped it wrapping, but
+     nothing was clipping the now-single-line overflow. `display: block`
+     gives it the cell's own width to overflow *against*, so the same
+     ellipsis rule the Message column gets from being a real table cell
+     works here too. */
+  .rp-table .path { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Page 4: Top Pages is a single panel that owns the whole page height, and
+     an <rp-table> sized to its own 10 rows left ~200px of dead space below
+     the last row on a fixed-height page — reading as an unfinished page
+     rather than a complete scorecard. `.flex-bars` (already in the shared
+     layer, built for exactly this: a fixed-height page whose <tr> can't
+     flex) replaces the table so the 10 rows grow to fill the panel instead.
+     The shared 82px row-label width assumes a short label (a month, a
+     device); a page path like "/product/[id]" needs more, hence
+     `.wide-label`. */
+  .flex-bars.wide-label .flex-bars-spacer,
+  .flex-bars.wide-label .flex-bars-row-label { flex: 0 0 170px; }
+  .flex-bars-cell.num { justify-content: flex-end; }
+  .flex-bars-col-hdr.num { text-align: right; }
+
+  /* Inline code inside an analyst's note (a literal page path, exception
+     name, or figure the prose calls out) — the same mono face + subdued
+     surface the rest of the deck uses for a literal value (.rp-table .path),
+     just small enough to sit inline in a sentence. */
+  .notes-body code {
+    font-family: var(--dt-font-mono); font-size: .93em;
+    background: var(--bg-page); border: 1px solid var(--border-subdued);
+    border-radius: 3px; padding: 0 4px;
+  }
+
+  /* Findings panel: the same idiom as the finding-row list defined above, but
+     the current-month deck has no severity-ranked rule engine — its notes are
+     freeform analyst prose (see .notes-body) — so .finding-row itself is
+     unused here and is only present because it travelled in with the pasted
+     shared layer. Left in rather than stripped: the trending deck does use it,
+     and a future current-month finding source (e.g. an automated rule pass)
+     can adopt it without another round of copying CSS between the two decks. */
 </style>
 </head>
 <body>
@@ -215,42 +965,41 @@
 <!-- ── Page 1: Executive Summary ────────────────────────────────────── -->
 <section class="page" data-page="1">
   <header class="hdr">
-    <div class="hdr-left"><span class="brand"><!-- brand --></span></div>
-    <div class="hdr-center"><div class="kind">{{DATE_RANGE_LABEL}}</div><div class="section">Executive Summary</div></div>
+    <div class="hdr-left">
+      <svg class="dt-logo" viewBox="0 0 800 142" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Dynatrace"><g fill="currentColor"><path d="m578.6 37.2h-18.4c-5.2 0-8.8 1-11 3.2-2.2 2.1-3.3 5.8-3.3 10.8v63.6h-11v-64.4c.1-4.9.9-10.2 3.5-14.2 4.7-7.5 13.7-8.9 20.4-8.9h19.9v9.9z"/><path d="m507.6 104.8c-5.2 0-8.8-1-11-3.2-2.2-2.1-3.3-5.6-3.3-10.6v-53.8h23.1v-9.9h-23.1v-26.3h-11v90.6c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h19.9v-9.9z"/><path d="m219.3 1v26.2h-23.1c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h10.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2v-90.7zm-3.3 100.7c-2.2 2.1-5.8 3.2-11 3.2h-10c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-28.9c0-4.1 1.4-9.4 5.5-13.4 3.5-3.4 9.1-6 18.2-6h24.2v53.9c.1 4.9-1 8.4-3.2 10.6z"/><path d="m678.2 43.2c3.5-3.4 9.1-6 18.2-6h26.5v-9.9h-25.4c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h25.4v-9.9h-26.5c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-29c0-4.1 1.4-9.5 5.5-13.4z"/><path d="m470.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m652.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m317.8 27.2h-11.5l-27.9 72.6-27.9-72.6h-11.4l33.6 87.5-10.1 26.3h11.5z"/><path d="m392.2 56.9c0-1.2 0-12.5-8-20.4-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v57.9h11v-58.2c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v58.2h11c0-4.5 0-56.5 0-57.9z"/><path d="m791 36.5c-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v28.2c0 1.2 0 12.5 8 20.4 5.1 5 13.2 9.1 26.4 9.3h26v-10h-25.4c-8.7-.1-15.2-2.7-18.6-6-4-4-5.4-9.3-5.4-13.4v-10.3h59v-18.2c.1-1.2.1-12.5-8-20.4zm-50.9 28.7v-8.6c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v8.6z"/></g><g><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9-2.1 25.2-.8 42.1-.8 42.1l-35.5 33.7s-2.7-18.9-4.1-40.2c-.8-13.2-1.1-24.8-1.1-31.8 0-.4.2-.8.2-1.2 0-.5.6-5.2 5.2-9.6 5-4.8 41.9-33.7 41.3-30.9z" fill="#1496ff"/><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9 0 0-39.3-4.7-41.5 4.8 0-.5.7-6.3 5.3-10.7 5-4.8 42-34.8 41.4-32z" fill="#1284ea"/><path d="m1 53.1v2.2c.4-1.7 1.1-2.9 2.5-4.8 2.9-3.7 7.6-4.7 9.5-4.9 9.6-1.3 23.8-2.8 38.1-3.2 25.3-.8 42 1.3 42 1.3l35.5-33.7s-18.6-3.5-39.8-6c-13.9-1.7-26.1-2.6-33-3-.5 0-5.4-.6-10 3.8-5 4.8-30.4 28.9-40.6 38.6-4.6 4.4-4.2 9.3-4.2 9.7z" fill="#b4dc00"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4-25.3.8-42.1-1.3-42.1-1.3l-35.5 33.8s18.8 3.7 40 6.1c13 1.5 24.5 2.3 31.5 2.7.5 0 1.3-.4 1.8-.4s5.4-.9 10-5.3c5-4.8 35.2-39.3 32.4-39z" fill="#6f2da8"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4 0 0 2.7 39.5-6.8 41.2.5 0 7-.3 11.6-4.7 5-4.8 36.1-40.2 33.3-39.9z" fill="#591f91"/><path d="m84.5 141c-.7 0-1.4-.1-2.2-.1 1.8-.3 3-.9 4.9-2.3 3.8-2.7 5-7.4 5.4-9.3 1.7-9.5 4-23.6 5.1-37.9 2-25.2.8-42 .8-42l35.5-33.8s2.6 18.8 4.1 40.1c.9 13.9 1.2 26.2 1.3 33 0 .5.4 5.4-4.2 9.8-5 4.8-30.4 29-40.5 38.7-4.8 4.4-9.7 3.8-10.2 3.8z" fill="#73be28"/></g></svg>
+      <span class="brand-rule" aria-hidden="true"></span>
+      <span class="brand-team">Business Insights</span>
+    </div>
     <div class="hdr-right">
+      <div class="kind">Monthly Review</div>
       <div class="name">{{FRONTEND_NAME}}</div>
-      <div class="env">{{ENVIRONMENT_NAME}}</div>
-      <div class="range">{{DATE_RANGE_LABEL}}</div>
+      <div class="meta">{{ENVIRONMENT_NAME}}</div>
     </div>
   </header>
-  <div class="accent-line"></div>
+  <div class="page-title"><h2>Executive Summary</h2><p class="lede">{{DATE_RANGE_LABEL}}</p></div>
   <div class="content">
     <div class="kpi-row" id="kpi-row"></div>
-    <div class="exec-grid">
-      <div class="exec-col">
-        <div class="exec-card" style="--exec-accent: rgba(123,97,255,0.6); --exec-accent-text: #9b7fff;">
-          <div class="exec-section-label">Traffic</div>
-          <div class="exec-body" id="exec-traffic">{{FINDINGS_TRAFFIC_HTML}}</div>
-        </div>
-        <div class="exec-card" style="--exec-accent: rgba(20,150,255,0.6); --exec-accent-text: #4db3ff;">
-          <div class="exec-section-label">Top Pages</div>
-          <div class="exec-body" id="exec-pages">{{FINDINGS_PAGES_HTML}}</div>
-        </div>
+    <div class="findings-grid">
+      <div class="panel">
+        <h3 class="panel-title">Traffic</h3>
+        <div class="notes-body" id="exec-traffic">{{FINDINGS_TRAFFIC_HTML}}</div>
       </div>
-      <div class="exec-col">
-        <div class="exec-card" style="--exec-accent: rgba(245,166,35,0.6); --exec-accent-text: #f5c060;">
-          <div class="exec-section-label">Core Web Vitals</div>
-          <div class="exec-body" id="exec-cwv">{{FINDINGS_CWV_HTML}}</div>
-        </div>
-        <div class="exec-card" style="--exec-accent: rgba(232,52,90,0.6); --exec-accent-text: #f06080;">
-          <div class="exec-section-label">Errors</div>
-          <div class="exec-body" id="exec-errors">{{FINDINGS_ERRORS_HTML}}</div>
-        </div>
+      <div class="panel">
+        <h3 class="panel-title">Core Web Vitals</h3>
+        <div class="notes-body" id="exec-cwv">{{FINDINGS_CWV_HTML}}</div>
+      </div>
+      <div class="panel">
+        <h3 class="panel-title">Top Pages</h3>
+        <div class="notes-body" id="exec-pages">{{FINDINGS_PAGES_HTML}}</div>
+      </div>
+      <div class="panel">
+        <h3 class="panel-title">Errors</h3>
+        <div class="notes-body" id="exec-errors">{{FINDINGS_ERRORS_HTML}}</div>
       </div>
     </div>
   </div>
   <footer class="ftr">
-    <span>CONFIDENTIAL · FOR CUSTOMER USE ONLY</span>
+    <span>Generated {{GENERATED_AT}}</span>
     <span>Page 1 of 5 · Powered by <span class="brand-name">Dynatrace</span></span>
   </footer>
 </section>
@@ -258,66 +1007,90 @@
 <!-- ── Page 2: Traffic ───────────────────────────────────────────────── -->
 <section class="page" data-page="2">
   <header class="hdr">
-    <div class="hdr-left"><span class="brand"><!-- brand --></span></div>
-    <div class="hdr-center"><div class="kind">{{DATE_RANGE_LABEL}}</div><div class="section">Traffic</div></div>
+    <div class="hdr-left">
+      <svg class="dt-logo" viewBox="0 0 800 142" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Dynatrace"><g fill="currentColor"><path d="m578.6 37.2h-18.4c-5.2 0-8.8 1-11 3.2-2.2 2.1-3.3 5.8-3.3 10.8v63.6h-11v-64.4c.1-4.9.9-10.2 3.5-14.2 4.7-7.5 13.7-8.9 20.4-8.9h19.9v9.9z"/><path d="m507.6 104.8c-5.2 0-8.8-1-11-3.2-2.2-2.1-3.3-5.6-3.3-10.6v-53.8h23.1v-9.9h-23.1v-26.3h-11v90.6c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h19.9v-9.9z"/><path d="m219.3 1v26.2h-23.1c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h10.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2v-90.7zm-3.3 100.7c-2.2 2.1-5.8 3.2-11 3.2h-10c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-28.9c0-4.1 1.4-9.4 5.5-13.4 3.5-3.4 9.1-6 18.2-6h24.2v53.9c.1 4.9-1 8.4-3.2 10.6z"/><path d="m678.2 43.2c3.5-3.4 9.1-6 18.2-6h26.5v-9.9h-25.4c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h25.4v-9.9h-26.5c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-29c0-4.1 1.4-9.5 5.5-13.4z"/><path d="m470.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m652.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m317.8 27.2h-11.5l-27.9 72.6-27.9-72.6h-11.4l33.6 87.5-10.1 26.3h11.5z"/><path d="m392.2 56.9c0-1.2 0-12.5-8-20.4-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v57.9h11v-58.2c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v58.2h11c0-4.5 0-56.5 0-57.9z"/><path d="m791 36.5c-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v28.2c0 1.2 0 12.5 8 20.4 5.1 5 13.2 9.1 26.4 9.3h26v-10h-25.4c-8.7-.1-15.2-2.7-18.6-6-4-4-5.4-9.3-5.4-13.4v-10.3h59v-18.2c.1-1.2.1-12.5-8-20.4zm-50.9 28.7v-8.6c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v8.6z"/></g><g><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9-2.1 25.2-.8 42.1-.8 42.1l-35.5 33.7s-2.7-18.9-4.1-40.2c-.8-13.2-1.1-24.8-1.1-31.8 0-.4.2-.8.2-1.2 0-.5.6-5.2 5.2-9.6 5-4.8 41.9-33.7 41.3-30.9z" fill="#1496ff"/><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9 0 0-39.3-4.7-41.5 4.8 0-.5.7-6.3 5.3-10.7 5-4.8 42-34.8 41.4-32z" fill="#1284ea"/><path d="m1 53.1v2.2c.4-1.7 1.1-2.9 2.5-4.8 2.9-3.7 7.6-4.7 9.5-4.9 9.6-1.3 23.8-2.8 38.1-3.2 25.3-.8 42 1.3 42 1.3l35.5-33.7s-18.6-3.5-39.8-6c-13.9-1.7-26.1-2.6-33-3-.5 0-5.4-.6-10 3.8-5 4.8-30.4 28.9-40.6 38.6-4.6 4.4-4.2 9.3-4.2 9.7z" fill="#b4dc00"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4-25.3.8-42.1-1.3-42.1-1.3l-35.5 33.8s18.8 3.7 40 6.1c13 1.5 24.5 2.3 31.5 2.7.5 0 1.3-.4 1.8-.4s5.4-.9 10-5.3c5-4.8 35.2-39.3 32.4-39z" fill="#6f2da8"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4 0 0 2.7 39.5-6.8 41.2.5 0 7-.3 11.6-4.7 5-4.8 36.1-40.2 33.3-39.9z" fill="#591f91"/><path d="m84.5 141c-.7 0-1.4-.1-2.2-.1 1.8-.3 3-.9 4.9-2.3 3.8-2.7 5-7.4 5.4-9.3 1.7-9.5 4-23.6 5.1-37.9 2-25.2.8-42 .8-42l35.5-33.8s2.6 18.8 4.1 40.1c.9 13.9 1.2 26.2 1.3 33 0 .5.4 5.4-4.2 9.8-5 4.8-30.4 29-40.5 38.7-4.8 4.4-9.7 3.8-10.2 3.8z" fill="#73be28"/></g></svg>
+      <span class="brand-rule" aria-hidden="true"></span>
+      <span class="brand-team">Business Insights</span>
+    </div>
     <div class="hdr-right">
+      <div class="kind">Monthly Review</div>
       <div class="name">{{FRONTEND_NAME}}</div>
-      <div class="env">{{ENVIRONMENT_NAME}}</div>
-      <div class="range">{{DATE_RANGE_LABEL}}</div>
+      <div class="meta">{{ENVIRONMENT_NAME}}</div>
     </div>
   </header>
-  <div class="accent-line"></div>
+  <div class="page-title"><h2>Traffic</h2><p class="lede">{{DATE_RANGE_LABEL}}</p></div>
   <div class="content">
-    <div class="chart-card" style="flex: 1;">
-      <div class="chart-title">Daily Sessions by Device</div>
+    <div class="panel" style="flex: 1;">
+      <h3 class="panel-title">Daily Sessions by Device</h3>
       <div class="chart-body"><canvas id="chart-cmDailyDevice"></canvas></div>
     </div>
-    <div class="chart-card" style="flex: 0 0 auto;">
-      <div class="chart-title">Mobile vs Desktop</div>
-      <div class="dt-table-wrap"><table class="dt-table" id="table-deviceCompare"></table></div>
+    <div class="panel" style="flex: 0 0 auto;">
+      <h3 class="panel-title">Device Compare</h3>
+      <table class="rp-table" id="table-deviceCompare"></table>
     </div>
   </div>
   <footer class="ftr">
-    <span>CONFIDENTIAL · FOR CUSTOMER USE ONLY</span>
+    <span>Confidential — for customer use only</span>
     <span>Page 2 of 5 · Powered by <span class="brand-name">Dynatrace</span></span>
   </footer>
 </section>
 
 <!-- ── Page 3: Core Web Vitals ──────────────────────────────────────── -->
+<!-- Composition note: v1 gave the tier bar its own full-height card beside a
+     second full-height card holding all three distribution histograms, then
+     stacked three more full-width trend cards below — a 100%-stacked bar, 3
+     histograms and 3 line charts fighting for the same landscape page. The
+     tier bar and the distribution p75 say almost the same thing twice (the
+     population's good/NI/poor split vs. the population's median-ish figure),
+     so it is dropped as a standalone chart. Its data survives as the mt-tail
+     line at the foot of each metric-tile below instead — a compact readout,
+     not a second chart. That frees a whole card's height, so the page reads
+     as three calm rows instead of a fourth column crammed in beside the rest:
+     a fixed-height row of 3 metric-tiles (verdict + p75 + threshold scale +
+     the good/NI/poor split, all in one small box), then two equal flexible
+     rows for the histograms and the daily trends, which are the two views
+     that actually carry shape the tile's single number cannot — distribution
+     across the month, and change day over day. -->
 <section class="page" data-page="3">
   <header class="hdr">
-    <div class="hdr-left"><span class="brand"><!-- brand --></span></div>
-    <div class="hdr-center"><div class="kind">{{DATE_RANGE_LABEL}}</div><div class="section">Core Web Vitals</div></div>
+    <div class="hdr-left">
+      <svg class="dt-logo" viewBox="0 0 800 142" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Dynatrace"><g fill="currentColor"><path d="m578.6 37.2h-18.4c-5.2 0-8.8 1-11 3.2-2.2 2.1-3.3 5.8-3.3 10.8v63.6h-11v-64.4c.1-4.9.9-10.2 3.5-14.2 4.7-7.5 13.7-8.9 20.4-8.9h19.9v9.9z"/><path d="m507.6 104.8c-5.2 0-8.8-1-11-3.2-2.2-2.1-3.3-5.6-3.3-10.6v-53.8h23.1v-9.9h-23.1v-26.3h-11v90.6c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h19.9v-9.9z"/><path d="m219.3 1v26.2h-23.1c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h10.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2v-90.7zm-3.3 100.7c-2.2 2.1-5.8 3.2-11 3.2h-10c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-28.9c0-4.1 1.4-9.4 5.5-13.4 3.5-3.4 9.1-6 18.2-6h24.2v53.9c.1 4.9-1 8.4-3.2 10.6z"/><path d="m678.2 43.2c3.5-3.4 9.1-6 18.2-6h26.5v-9.9h-25.4c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h25.4v-9.9h-26.5c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-29c0-4.1 1.4-9.5 5.5-13.4z"/><path d="m470.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m652.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m317.8 27.2h-11.5l-27.9 72.6-27.9-72.6h-11.4l33.6 87.5-10.1 26.3h11.5z"/><path d="m392.2 56.9c0-1.2 0-12.5-8-20.4-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v57.9h11v-58.2c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v58.2h11c0-4.5 0-56.5 0-57.9z"/><path d="m791 36.5c-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v28.2c0 1.2 0 12.5 8 20.4 5.1 5 13.2 9.1 26.4 9.3h26v-10h-25.4c-8.7-.1-15.2-2.7-18.6-6-4-4-5.4-9.3-5.4-13.4v-10.3h59v-18.2c.1-1.2.1-12.5-8-20.4zm-50.9 28.7v-8.6c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v8.6z"/></g><g><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9-2.1 25.2-.8 42.1-.8 42.1l-35.5 33.7s-2.7-18.9-4.1-40.2c-.8-13.2-1.1-24.8-1.1-31.8 0-.4.2-.8.2-1.2 0-.5.6-5.2 5.2-9.6 5-4.8 41.9-33.7 41.3-30.9z" fill="#1496ff"/><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9 0 0-39.3-4.7-41.5 4.8 0-.5.7-6.3 5.3-10.7 5-4.8 42-34.8 41.4-32z" fill="#1284ea"/><path d="m1 53.1v2.2c.4-1.7 1.1-2.9 2.5-4.8 2.9-3.7 7.6-4.7 9.5-4.9 9.6-1.3 23.8-2.8 38.1-3.2 25.3-.8 42 1.3 42 1.3l35.5-33.7s-18.6-3.5-39.8-6c-13.9-1.7-26.1-2.6-33-3-.5 0-5.4-.6-10 3.8-5 4.8-30.4 28.9-40.6 38.6-4.6 4.4-4.2 9.3-4.2 9.7z" fill="#b4dc00"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4-25.3.8-42.1-1.3-42.1-1.3l-35.5 33.8s18.8 3.7 40 6.1c13 1.5 24.5 2.3 31.5 2.7.5 0 1.3-.4 1.8-.4s5.4-.9 10-5.3c5-4.8 35.2-39.3 32.4-39z" fill="#6f2da8"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4 0 0 2.7 39.5-6.8 41.2.5 0 7-.3 11.6-4.7 5-4.8 36.1-40.2 33.3-39.9z" fill="#591f91"/><path d="m84.5 141c-.7 0-1.4-.1-2.2-.1 1.8-.3 3-.9 4.9-2.3 3.8-2.7 5-7.4 5.4-9.3 1.7-9.5 4-23.6 5.1-37.9 2-25.2.8-42 .8-42l35.5-33.8s2.6 18.8 4.1 40.1c.9 13.9 1.2 26.2 1.3 33 0 .5.4 5.4-4.2 9.8-5 4.8-30.4 29-40.5 38.7-4.8 4.4-9.7 3.8-10.2 3.8z" fill="#73be28"/></g></svg>
+      <span class="brand-rule" aria-hidden="true"></span>
+      <span class="brand-team">Business Insights</span>
+    </div>
     <div class="hdr-right">
+      <div class="kind">Monthly Review</div>
       <div class="name">{{FRONTEND_NAME}}</div>
-      <div class="env">{{ENVIRONMENT_NAME}}</div>
-      <div class="range">{{DATE_RANGE_LABEL}}</div>
+      <div class="meta">{{ENVIRONMENT_NAME}}</div>
     </div>
   </header>
-  <div class="accent-line"></div>
+  <div class="page-title"><h2>Core Web Vitals</h2><p class="lede">{{DATE_RANGE_LABEL}}</p></div>
   <div class="content">
-    <div class="row" style="flex: 1 1 0;">
-      <div class="chart-card" style="flex: 0 0 55mm;">
-        <div class="chart-title">Experience Distribution</div>
-        <div id="stoplight"></div>
-      </div>
-      <div class="chart-card" style="flex: 1;">
-        <div class="chart-title">Load Time Distribution</div>
-        <div class="chart-row">
-          <div class="chart-body"><canvas id="chart-dist-lcp"></canvas></div>
-          <div class="chart-body"><canvas id="chart-dist-inp"></canvas></div>
-          <div class="chart-body"><canvas id="chart-dist-cls"></canvas></div>
-        </div>
+    <div class="panel" style="flex: 0 0 auto;">
+      <h3 class="panel-title">Experience Summary</h3>
+      <p class="panel-note">p75 across all sessions this month, each tile scaled to its own thresholds.</p>
+      <div class="metric-grid compact" id="metric-grid"></div>
+    </div>
+    <div class="panel" style="flex: 1;">
+      <h3 class="panel-title">Load Time Distribution</h3>
+      <div class="panel-row">
+        <div class="chart-col"><div class="chart-col-title">LCP</div><div class="chart-body"><canvas id="chart-dist-lcp"></canvas></div></div>
+        <div class="chart-col"><div class="chart-col-title">INP</div><div class="chart-body"><canvas id="chart-dist-inp"></canvas></div></div>
+        <div class="chart-col"><div class="chart-col-title">CLS</div><div class="chart-body"><canvas id="chart-dist-cls"></canvas></div></div>
       </div>
     </div>
-    <div class="row" style="flex: 1 1 0;">
-      <div class="chart-card" style="flex: 1;"><div class="chart-title">LCP — Daily Trend</div><div class="chart-body"><canvas id="chart-daily-lcp"></canvas></div></div>
-      <div class="chart-card" style="flex: 1;"><div class="chart-title">INP — Daily Trend</div><div class="chart-body"><canvas id="chart-daily-inp"></canvas></div></div>
-      <div class="chart-card" style="flex: 1;"><div class="chart-title">CLS — Daily Trend</div><div class="chart-body"><canvas id="chart-daily-cls"></canvas></div></div>
+    <div class="panel" style="flex: 1.3;">
+      <h3 class="panel-title">Daily Trend</h3>
+      <div class="panel-row">
+        <div class="chart-col"><div class="chart-col-title">LCP</div><div class="chart-body"><canvas id="chart-daily-lcp"></canvas></div></div>
+        <div class="chart-col"><div class="chart-col-title">INP</div><div class="chart-body"><canvas id="chart-daily-inp"></canvas></div></div>
+        <div class="chart-col"><div class="chart-col-title">CLS</div><div class="chart-body"><canvas id="chart-daily-cls"></canvas></div></div>
+      </div>
+      <div class="chart-legend" id="legend-dailyCwv"></div>
     </div>
   </div>
   <footer class="ftr">
-    <span>CONFIDENTIAL · FOR CUSTOMER USE ONLY</span>
+    <span>Confidential — for customer use only</span>
     <span>Page 3 of 5 · Powered by <span class="brand-name">Dynatrace</span></span>
   </footer>
 </section>
@@ -325,24 +1098,27 @@
 <!-- ── Page 4: Top Pages ────────────────────────────────────────────── -->
 <section class="page" data-page="4">
   <header class="hdr">
-    <div class="hdr-left"><span class="brand"><!-- brand --></span></div>
-    <div class="hdr-center"><div class="kind">{{DATE_RANGE_LABEL}}</div><div class="section">Top Pages</div></div>
+    <div class="hdr-left">
+      <svg class="dt-logo" viewBox="0 0 800 142" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Dynatrace"><g fill="currentColor"><path d="m578.6 37.2h-18.4c-5.2 0-8.8 1-11 3.2-2.2 2.1-3.3 5.8-3.3 10.8v63.6h-11v-64.4c.1-4.9.9-10.2 3.5-14.2 4.7-7.5 13.7-8.9 20.4-8.9h19.9v9.9z"/><path d="m507.6 104.8c-5.2 0-8.8-1-11-3.2-2.2-2.1-3.3-5.6-3.3-10.6v-53.8h23.1v-9.9h-23.1v-26.3h-11v90.6c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h19.9v-9.9z"/><path d="m219.3 1v26.2h-23.1c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h10.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2v-90.7zm-3.3 100.7c-2.2 2.1-5.8 3.2-11 3.2h-10c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-28.9c0-4.1 1.4-9.4 5.5-13.4 3.5-3.4 9.1-6 18.2-6h24.2v53.9c.1 4.9-1 8.4-3.2 10.6z"/><path d="m678.2 43.2c3.5-3.4 9.1-6 18.2-6h26.5v-9.9h-25.4c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h25.4v-9.9h-26.5c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-29c0-4.1 1.4-9.5 5.5-13.4z"/><path d="m470.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m652.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m317.8 27.2h-11.5l-27.9 72.6-27.9-72.6h-11.4l33.6 87.5-10.1 26.3h11.5z"/><path d="m392.2 56.9c0-1.2 0-12.5-8-20.4-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v57.9h11v-58.2c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v58.2h11c0-4.5 0-56.5 0-57.9z"/><path d="m791 36.5c-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v28.2c0 1.2 0 12.5 8 20.4 5.1 5 13.2 9.1 26.4 9.3h26v-10h-25.4c-8.7-.1-15.2-2.7-18.6-6-4-4-5.4-9.3-5.4-13.4v-10.3h59v-18.2c.1-1.2.1-12.5-8-20.4zm-50.9 28.7v-8.6c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v8.6z"/></g><g><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9-2.1 25.2-.8 42.1-.8 42.1l-35.5 33.7s-2.7-18.9-4.1-40.2c-.8-13.2-1.1-24.8-1.1-31.8 0-.4.2-.8.2-1.2 0-.5.6-5.2 5.2-9.6 5-4.8 41.9-33.7 41.3-30.9z" fill="#1496ff"/><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9 0 0-39.3-4.7-41.5 4.8 0-.5.7-6.3 5.3-10.7 5-4.8 42-34.8 41.4-32z" fill="#1284ea"/><path d="m1 53.1v2.2c.4-1.7 1.1-2.9 2.5-4.8 2.9-3.7 7.6-4.7 9.5-4.9 9.6-1.3 23.8-2.8 38.1-3.2 25.3-.8 42 1.3 42 1.3l35.5-33.7s-18.6-3.5-39.8-6c-13.9-1.7-26.1-2.6-33-3-.5 0-5.4-.6-10 3.8-5 4.8-30.4 28.9-40.6 38.6-4.6 4.4-4.2 9.3-4.2 9.7z" fill="#b4dc00"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4-25.3.8-42.1-1.3-42.1-1.3l-35.5 33.8s18.8 3.7 40 6.1c13 1.5 24.5 2.3 31.5 2.7.5 0 1.3-.4 1.8-.4s5.4-.9 10-5.3c5-4.8 35.2-39.3 32.4-39z" fill="#6f2da8"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4 0 0 2.7 39.5-6.8 41.2.5 0 7-.3 11.6-4.7 5-4.8 36.1-40.2 33.3-39.9z" fill="#591f91"/><path d="m84.5 141c-.7 0-1.4-.1-2.2-.1 1.8-.3 3-.9 4.9-2.3 3.8-2.7 5-7.4 5.4-9.3 1.7-9.5 4-23.6 5.1-37.9 2-25.2.8-42 .8-42l35.5-33.8s2.6 18.8 4.1 40.1c.9 13.9 1.2 26.2 1.3 33 0 .5.4 5.4-4.2 9.8-5 4.8-30.4 29-40.5 38.7-4.8 4.4-9.7 3.8-10.2 3.8z" fill="#73be28"/></g></svg>
+      <span class="brand-rule" aria-hidden="true"></span>
+      <span class="brand-team">Business Insights</span>
+    </div>
     <div class="hdr-right">
+      <div class="kind">Monthly Review</div>
       <div class="name">{{FRONTEND_NAME}}</div>
-      <div class="env">{{ENVIRONMENT_NAME}}</div>
-      <div class="range">{{DATE_RANGE_LABEL}}</div>
+      <div class="meta">{{ENVIRONMENT_NAME}}</div>
     </div>
   </header>
-  <div class="accent-line"></div>
+  <div class="page-title"><h2>Top Pages</h2><p class="lede">{{DATE_RANGE_LABEL}}</p></div>
   <div class="content">
-    <div class="chart-card" style="flex: 1;">
-      <div class="chart-title">Page Performance Scorecard</div>
-      <div class="chart-subtitle">Top 10 pages by visit volume — LCP, INP, CLS, and error counts (p75)</div>
-      <div class="dt-table-wrap"><table class="dt-table" id="table-topPages"></table></div>
+    <div class="panel" style="flex: 1;">
+      <h3 class="panel-title">Page Performance Scorecard</h3>
+      <p class="panel-note">Top 10 pages by visit volume — LCP, INP, CLS, and error counts (p75)</p>
+      <div class="flex-bars wide-label" id="table-topPages"></div>
     </div>
   </div>
   <footer class="ftr">
-    <span>CONFIDENTIAL · FOR CUSTOMER USE ONLY</span>
+    <span>Confidential — for customer use only</span>
     <span>Page 4 of 5 · Powered by <span class="brand-name">Dynatrace</span></span>
   </footer>
 </section>
@@ -350,37 +1126,41 @@
 <!-- ── Page 5: Errors ───────────────────────────────────────────────── -->
 <section class="page" data-page="5">
   <header class="hdr">
-    <div class="hdr-left"><span class="brand"><!-- brand --></span></div>
-    <div class="hdr-center"><div class="kind">{{DATE_RANGE_LABEL}}</div><div class="section">Errors</div></div>
+    <div class="hdr-left">
+      <svg class="dt-logo" viewBox="0 0 800 142" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Dynatrace"><g fill="currentColor"><path d="m578.6 37.2h-18.4c-5.2 0-8.8 1-11 3.2-2.2 2.1-3.3 5.8-3.3 10.8v63.6h-11v-64.4c.1-4.9.9-10.2 3.5-14.2 4.7-7.5 13.7-8.9 20.4-8.9h19.9v9.9z"/><path d="m507.6 104.8c-5.2 0-8.8-1-11-3.2-2.2-2.1-3.3-5.6-3.3-10.6v-53.8h23.1v-9.9h-23.1v-26.3h-11v90.6c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h19.9v-9.9z"/><path d="m219.3 1v26.2h-23.1c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h10.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2v-90.7zm-3.3 100.7c-2.2 2.1-5.8 3.2-11 3.2h-10c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-28.9c0-4.1 1.4-9.4 5.5-13.4 3.5-3.4 9.1-6 18.2-6h24.2v53.9c.1 4.9-1 8.4-3.2 10.6z"/><path d="m678.2 43.2c3.5-3.4 9.1-6 18.2-6h26.5v-9.9h-25.4c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h25.4v-9.9h-26.5c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-29c0-4.1 1.4-9.5 5.5-13.4z"/><path d="m470.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m652.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m317.8 27.2h-11.5l-27.9 72.6-27.9-72.6h-11.4l33.6 87.5-10.1 26.3h11.5z"/><path d="m392.2 56.9c0-1.2 0-12.5-8-20.4-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v57.9h11v-58.2c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v58.2h11c0-4.5 0-56.5 0-57.9z"/><path d="m791 36.5c-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v28.2c0 1.2 0 12.5 8 20.4 5.1 5 13.2 9.1 26.4 9.3h26v-10h-25.4c-8.7-.1-15.2-2.7-18.6-6-4-4-5.4-9.3-5.4-13.4v-10.3h59v-18.2c.1-1.2.1-12.5-8-20.4zm-50.9 28.7v-8.6c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v8.6z"/></g><g><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9-2.1 25.2-.8 42.1-.8 42.1l-35.5 33.7s-2.7-18.9-4.1-40.2c-.8-13.2-1.1-24.8-1.1-31.8 0-.4.2-.8.2-1.2 0-.5.6-5.2 5.2-9.6 5-4.8 41.9-33.7 41.3-30.9z" fill="#1496ff"/><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9 0 0-39.3-4.7-41.5 4.8 0-.5.7-6.3 5.3-10.7 5-4.8 42-34.8 41.4-32z" fill="#1284ea"/><path d="m1 53.1v2.2c.4-1.7 1.1-2.9 2.5-4.8 2.9-3.7 7.6-4.7 9.5-4.9 9.6-1.3 23.8-2.8 38.1-3.2 25.3-.8 42 1.3 42 1.3l35.5-33.7s-18.6-3.5-39.8-6c-13.9-1.7-26.1-2.6-33-3-.5 0-5.4-.6-10 3.8-5 4.8-30.4 28.9-40.6 38.6-4.6 4.4-4.2 9.3-4.2 9.7z" fill="#b4dc00"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4-25.3.8-42.1-1.3-42.1-1.3l-35.5 33.8s18.8 3.7 40 6.1c13 1.5 24.5 2.3 31.5 2.7.5 0 1.3-.4 1.8-.4s5.4-.9 10-5.3c5-4.8 35.2-39.3 32.4-39z" fill="#6f2da8"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4 0 0 2.7 39.5-6.8 41.2.5 0 7-.3 11.6-4.7 5-4.8 36.1-40.2 33.3-39.9z" fill="#591f91"/><path d="m84.5 141c-.7 0-1.4-.1-2.2-.1 1.8-.3 3-.9 4.9-2.3 3.8-2.7 5-7.4 5.4-9.3 1.7-9.5 4-23.6 5.1-37.9 2-25.2.8-42 .8-42l35.5-33.8s2.6 18.8 4.1 40.1c.9 13.9 1.2 26.2 1.3 33 0 .5.4 5.4-4.2 9.8-5 4.8-30.4 29-40.5 38.7-4.8 4.4-9.7 3.8-10.2 3.8z" fill="#73be28"/></g></svg>
+      <span class="brand-rule" aria-hidden="true"></span>
+      <span class="brand-team">Business Insights</span>
+    </div>
     <div class="hdr-right">
+      <div class="kind">Monthly Review</div>
       <div class="name">{{FRONTEND_NAME}}</div>
-      <div class="env">{{ENVIRONMENT_NAME}}</div>
-      <div class="range">{{DATE_RANGE_LABEL}}</div>
+      <div class="meta">{{ENVIRONMENT_NAME}}</div>
     </div>
   </header>
-  <div class="accent-line"></div>
+  <div class="page-title"><h2>Errors</h2><p class="lede">{{DATE_RANGE_LABEL}}</p></div>
   <div class="content">
-    <div class="row" style="flex: 0 0 45mm;">
-      <div class="chart-card" style="flex: 1;"><div class="chart-title">Sessions with JS Error Rate</div><div class="chart-body"><canvas id="chart-jsErrorRate"></canvas></div></div>
-      <div class="chart-card" style="flex: 1;"><div class="chart-title">Sessions with Request Error Rate</div><div class="chart-body"><canvas id="chart-reqErrorRate"></canvas></div></div>
+    <div class="panel-row" style="flex: 0 0 42mm;">
+      <div class="panel" style="flex: 1;"><h3 class="panel-title">Sessions with JS Error Rate</h3><div class="chart-body"><canvas id="chart-jsErrorRate"></canvas></div></div>
+      <div class="panel" style="flex: 1;"><h3 class="panel-title">Sessions with Request Error Rate</h3><div class="chart-body"><canvas id="chart-reqErrorRate"></canvas></div></div>
     </div>
-    <div class="chart-card" style="flex: 1;">
-      <div class="chart-title">Error Count (Daily)</div>
+    <div class="panel" style="flex: 1;">
+      <h3 class="panel-title">Error Count (Daily)</h3>
+      <p class="panel-note">Top 5 error types by volume; remaining types folded into <strong>Other</strong>.</p>
       <div class="chart-body"><canvas id="chart-errorCounts"></canvas></div>
     </div>
-    <div class="row" style="flex: 0 0 48mm;">
-      <div class="chart-card" style="flex: 1;">
-        <div class="chart-title">Top Exceptions</div>
-        <div class="dt-table-wrap"><table class="dt-table" id="table-topExceptions"></table></div>
+    <div class="panel-row" style="flex: 0 0 50mm;">
+      <div class="panel" style="flex: 1;">
+        <h3 class="panel-title">Top Exceptions</h3>
+        <table class="rp-table" id="table-topExceptions"></table>
       </div>
-      <div class="chart-card" style="flex: 1;">
-        <div class="chart-title">Top Request Errors</div>
-        <div class="dt-table-wrap"><table class="dt-table" id="table-topRequestErrors"></table></div>
+      <div class="panel" style="flex: 1;">
+        <h3 class="panel-title">Top Request Errors</h3>
+        <table class="rp-table" id="table-topRequestErrors"></table>
       </div>
     </div>
   </div>
   <footer class="ftr">
-    <span>CONFIDENTIAL · FOR CUSTOMER USE ONLY</span>
+    <span>Confidential — for customer use only</span>
     <span>Page 5 of 5 · Powered by <span class="brand-name">Dynatrace</span></span>
   </footer>
 </section>
@@ -388,31 +1168,77 @@
 <script>
 const DATA = {{DATA_JSON}};
 
-// ── shared palette / helpers ──────────────────────────────────────────────
-const DEVICE_COLOR = { desktop: "#7B61FF", mobile: "#00A98F" };
-const STATUS_COLOR = { good: "#2ECC85", warn: "#F5A623", poor: "#E8345A" };
-const SERIES_COLOR = { lcp: "#F5A623", inp: "#1496ff", cls: "#73be28" };
-const THRESHOLDS = { lcp: { good: 2500, poor: 4000 }, inp: { good: 200, poor: 500 }, cls: { good: 0.1, poor: 0.25 } };
-const ERROR_SERIES_FALLBACK = ["#7B61FF", "#2ECC85", "#00A98F", "#F5A623", "#E8345A"];
-
+// ── shared helpers ──────────────────────────────────────────────────────
+// Chart colours are never hard-coded: every one is resolved off the --ct-*
+// tokens (see the <style> block's "Chart colours across the theme swap"
+// comment for why those exist as screen/print PAIRS rather than one token
+// the cascade flips). Two things had to be true for the PDF to carry the
+// right colours, not the two-line probe fix alone:
+//
+//  1. Resolve colour-mix() down to rgb() before Canvas sees it (the probe).
+//  2. Pick the palette explicitly — `beforeprint` fires before print media
+//     actually applies (measured: matchMedia("print").matches is false
+//     inside the handler), so asking getComputedStyle() "which theme am I
+//     in" inside that handler returns the screen answer regardless of what
+//     is about to be captured. ctVar's second argument is the fix: the
+//     caller states which palette it wants instead of the cascade being
+//     asked to know something it does not know yet.
+const _cssVarProbe = document.createElement("span");
+_cssVarProbe.style.display = "none";
+document.body.appendChild(_cssVarProbe);
+function ctVar(name, printing) {
+  _cssVarProbe.style.color = `var(--ct-${name}${printing ? "-print" : ""})`;
+  return getComputedStyle(_cssVarProbe).color;
+}
 function fmtMs(ms) { return ms == null ? "—" : ms >= 1000 ? (ms / 1000).toFixed(1) + "s" : Math.round(ms) + "ms"; }
+function fmtCls(v) { return v == null ? "—" : v.toFixed(3); }
 function esc(s) { return s == null ? "" : String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
 
-Chart.defaults.color = "#b1b2d2";
-Chart.defaults.borderColor = "rgba(255,255,255,0.08)";
-Chart.defaults.font.family = "DynatraceFlow, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif";
-Chart.defaults.animation = false;
-Chart.defaults.plugins.legend.labels.boxWidth = 10;
-Chart.defaults.plugins.legend.labels.font = { size: 10 };
+const THRESHOLDS = { lcp: { good: 2500, poor: 4000 }, inp: { good: 200, poor: 500 }, cls: { good: 0.1, poor: 0.25 } };
+const msRating = (v, t) => v == null ? "none" : v <= t.good ? "good" : v <= t.poor ? "needs-improvement" : "poor";
 
-const DT_LOGO_SVG = `<svg enable-background="new 0 0 800 142" viewBox="0 0 800 142" xmlns="http://www.w3.org/2000/svg"><g fill="currentColor"><path d="m578.6 37.2h-18.4c-5.2 0-8.8 1-11 3.2-2.2 2.1-3.3 5.8-3.3 10.8v63.6h-11v-64.4c.1-4.9.9-10.2 3.5-14.2 4.7-7.5 13.7-8.9 20.4-8.9h19.9v9.9z"/><path d="m507.6 104.8c-5.2 0-8.8-1-11-3.2-2.2-2.1-3.3-5.6-3.3-10.6v-53.8h23.1v-9.9h-23.1v-26.3h-11v90.6c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h19.9v-9.9z"/><path d="m219.3 1v26.2h-23.1c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h10.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2v-90.7zm-3.3 100.7c-2.2 2.1-5.8 3.2-11 3.2h-10c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-28.9c0-4.1 1.4-9.4 5.5-13.4 3.5-3.4 9.1-6 18.2-6h24.2v53.9c.1 4.9-1 8.4-3.2 10.6z"/><path d="m678.2 43.2c3.5-3.4 9.1-6 18.2-6h26.5v-9.9h-25.4c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h25.4v-9.9h-26.5c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-29c0-4.1 1.4-9.5 5.5-13.4z"/><path d="m470.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m652.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m317.8 27.2h-11.5l-27.9 72.6-27.9-72.6h-11.4l33.6 87.5-10.1 26.3h11.5z"/><path d="m392.2 56.9c0-1.2 0-12.5-8-20.4-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v57.9h11v-58.2c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v58.2h11c0-4.5 0-56.5 0-57.9z"/><path d="m791 36.5c-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v28.2c0 1.2 0 12.5 8 20.4 5.1 5 13.2 9.1 26.4 9.3h26v-10h-25.4c-8.7-.1-15.2-2.7-18.6-6-4-4-5.4-9.3-5.4-13.4v-10.3h59v-18.2c.1-1.2.1-12.5-8-20.4zm-50.9 28.7v-8.6c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v8.6z"/></g><g><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9-2.1 25.2-.8 42.1-.8 42.1l-35.5 33.7s-2.7-18.9-4.1-40.2c-.8-13.2-1.1-24.8-1.1-31.8 0-.4.2-.8.2-1.2 0-.5.6-5.2 5.2-9.6 5-4.8 41.9-33.7 41.3-30.9z" fill="#1496ff"/><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9 0 0-39.3-4.7-41.5 4.8 0-.5.7-6.3 5.3-10.7 5-4.8 42-34.8 41.4-32z" fill="#1284ea"/><path d="m1 53.1v2.2c.4-1.7 1.1-2.9 2.5-4.8 2.9-3.7 7.6-4.7 9.5-4.9 9.6-1.3 23.8-2.8 38.1-3.2 25.3-.8 42 1.3 42 1.3l35.5-33.7s-18.6-3.5-39.8-6c-13.9-1.7-26.1-2.6-33-3-.5 0-5.4-.6-10 3.8-5 4.8-30.4 28.9-40.6 38.6-4.6 4.4-4.2 9.3-4.2 9.7z" fill="#b4dc00"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4-25.3.8-42.1-1.3-42.1-1.3l-35.5 33.8s18.8 3.7 40 6.1c13 1.5 24.5 2.3 31.5 2.7.5 0 1.3-.4 1.8-.4s5.4-.9 10-5.3c5-4.8 35.2-39.3 32.4-39z" fill="#6f2da8"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4 0 0 2.7 39.5-6.8 41.2.5 0 7-.3 11.6-4.7 5-4.8 36.1-40.2 33.3-39.9z" fill="#591f91"/><path d="m84.5 141c-.7 0-1.4-.1-2.2-.1 1.8-.3 3-.9 4.9-2.3 3.8-2.7 5-7.4 5.4-9.3 1.7-9.5 4-23.6 5.1-37.9 2-25.2.8-42 .8-42l35.5-33.8s2.6 18.8 4.1 40.1c.9 13.9 1.2 26.2 1.3 33 0 .5.4 5.4-4.2 9.8-5 4.8-30.4 29-40.5 38.7-4.8 4.4-9.7 3.8-10.2 3.8z" fill="#73be28"/></g></svg>`;
-document.querySelectorAll(".hdr-left .brand").forEach(el => {
-  el.innerHTML = DT_LOGO_SVG + `<span class="brand-sep">|</span><span class="brand-sub">Business Insights</span>`;
-});
+// Strato's status vocabulary is shape-first: an ideal state is a circle with a
+// check, a warning is a triangle with an exclamation, a critical state is a
+// diamond with an X. Reproduced as inline SVG (ported verbatim from
+// full-page-analysis/assets/report.html.tmpl's RATING_SHAPES) because this
+// report ships as one standalone file with no Strato runtime to import icons
+// from — the shapes and the semantics are Strato's, the delivery is not.
+const RATING_SHAPES = {
+  good:
+    `<svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">` +
+    `<circle cx="6" cy="6" r="5.25" fill="none" stroke="currentColor" stroke-width="1.5"/>` +
+    `<path d="M3.5 6.2 5.2 7.9 8.6 4.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  "needs-improvement":
+    `<svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">` +
+    `<path d="M6 1.1 11.4 10.6H0.6Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>` +
+    `<path d="M6 4.5v2.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>` +
+    `<circle cx="6" cy="8.9" r=".85" fill="currentColor"/></svg>`,
+  poor:
+    `<svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">` +
+    `<path d="M6 .9 11.1 6 6 11.1.9 6Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>` +
+    `<path d="M4.3 4.3 7.7 7.7M7.7 4.3 4.3 7.7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
+  none:
+    `<svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">` +
+    `<circle cx="6" cy="6" r="5.25" fill="none" stroke="currentColor" stroke-width="1.5"/>` +
+    `<path d="M3.2 8.8 8.8 3.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
+};
+const RATING_WORDS = { good: "Good", "needs-improvement": "Needs work", poor: "Poor", none: "Not measured" };
 
-// Populate empty exec-summary cards with a fallback message
-document.querySelectorAll(".exec-body").forEach(el => {
-  if (!el.textContent.trim()) el.innerHTML = '<span class="exec-empty">No notable changes.</span>';
+// Position a value on its metric's own threshold scale, as a percentage of the
+// track: 0 -> 0%, good -> 40%, poor -> 70%, twice the poor boundary -> 100%.
+// Ported verbatim (thresholdPos) from the same reference file.
+function thresholdPos(value, t) {
+  if (!(t.good > 0) || !(t.poor > t.good)) return null;
+  const v = Math.max(0, value);
+  if (v <= t.good) return 40 * (v / t.good);
+  if (v <= t.poor) return 40 + 30 * ((v - t.good) / (t.poor - t.good));
+  return Math.min(100, 70 + 30 * ((v - t.poor) / t.poor));
+}
+
+// Populate empty findings cards with a fallback message so an editable panel
+// never renders as a blank, easy-to-miss box.
+document.querySelectorAll(".notes-body").forEach(el => {
+  if (!el.textContent.trim()) el.innerHTML = '<span class="empty-note">No notable changes.</span>';
 });
 
 function renderKpis(kpis) {
@@ -421,98 +1247,324 @@ function renderKpis(kpis) {
   row.innerHTML = kpis.map(k => {
     const positive = k.change != null && (k.lowerIsBetter ? k.change < 0 : k.change > 0);
     const neutral = k.change == null || k.change === 0;
-    const cls = neutral ? "neutral" : positive ? "up" : "down";
+    const cls = neutral ? "neutral" : positive ? "good" : "bad";
     const arrow = k.change == null ? "" : (k.change >= 0 ? "▲" : "▼");
     const changeHtml = k.change == null ? "" :
       `<div class="kpi-change ${cls}">${arrow} ${Math.abs(k.change).toFixed(1)}% vs prior month</div>`;
-    return `<div class="kpi-tile" style="--kpi-color:${k.color}">
-      <div class="kpi-label">${k.label}</div>
-      <div class="kpi-value">${k.value}</div>
+    return `<div class="kpi-tile">
+      <div class="kpi-label">${esc(k.label)}</div>
+      <div class="kpi-value">${esc(k.value)}</div>
       ${changeHtml}
     </div>`;
   }).join("");
 }
 
+// `c.num` right-aligns + shrinks a column to its content (deck-base's
+// `.rp-table .num { width: 1% }`) — correct for a plain figure, but a
+// bar-in-cell wants real width to show proportion between rows, so a bar
+// column also carries `c.barCol`, which the report-specific `.bar-col` rule
+// (see <style>) overrides back to `width: auto`. Without it every "num" bar
+// column collapses to ~44px (the bar-track's own min-width) regardless of
+// data, which is why a 40,200 vs. 31,200 split originally read as two nearly
+// identical bars — the column was too narrow for the percentage difference
+// to show as more than a couple of pixels.
 function renderTable(elId, columns, rows) {
   const el = document.getElementById(elId);
   if (!el || !rows) return;
-  const thead = "<thead><tr>" + columns.map(c => `<th class="${c.num ? "num" : ""}">${c.label}</th>`).join("") + "</tr></thead>";
+  const cellClass = c => [c.num && "num", c.barCol && "bar-col", c.cellClass].filter(Boolean).join(" ");
+  const thead = "<thead><tr>" + columns.map(c => `<th class="${cellClass(c)}">${c.label}</th>`).join("") + "</tr></thead>";
   const tbody = "<tbody>" + rows.map(r => "<tr>" + columns.map(c => {
     const raw = r[c.key];
     const val = c.render ? c.render(raw, r) : esc(raw ?? "—");
-    return `<td class="${c.num ? "num" : ""}">${val}</td>`;
+    return `<td class="${cellClass(c)}">${val}</td>`;
   }).join("") + "</tr>").join("") + "</tbody>";
   el.innerHTML = thead + tbody;
+}
+
+// Same column-config shape as renderTable, built as `.flex-bars` markup
+// instead of a <table> — for the one panel on a fixed-height page that owns
+// the whole page (Top Pages, page 4), where a <tr> sized to its own content
+// leaves the panel's spare height as dead space below the last row instead
+// of the rows growing to fill it. The first column is always the row label.
+function renderFlexBars(elId, columns, rows) {
+  const el = document.getElementById(elId);
+  if (!el || !rows) return;
+  const [labelCol, ...cellCols] = columns;
+  const header = `<div class="flex-bars-header"><div class="flex-bars-spacer"></div>` +
+    cellCols.map(c => `<div class="flex-bars-col-hdr${c.num ? " num" : ""}">${esc(c.label)}</div>`).join("") +
+    `</div>`;
+  const body = `<div class="flex-bars-body">` + rows.map(r => {
+    const labelRaw = r[labelCol.key];
+    const labelVal = labelCol.render ? labelCol.render(labelRaw, r) : esc(labelRaw ?? "—");
+    const cells = cellCols.map(c => {
+      const raw = r[c.key];
+      const val = c.render ? c.render(raw, r) : esc(raw ?? "—");
+      return `<div class="flex-bars-cell${c.num ? " num" : ""}">${val}</div>`;
+    }).join("");
+    return `<div class="flex-bars-row"><div class="flex-bars-row-label">${labelVal}</div>${cells}</div>`;
+  }).join("") + `</div>`;
+  el.innerHTML = header + body;
+}
+
+// Bar-in-cell: the figure is always printed beside the bar, so the bar shows
+// shape within a column while the number carries the value. `rating`, when
+// given, sets --bar-accent from the status vocabulary instead of the neutral
+// default ink. The outlined track (deck-base's thin 9px bar with a border,
+// vs. the plain 18px solid fill) reads as a measurement next to a number
+// rather than a heavy block of ink — the difference matters most in the
+// light print theme, where a full-height solid fill at these column widths
+// was the one thing on the page that looked like a UI screenshot rather
+// than a printed table.
+function barCell(value, max, fmtFn, rating) {
+  const v = value ?? 0;
+  const pct = max > 0 ? Math.max(2, Math.round((v / max) * 100)) : 0;
+  const accent = rating ? ` --bar-accent:var(${rating === "good" ? "--good" : rating === "needs-improvement" ? "--warning" : "--critical"});` : "";
+  return `<div class="bar-cell"><div class="bar-track outlined"><div class="bar-fill" style="width:${pct}%;${accent}"></div></div><span class="bar-value">${fmtFn(v)}</span></div>`;
+}
+
+// Plain-text threshold grade for a table cell — see the .grade[data-rating]
+// comment in <style> for why this is a coloured figure rather than a chip.
+function gradeCell(value, metric, fmtFn) {
+  const rating = msRating(value, THRESHOLDS[metric]);
+  return `<span class="grade" data-rating="${rating}">${value == null ? "—" : fmtFn(value)}</span>`;
+}
+
+function metricTile(label, name, key, dist, tier) {
+  const t = THRESHOLDS[key];
+  const fmtFn = key === "cls" ? fmtCls : fmtMs;
+  const p75 = dist ? dist.p75 : null;
+  const rating = msRating(p75, t);
+  const pos = p75 == null ? null : thresholdPos(p75, t);
+  const mark = pos == null ? "" :
+    `<span class="mt-mark mt-mark-p75" style="left:${pos.toFixed(2)}%" title="${esc("p75 " + fmtFn(p75))}"></span>`;
+  const tail = tier
+    ? `<div class="mt-tail"><span>Good <b>${tier.good}%</b></span><span>NI <b>${tier.ni}%</b></span><span>Poor <b>${tier.poor}%</b></span></div>`
+    : "";
+  return `<article class="metric-tile" data-rating="${rating}">` +
+    `<div class="mt-head"><span class="mt-abbr">${esc(label)}</span>` +
+      `<span class="status" data-rating="${rating}">${RATING_SHAPES[rating]}${esc(RATING_WORDS[rating])}</span></div>` +
+    `<div class="mt-name">${esc(name)}</div>` +
+    `<div class="mt-value">${p75 == null ? "—" : fmtFn(p75)}<span class="mt-value-tag">p75</span></div>` +
+    `<div class="mt-scale"><div class="mt-track">` +
+      `<span class="mt-zone mt-zone-good"></span><span class="mt-zone mt-zone-ni"></span><span class="mt-zone mt-zone-poor"></span>` +
+    `</div>${mark}</div>` +
+    `<div class="mt-bounds"><span>good ≤ ${esc(fmtFn(t.good))}</span><span>poor &gt; ${esc(fmtFn(t.poor))}</span></div>` +
+    tail +
+    `</article>`;
+}
+
+function renderMetricGrid() {
+  const el = document.getElementById("metric-grid");
+  const dist = DATA.cmCwvDistribution, tier = DATA.cmCwvTier;
+  if (!el || !dist) return;
+  el.innerHTML = [
+    metricTile("LCP", "Largest contentful paint", "lcp", dist.lcp, tier && tier.lcp),
+    metricTile("INP", "Interaction to next paint", "inp", dist.inp, tier && tier.inp),
+    metricTile("CLS", "Cumulative layout shift", "cls", dist.cls, tier && tier.cls),
+  ].join("");
+}
+
+function renderDeviceCompareTable() {
+  const rows = DATA.deviceCompareRows || [];
+  const maxSessions = Math.max(1, ...rows.map(r => r.sessions || 0));
+  const maxLoads = Math.max(1, ...rows.map(r => r.pageLoads || 0));
+  renderTable("table-deviceCompare", [
+    { key: "deviceType", label: "Device", render: v => `<span class="lead">${esc(v)}</span>` },
+    { key: "sessions", label: "Sessions", num: true, barCol: true, render: v => barCell(v, maxSessions, x => x.toLocaleString()) },
+    { key: "pageLoads", label: "Page Loads", num: true, barCol: true, render: v => barCell(v, maxLoads, x => x.toLocaleString()) },
+    { key: "lcpP75", label: "LCP p75", num: true, render: v => gradeCell(v, "lcp", fmtMs) },
+    { key: "inpP75", label: "INP p75", num: true, render: v => gradeCell(v, "inp", fmtMs) },
+    { key: "clsP75", label: "CLS p75", num: true, render: v => gradeCell(v, "cls", fmtCls) },
+  ], rows);
+}
+
+function renderTopPagesTable() {
+  const rows = DATA.topPagesRows || [];
+  const maxVisits = Math.max(1, ...rows.map(r => r.count || 0));
+  const maxExceptions = Math.max(1, ...rows.map(r => r.exceptions || 0));
+  const maxReqErrors = Math.max(1, ...rows.map(r => r.requestErrors || 0));
+  renderFlexBars("table-topPages", [
+    { key: "name", label: "Page", render: v => `<span class="path">${esc(v)}</span>` },
+    { key: "count", label: "Visits", num: true, barCol: true, render: v => barCell(v, maxVisits, x => x.toLocaleString()) },
+    { key: "lcp", label: "LCP", num: true, render: v => gradeCell(v, "lcp", fmtMs) },
+    { key: "inp", label: "INP", num: true, render: v => gradeCell(v, "inp", fmtMs) },
+    { key: "cls", label: "CLS", num: true, render: v => gradeCell(v, "cls", fmtCls) },
+    { key: "exceptions", label: "Exceptions", num: true, barCol: true, render: v => barCell(v, maxExceptions, x => x.toLocaleString()) },
+    { key: "requestErrors", label: "Req. Errors", num: true, barCol: true, render: v => barCell(v, maxReqErrors, x => x.toLocaleString()) },
+  ], rows);
+}
+
+function renderTopExceptionsTable() {
+  const rows = (DATA.topExceptionRows || []).slice(0, 5);
+  const max = Math.max(1, ...rows.map(r => r.count || 0));
+  renderTable("table-topExceptions", [
+    { key: "count", label: "#", num: true, barCol: true, render: v => barCell(v, max, x => x.toLocaleString()) },
+    { key: "type", label: "Type" },
+    // Clipped to one line (see .rp-table td.msg) rather than sized for the
+    // wrap case: an exception message is open-ended text with no natural
+    // length limit, so a row height that "fits the longest message" has no
+    // stable answer, and this and the Top Request Errors table sit side by
+    // side and must land on the same row height.
+    { key: "message", label: "Message", cellClass: "msg" },
+    { key: "source", label: "Source", render: v => `<span class="path">${esc(v ?? "—")}</span>` },
+  ], rows);
+}
+
+function renderTopRequestErrorsTable() {
+  const rows = (DATA.topRequestErrorRows || []).slice(0, 5);
+  const max = Math.max(1, ...rows.map(r => r.count || 0));
+  const statusRating = code => code == null ? "none" : code >= 500 ? "poor" : code >= 400 ? "needs-improvement" : "good";
+  renderTable("table-topRequestErrors", [
+    { key: "count", label: "#", num: true, barCol: true, render: v => barCell(v, max, x => x.toLocaleString()) },
+    { key: "method", label: "Method", render: v => `<span class="chip">${esc(v ?? "—")}</span>` },
+    { key: "status", label: "Status", render: v => `<span class="grade" data-rating="${statusRating(v)}">${v ?? "—"}</span>` },
+    { key: "path", label: "Path", render: (v, r) => `<span class="path">${esc((r.host || "") + (v || ""))}</span>` },
+  ], rows);
+}
+
+// Fold an error-type series set to its top 5 by total volume + "Other", so the
+// stacked bar never grows an unbounded legend. --rp-series-6 is reserved for
+// "Other" regardless of how many real types survive the fold.
+function foldErrorTypes(byType, labelCount) {
+  const totals = Object.entries(byType || {}).map(([type, arr]) => [type, (arr || []).reduce((a, b) => a + (b || 0), 0)]);
+  totals.sort((a, b) => b[1] - a[1]);
+  const top = totals.slice(0, 5).map(([t]) => t);
+  const rest = totals.slice(5).map(([t]) => t);
+  const folded = {};
+  top.forEach(t => { folded[t] = byType[t]; });
+  if (rest.length) {
+    folded["Other"] = Array.from({ length: labelCount }, (_, i) => rest.reduce((s, t) => s + (byType[t][i] || 0), 0));
+  }
+  return folded;
+}
+
+// ── chart builders ────────────────────────────────────────────────────────
+// Every chart instance created this pass is tracked so buildEverything() can
+// destroy and recreate them on `beforeprint`/`afterprint` — see the ctVar()
+// comment above and the fuller rationale in <style>. PRINTING is the flag
+// every renderer's ctVar() calls read; buildEverything() is the only place
+// that sets it, right before rebuilding, so no renderer has to be called
+// with a parameter it would just forward.
+let charts = [];
+let PRINTING = false;
+
+// Chrome exports every <canvas> into the PDF as a vector transparency-group
+// form XObject. Poppler (pdftoppm — every render check earlier in this
+// file's history) composites that correctly; Apple's CoreGraphics (Preview,
+// `sips`, Quick Look) does not — it leaves the group fully transparent
+// (alpha 0) and paints transparent as white, and it places the hole by the
+// group's bounding box rather than by what visually overlaps it, so it can
+// land over a neighbouring masthead corner as easily as over the chart
+// itself. Forcing an opaque backing store before Chart.js ever calls its own
+// getContext("2d") removes the transparency group entirely — a canvas's
+// rendering context is fixed for its lifetime, so Chart.js's later call
+// just gets this same cached context back, for every chart, including ones
+// destroyed and rebuilt later.
+document.querySelectorAll("canvas").forEach(c => c.getContext("2d", { alpha: false }));
+
+// An opaque context defaults to BLACK, not transparent, so something has to
+// paint the panel colour under the data on every frame — a plugin's
+// beforeDraw, not a one-off paint after the initial build, because Chart.js's
+// own resize/redraw passes repaint the canvas and would paint back over a
+// one-off fill. Plain source-over (the default): there is no transparent
+// area left on an opaque backing for destination-over to land in, and it
+// measured out to a fully black canvas when tried. The fill reads PRINTING
+// the same way every other chart colour does — not getComputedStyle() at
+// draw time, which would hit the exact beforeprint theme-timing trap ctVar()
+// exists to avoid and paint a dark panel fill onto light print paper.
+Chart.register({
+  id: "opaqueBacking",
+  beforeDraw(c) {
+    const x = c.ctx;
+    x.save();
+    x.globalCompositeOperation = "source-over";
+    x.fillStyle = ctVar("panel-bg", PRINTING);
+    x.fillRect(0, 0, c.width, c.height);
+    x.restore();
+  },
+});
+
+function mkChart(el, config) {
+  if (!el) return;
+  const c = new Chart(el, config);
+  charts.push(c);
+  return c;
+}
+
+function applyChartDefaults() {
+  Chart.defaults.color = ctVar("axis-text", PRINTING);
+  Chart.defaults.borderColor = ctVar("grid", PRINTING);
+  Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+  Chart.defaults.font.size = 10;
+  // Must stay false: buildEverything() runs inside the beforeprint handler
+  // and has to finish synchronously, before Chrome captures the page — an
+  // animated chart would still be mid-transition (or not yet drawn at all)
+  // at capture time.
+  Chart.defaults.animation = false;
+  Chart.defaults.plugins.legend.labels.boxWidth = 10;
+  Chart.defaults.plugins.legend.labels.font = { size: 10 };
+  Chart.defaults.plugins.legend.labels.color = ctVar("axis-text", PRINTING);
 }
 
 function renderCmDailyDevice() {
   const d = DATA.cmDailyDevice;
   const el = document.getElementById("chart-cmDailyDevice");
   if (!d || !el) return;
-  new Chart(el, {
+  mkChart(el, {
     type: "bar",
     data: {
       labels: d.labels,
       datasets: [
-        { label: "Desktop", data: d.desktop, backgroundColor: DEVICE_COLOR.desktop, stack: "s" },
-        { label: "Mobile", data: d.mobile, backgroundColor: DEVICE_COLOR.mobile, stack: "s" },
+        { label: "Desktop", data: d.desktop, backgroundColor: ctVar("series-1", PRINTING), stack: "s", borderRadius: 2 },
+        { label: "Mobile", data: d.mobile, backgroundColor: ctVar("series-2", PRINTING), stack: "s", borderRadius: 2 },
       ],
     },
-    options: { responsive: true, maintainAspectRatio: false, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } } },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, beginAtZero: true, grid: { color: ctVar("grid", PRINTING) } } },
+      plugins: { legend: { position: "bottom" } },
+    },
   });
 }
 
-function renderDeviceCompareTable() {
-  renderTable("table-deviceCompare", [
-    { key: "deviceType", label: "Device" },
-    { key: "sessions", label: "Sessions", num: true, render: v => v.toLocaleString() },
-    { key: "pageLoads", label: "Page Loads", num: true, render: v => v.toLocaleString() },
-    { key: "lcpP75", label: "LCP p75", num: true, render: fmtMs },
-    { key: "inpP75", label: "INP p75", num: true, render: fmtMs },
-    { key: "clsP75", label: "CLS p75", num: true, render: v => v.toFixed(3) },
-  ], DATA.deviceCompareRows);
-}
-
-function renderStoplight() {
-  const d = DATA.cmCwvTier;
-  const el = document.getElementById("stoplight");
-  if (!d || !el) return;
-  const metrics = [["LCP", d.lcp], ["INP", d.inp], ["CLS", d.cls]];
-  el.innerHTML = metrics.map(([label, m]) => {
-    const seg = (pct, color, cls) => pct > 0 ? `<div class="stoplight-seg ${cls}" style="flex:${pct};background:${color}">${pct}%</div>` : "";
-    return `<div class="stoplight-row">
-      <div class="stoplight-label">${label}</div>
-      <div class="stoplight-bar">${seg(m.poor, STATUS_COLOR.poor, "poor")}${seg(m.ni, STATUS_COLOR.warn, "ni")}${seg(m.good, STATUS_COLOR.good, "good")}</div>
-    </div>`;
-  }).join("") + `<div class="stoplight-legend">
-    <span><i style="background:${STATUS_COLOR.good}"></i>Good</span>
-    <span><i style="background:${STATUS_COLOR.warn}"></i>Needs Improvement</span>
-    <span><i style="background:${STATUS_COLOR.poor}"></i>Poor</span>
-  </div>`;
-}
-
-// p75 is shown as a subtitle rather than a rendered vertical reference line —
-// ponytail: a real vertical marker needs the Chart.js annotation plugin (extra
-// vendor dependency); a text label gives the reader the same number for free.
+// p75 is shown as a value on the metric-tile (renderMetricGrid) rather than a
+// rendered vertical reference line on the histogram — a real marker line needs
+// the Chart.js annotation plugin (an added vendor dependency) for what the
+// tile already shows for free.
+//
+// 11 buckets in a third-of-a-page-wide chart cannot all carry a label without
+// either rotating (illegible at this scale) or shrinking past the deck's
+// --rp-text-micro floor, so BUCKET_AXIS below fixes the font at that floor,
+// forces the labels flat, and skips down to every-other tick — the dropped
+// labels are still even/odd-spaced, so the reader can interpolate them,
+// which a 45° rotation or a sub-10px font cannot offer at all.
+const BUCKET_AXIS = { ticks: { font: { size: 10 }, maxRotation: 0, minRotation: 0, autoSkip: true, maxTicksLimit: 6 }, grid: { display: false } };
 function renderDistribution() {
   const d = DATA.cmCwvDistribution;
   if (!d) return;
+  const seriesVar = { lcp: "series-1", inp: "series-2", cls: "series-3" };
   ["lcp", "inp", "cls"].forEach(metric => {
     const m = d[metric];
     const el = document.getElementById("chart-dist-" + metric);
     if (!m || !el) return;
-    new Chart(el, {
+    mkChart(el, {
       type: "bar",
-      data: { labels: m.buckets, datasets: [{ label: metric.toUpperCase(), data: m.counts, backgroundColor: SERIES_COLOR[metric], borderRadius: 2 }] },
+      data: { labels: m.buckets, datasets: [{ data: m.counts, backgroundColor: ctVar(seriesVar[metric], PRINTING), borderRadius: 2 }] },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false }, title: { display: true, text: `${metric.toUpperCase()} · p75 ${metric === "cls" ? m.p75.toFixed(3) : fmtMs(m.p75)}`, color: "#e8edf5", font: { size: 10, weight: 700 } } },
-        scales: { x: { ticks: { font: { size: 8 } } }, y: { beginAtZero: true } },
+        plugins: { legend: { display: false } },
+        scales: {
+          x: BUCKET_AXIS,
+          y: { beginAtZero: true, grid: { color: ctVar("grid", PRINTING) } },
+        },
       },
     });
   });
 }
 
+// 31 day-of-month labels in a third- or half-width chart hit the same
+// crowding as BUCKET_AXIS above; same fix (floor font, flat, auto-skip).
+const DAY_AXIS = { ticks: { font: { size: 10 }, maxRotation: 0, minRotation: 0, autoSkip: true, maxTicksLimit: 10 }, grid: { display: false } };
 function renderDailyCwv() {
   const d = DATA.cmDailyCwv;
   if (!d) return;
@@ -522,44 +1574,57 @@ function renderDailyCwv() {
     if (!m || !el) return;
     const t = THRESHOLDS[metric];
     const flat = v => d.labels.map(() => v);
-    new Chart(el, {
+    mkChart(el, {
       type: "line",
       data: {
         labels: d.labels,
         datasets: [
-          { label: "Desktop", data: m.desktop, borderColor: DEVICE_COLOR.desktop, backgroundColor: DEVICE_COLOR.desktop, tension: 0.25, pointRadius: 1.5 },
-          { label: "Mobile", data: m.mobile, borderColor: DEVICE_COLOR.mobile, backgroundColor: DEVICE_COLOR.mobile, tension: 0.25, pointRadius: 1.5 },
-          { label: "Good", data: flat(t.good), borderColor: "rgba(46,204,133,0.5)", borderDash: [4, 4], borderWidth: 1, pointRadius: 0 },
-          { label: "Poor", data: flat(t.poor), borderColor: "rgba(232,52,90,0.5)", borderDash: [4, 4], borderWidth: 1, pointRadius: 0 },
+          { label: "Desktop", data: m.desktop, borderColor: ctVar("series-1", PRINTING), backgroundColor: ctVar("series-1", PRINTING), borderWidth: 2, tension: 0.25, pointRadius: 0 },
+          { label: "Mobile", data: m.mobile, borderColor: ctVar("series-2", PRINTING), backgroundColor: ctVar("series-2", PRINTING), borderWidth: 2, tension: 0.25, pointRadius: 0 },
+          { label: "Good threshold", data: flat(t.good), borderColor: ctVar("threshold-good", PRINTING), borderDash: [4, 4], borderWidth: 1, pointRadius: 0 },
+          { label: "Poor threshold", data: flat(t.poor), borderColor: ctVar("threshold-poor", PRINTING), borderDash: [4, 4], borderWidth: 1, pointRadius: 0 },
         ],
       },
-      options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { x: DAY_AXIS, y: { beginAtZero: true, grid: { color: ctVar("grid", PRINTING) } } },
+      },
     });
   });
-}
-
-function renderTopPagesTable() {
-  renderTable("table-topPages", [
-    { key: "name", label: "Page" },
-    { key: "count", label: "Visits", num: true, render: v => v.toLocaleString() },
-    { key: "lcp", label: "LCP", num: true, render: fmtMs },
-    { key: "inp", label: "INP", num: true, render: fmtMs },
-    { key: "cls", label: "CLS", num: true, render: v => v == null ? "—" : v.toFixed(3) },
-    { key: "exceptions", label: "Exceptions", num: true, render: v => (v ?? 0).toLocaleString() },
-    { key: "requestErrors", label: "Req. Errors", num: true, render: v => (v ?? 0).toLocaleString() },
-  ], DATA.topPagesRows);
+  // One shared legend for the three small-multiple trend charts instead of
+  // three repeated ones — see the .chart-legend rule in deck-base.css. Its
+  // swatch/dash colours are inline styles JS bakes in, same as a chart's
+  // canvas pixels, so it is rebuilt every buildEverything() pass too.
+  const legendEl = document.getElementById("legend-dailyCwv");
+  if (legendEl) {
+    legendEl.innerHTML = [
+      `<span class="item"><span class="swatch" style="background:${ctVar("series-1", PRINTING)}"></span>Desktop</span>`,
+      `<span class="item"><span class="swatch" style="background:${ctVar("series-2", PRINTING)}"></span>Mobile</span>`,
+      `<span class="item"><span class="dash" style="color:${ctVar("threshold-good", PRINTING)}"></span>Good threshold</span>`,
+      `<span class="item"><span class="dash" style="color:${ctVar("threshold-poor", PRINTING)}"></span>Poor threshold</span>`,
+    ].join("");
+  }
 }
 
 function renderErrorRates() {
   const d = DATA.cmErrorRates;
   if (!d) return;
-  [["jsErrorRate", "chart-jsErrorRate", "#E8345A"], ["reqErrorRate", "chart-reqErrorRate", "#F5A623"]].forEach(([key, id, color]) => {
+  [["jsErrorRate", "chart-jsErrorRate", "series-1"], ["reqErrorRate", "chart-reqErrorRate", "critical"]].forEach(([key, id, colorName]) => {
     const el = document.getElementById(id);
     if (!el) return;
-    new Chart(el, {
+    const color = ctVar(colorName, PRINTING);
+    mkChart(el, {
       type: "line",
-      data: { labels: d.labels, datasets: [{ label: key, data: d[key], borderColor: color, backgroundColor: color, tension: 0.25, pointRadius: 1.5 }] },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { callback: v => v + "%" } } } },
+      data: { labels: d.labels, datasets: [{ data: d[key], borderColor: color, backgroundColor: color, borderWidth: 2, tension: 0.25, pointRadius: 0 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: DAY_AXIS,
+          y: { beginAtZero: true, grid: { color: ctVar("grid", PRINTING) }, ticks: { callback: v => v + "%" } },
+        },
+      },
     });
   });
 }
@@ -568,49 +1633,53 @@ function renderErrorCounts() {
   const d = DATA.cmErrorCounts;
   const el = document.getElementById("chart-errorCounts");
   if (!d || !el) return;
-  const keys = Object.keys(d.byType);
-  new Chart(el, {
+  const folded = foldErrorTypes(d.byType, d.labels.length);
+  const keys = Object.keys(folded);
+  // series-6 is reserved for "Other" specifically, not "whichever type
+  // sorted 6th" — the fold guarantees "Other" only ever appears once, last.
+  const seriesFor = (key, i) => ctVar(key === "Other" ? "series-6" : `series-${i + 1}`, PRINTING);
+  mkChart(el, {
     type: "bar",
     data: {
       labels: d.labels,
-      datasets: keys.map((k, i) => ({ label: k, data: d.byType[k], backgroundColor: ERROR_SERIES_FALLBACK[i % ERROR_SERIES_FALLBACK.length], stack: "s" })),
+      datasets: keys.map((k, i) => ({ label: k, data: folded[k], backgroundColor: seriesFor(k, i), stack: "s", borderRadius: 2 })),
     },
-    options: { responsive: true, maintainAspectRatio: false, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } } },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, beginAtZero: true, grid: { color: ctVar("grid", PRINTING) } } },
+      plugins: { legend: { position: "bottom" } },
+    },
   });
 }
 
-function renderTopExceptionsTable() {
-  renderTable("table-topExceptions", [
-    { key: "count", label: "#", num: true, render: v => v.toLocaleString() },
-    { key: "type", label: "Type" },
-    { key: "message", label: "Message" },
-    { key: "source", label: "Source" },
-  ], (DATA.topExceptionRows || []).slice(0, 5));
-}
-
-function renderTopRequestErrorsTable() {
-  const statusColor = code => code == null ? "#b1b2d2" : code >= 500 ? "#E8345A" : code >= 400 ? "#F5A623" : "#2ECC85";
-  renderTable("table-topRequestErrors", [
-    { key: "count", label: "#", num: true, render: v => v.toLocaleString() },
-    { key: "method", label: "Method" },
-    { key: "status", label: "Status", render: v => `<span style="color:${statusColor(v)};font-weight:700">${v ?? "—"}</span>` },
-    { key: "path", label: "Path" },
-  ], (DATA.topRequestErrorRows || []).slice(0, 5));
-}
-
-document.addEventListener("DOMContentLoaded", () => {
+function buildEverything(printing) {
+  PRINTING = printing;
+  charts.forEach(c => c.destroy());
+  charts = [];
+  applyChartDefaults();
   renderKpis(DATA.kpis);
-  renderCmDailyDevice();
+  renderMetricGrid();
   renderDeviceCompareTable();
-  renderStoplight();
-  renderDistribution();
-  renderDailyCwv();
   renderTopPagesTable();
-  renderErrorRates();
-  renderErrorCounts();
   renderTopExceptionsTable();
   renderTopRequestErrorsTable();
-});
+  renderCmDailyDevice();
+  renderDistribution();
+  renderDailyCwv();
+  renderErrorRates();
+  renderErrorCounts();
+}
+
+// Three passes, not one: DOMContentLoaded draws the on-screen (dark) review
+// copy; beforeprint destroys and redraws everything with the print palette
+// BEFORE Chrome's --print-to-pdf path captures the page (see the ctVar()
+// comment above for why beforeprint cannot simply ask the cascade which
+// theme is active); afterprint redraws with the screen palette again, so a
+// reader who opens the system print dialog and cancels it is not left
+// looking at a light-inked chart on the dark screen copy.
+document.addEventListener("DOMContentLoaded", () => buildEverything(false));
+window.addEventListener("beforeprint", () => buildEverything(true));
+window.addEventListener("afterprint", () => buildEverything(false));
 </script>
 </body>
 </html>

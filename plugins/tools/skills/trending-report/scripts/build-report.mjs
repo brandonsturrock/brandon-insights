@@ -51,10 +51,6 @@ if (!args.demo && !args.data) {
 const MAX_BROWSERS = parseInt(args["max-browsers"] || "6", 10);
 
 // ── shared formatting helpers ──────────────────────────────────────────────
-function fmtMs(ms) {
-  if (ms == null || Number.isNaN(ms)) return "—";
-  return ms >= 1000 ? (ms / 1000).toFixed(2) + "s" : Math.round(ms) + "ms";
-}
 function compact(n) {
   if (n == null || Number.isNaN(n)) return "—";
   if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(1) + "M";
@@ -91,6 +87,14 @@ function loadRecords(dataDir, filename) {
   throw new Error(`Unexpected JSON envelope shape in ${filename} (kind=${result && result.kind})`);
 }
 
+// traffic-weekly.json postdates the original four-query contract, so a data
+// directory captured before it existed is still valid — the panel is dropped
+// rather than the build failing.
+function loadRecordsOptional(dataDir, filename) {
+  if (!fs.existsSync(path.join(dataDir, filename))) return null;
+  return loadRecords(dataDir, filename);
+}
+
 // ── findings markdown -> per-section HTML ──────────────────────────────
 // Mirrors the original app's extractMarkdownSection: split on "## " headings,
 // case-insensitive substring match against a keyword.
@@ -111,8 +115,19 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 }
 
-// Minimal markdown -> HTML: bullet lists + plain paragraphs, nothing exotic
-// (matches what findings-prompt.md actually produces).
+// Escaping first (so a literal < or & inside **bold** or `code` can't break
+// out) then applying inline formatting on the escaped text is safe: neither
+// regex below matches &, < or > and escapeHtml never touches * or `.
+function inlineMarkdown(escaped) {
+  return escaped
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>");
+}
+
+// Minimal markdown -> HTML: bullet lists, plain paragraphs, and inline
+// **bold**/`code` — findings-prompt.md's own output uses both, and prose
+// findings that skip inline formatting are unaffected (neither regex
+// matches without the marker characters).
 function markdownToHtml(body) {
   if (!body.trim()) return "";
   const lines = body.split(/\r?\n/).filter((l) => l.trim() !== "");
@@ -122,10 +137,10 @@ function markdownToHtml(body) {
     const bullet = line.match(/^-\s+(.*)$/);
     if (bullet) {
       if (!inList) { html += "<ul>"; inList = true; }
-      html += `<li>${escapeHtml(bullet[1])}</li>`;
+      html += `<li>${inlineMarkdown(escapeHtml(bullet[1]))}</li>`;
     } else {
       if (inList) { html += "</ul>"; inList = false; }
-      html += `<p>${escapeHtml(line)}</p>`;
+      html += `<p>${inlineMarkdown(escapeHtml(line))}</p>`;
     }
   }
   if (inList) html += "</ul>";
@@ -152,6 +167,9 @@ function buildTrendingData(dataDir) {
   const weeklyRows = loadRecords(dataDir, "cwv-weekly.json")
     .filter(r => new Date(r.week).getTime() < cutoffMs)
     .sort((a, b) => new Date(a.week).getTime() - new Date(b.week).getTime());
+  const trafficWeeklyRows = (loadRecordsOptional(dataDir, "traffic-weekly.json") ?? [])
+    .filter(r => new Date(r.week).getTime() < cutoffMs)
+    .sort((a, b) => new Date(a.week).getTime() - new Date(b.week).getTime());
   const browserRows = loadRecords(dataDir, "browser-perf-monthly.json");
 
   const trafficMonthly = {
@@ -175,6 +193,16 @@ function buildTrendingData(dataDir) {
     inp: weeklyRows.map((r) => r.inp),
     cls: weeklyRows.map((r) => (r.cls == null ? null : r.cls / 10000)),
   };
+
+  // Sessions only. This tenant reports navigations/XHR as null for most of the
+  // window and the monthly table alongside already carries both, so a
+  // three-series weekly chart would be two mostly-empty lines.
+  // ponytail: add the other two series here if a tenant turns up that
+  // populates them weekly and the extra lines earn their ink.
+  const trafficWeekly = trafficWeeklyRows.length ? {
+    labels: trafficWeeklyRows.map((r) => new Date(r.week).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })),
+    sessions: trafficWeeklyRows.map((r) => r.sessions),
+  } : null;
 
   // Browser selection policy: group by browser×device, rank by total visits
   // summed across the whole 6-month window (not just the latest month, to
@@ -230,16 +258,17 @@ function buildTrendingData(dataDir) {
 
   const last = metricsRows[metricsRows.length - 1];
   const prev = metricsRows[metricsRows.length - 2];
-  const lastCwv = cwvRows[cwvRows.length - 1];
-  const prevCwv = cwvRows[cwvRows.length - 2];
+  // LCP/INP/CLS are deliberately not KPI entries: the template derives them
+  // straight from cwvMonthly's latest point and renders them as
+  // threshold-scale metric-tiles (see report-trending.html.tmpl's "Page 1:
+  // KPI row" comment), which a plain value+delta figure here can't express.
   const kpis = [
-    { label: "Sessions", value: compact(last?.Sessions), change: pctChange(last?.Sessions, prev?.Sessions), color: "#7B61FF", lowerIsBetter: false },
-    { label: "XHR Requests", value: compact(last?.["XHR Requests"]), change: pctChange(last?.["XHR Requests"], prev?.["XHR Requests"]), color: "#00A98F", lowerIsBetter: false },
-    { label: "Navigations", value: compact(last?.["Navigations"]), change: pctChange(last?.["Navigations"], prev?.["Navigations"]), color: "#1D8AB7", lowerIsBetter: false },
-    { label: "LCP p75", value: fmtMs(lastCwv?.["Largest Contentful Paint"]), change: pctChange(lastCwv?.["Largest Contentful Paint"], prevCwv?.["Largest Contentful Paint"]), color: "#F5A623", lowerIsBetter: true },
+    { label: "Sessions", value: compact(last?.Sessions), change: pctChange(last?.Sessions, prev?.Sessions), lowerIsBetter: false },
+    { label: "XHR Requests", value: compact(last?.["XHR Requests"]), change: pctChange(last?.["XHR Requests"], prev?.["XHR Requests"]), lowerIsBetter: false },
+    { label: "Navigations", value: compact(last?.["Navigations"]), change: pctChange(last?.["Navigations"], prev?.["Navigations"]), lowerIsBetter: false },
   ];
 
-  return { kpis, trafficMonthly, cwvMonthly, cwvWeekly, browserPerf };
+  return { kpis, trafficMonthly, trafficWeekly, cwvMonthly, cwvWeekly, browserPerf };
 }
 
 // ── demo (hardcoded) data ────────────────────────────────────────────────
@@ -247,10 +276,9 @@ function demoTrendingData() {
   const labels = ["Feb 2026", "Mar 2026", "Apr 2026", "May 2026", "Jun 2026", "Jul 2026"];
   return {
     kpis: [
-      { label: "Sessions", value: "482K", change: 6.4, color: "#7B61FF", lowerIsBetter: false },
-      { label: "XHR Requests", value: "1.3M", change: 3.1, color: "#00A98F", lowerIsBetter: false },
-      { label: "Navigations", value: "610K", change: 4.8, color: "#1D8AB7", lowerIsBetter: false },
-      { label: "LCP p75", value: "2.4s", change: -5.2, color: "#F5A623", lowerIsBetter: true },
+      { label: "Sessions", value: "482K", change: 6.4, lowerIsBetter: false },
+      { label: "XHR Requests", value: "1.3M", change: 3.1, lowerIsBetter: false },
+      { label: "Navigations", value: "610K", change: 4.8, lowerIsBetter: false },
     ],
     trafficMonthly: {
       labels,
@@ -354,9 +382,16 @@ function renderReport(outPath) {
   // Hidden at print time so it never appears in the PDF.
   const reportFilename = path.basename(outPath);
   html = html.replace("</body>", `<style>
-  #dt-save-bar{position:fixed;bottom:20px;right:20px;z-index:9999;display:flex;align-items:center;gap:12px;background:#12122a;border:1px solid #7B61FF;border-radius:10px;padding:10px 18px;box-shadow:0 4px 20px rgba(0,0,0,.6);font-family:sans-serif;font-size:13px;color:#ccc}
-  #dt-save-bar button{background:#7B61FF;color:#fff;border:none;border-radius:6px;padding:7px 16px;cursor:pointer;font-size:13px;font-weight:600}
-  #dt-save-bar button:hover{background:#9b85ff}
+  /* Bottom-CENTRE, not bottom-right: this is fixed to the viewport, so it
+     overlays whichever page is scrolled into view, and every page's bottom
+     corners hold a panel. The footer strip is the one band that is empty
+     across all four pages — its text sits hard left and hard right — so the
+     centre is the only spot that covers no data. Colours come from the deck's
+     own tokens rather than the hex this carried before, so it tracks the
+     screen theme like everything else. */
+  #dt-save-bar{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;align-items:center;gap:12px;background:var(--bg-container);border:1px solid var(--dt-primary);border-radius:var(--dt-radius);padding:8px 14px;box-shadow:0 4px 20px rgba(0,0,0,.6);font-family:var(--dt-font-sans);font-size:var(--rp-text-small);color:var(--text-subdued)}
+  #dt-save-bar button{background:var(--dt-primary);color:var(--dt-bg-base);border:none;border-radius:var(--dt-radius);padding:6px 14px;cursor:pointer;font-family:inherit;font-size:var(--rp-text-small);font-weight:600}
+  #dt-save-bar button:hover{background:color-mix(in srgb, var(--dt-primary) 80%, var(--text-default))}
   @media print{#dt-save-bar{display:none!important}}
 </style>
 <div id="dt-save-bar">
@@ -373,7 +408,7 @@ function dtSave(){
   document.body.appendChild(a);a.click();document.body.removeChild(a);
   setTimeout(function(){URL.revokeObjectURL(a.href)},1000);
   var btn=document.getElementById('dt-save-btn');
-  btn.textContent='✓ Saved to Downloads';btn.style.background='#00A98F';
+  btn.textContent='✓ Saved to Downloads';btn.style.background='var(--good)';
   setTimeout(function(){btn.textContent='Save changes';btn.style.background=''},3000);
 }
 </script>

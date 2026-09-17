@@ -30,16 +30,23 @@ function parseArgs(argv) {
   return out;
 }
 
-const args = parseArgs(process.argv.slice(2));
-if (args.type !== "current-month") {
+// CLI arg parsing/validation and the renderReport(args.out) call at the
+// bottom of this file only run when the script is invoked directly (`node
+// build-report.mjs ...`) — guarded so `scripts/preview.mjs` can `import
+// { assembleHtml }` from here (to reuse the placeholder-substitution /
+// Chart.js-inlining / contenteditable logic) without tripping the "Missing
+// --type" exit this file's own CLI entry requires.
+const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const args = isMain ? parseArgs(process.argv.slice(2)) : {};
+if (isMain && args.type !== "current-month") {
   console.error('Missing/invalid --type (must be "current-month")');
   process.exit(1);
 }
-if (!args.out) {
+if (isMain && !args.out) {
   console.error("Missing --out <report.html>");
   process.exit(1);
 }
-if (!args.demo && !args.data) {
+if (isMain && !args.demo && !args.data) {
   console.error("Missing --data <dir> (or pass --demo)");
   process.exit(1);
 }
@@ -104,9 +111,24 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 }
 
-// Minimal markdown -> HTML: bullet lists + plain paragraphs, nothing exotic
-// (matches what findings-prompt.md actually produces).
-function markdownToHtml(body) {
+// **bold** and `inline code` are both things findings-prompt.md's own output
+// actually uses (an analyst calling out a figure or a literal page/exception
+// name), so they need to survive the markdown pass rather than showing up as
+// literal asterisks/backticks in the rendered notes panel. Applied AFTER
+// escapeHtml so the asterisks/backticks being matched can never come from
+// user-authored HTML the escape was meant to neutralise.
+function inlineMarkdown(escaped) {
+  return escaped
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/`(.+?)`/g, "<code>$1</code>");
+}
+
+// Minimal markdown -> HTML: bullet lists + plain paragraphs + inline
+// bold/code, nothing exotic (matches what findings-prompt.md actually
+// produces). Exported so scripts/preview.mjs converts its fixture's findings
+// markdown through the same path a real run uses, instead of a second copy
+// of this conversion.
+export function markdownToHtml(body) {
   if (!body.trim()) return "";
   const lines = body.split(/\r?\n/).filter((l) => l.trim() !== "");
   let html = "";
@@ -115,10 +137,10 @@ function markdownToHtml(body) {
     const bullet = line.match(/^-\s+(.*)$/);
     if (bullet) {
       if (!inList) { html += "<ul>"; inList = true; }
-      html += `<li>${escapeHtml(bullet[1])}</li>`;
+      html += `<li>${inlineMarkdown(escapeHtml(bullet[1]))}</li>`;
     } else {
       if (inList) { html += "</ul>"; inList = false; }
-      html += `<p>${escapeHtml(line)}</p>`;
+      html += `<p>${inlineMarkdown(escapeHtml(line))}</p>`;
     }
   }
   if (inList) html += "</ul>";
@@ -201,12 +223,20 @@ function buildCurrentMonthData(dataDir) {
   };
 
   // cmCwvDistribution
-  const LCP_INP_BUCKETS = ["0-1s", "1-2s", "2-3s", "3-4s", "4-5s", "5-6s", "6-7s", "7-8s", "8-9s", "9-10s", "10s+"];
+  const LCP_BUCKETS = ["0-1s", "1-2s", "2-3s", "3-4s", "4-5s", "5-6s", "6-7s", "7-8s", "8-9s", "9-10s", "10s+"];
+  // INP's own scale, not LCP's 1000ms-wide one: good/poor sit at 200ms/500ms,
+  // two orders of magnitude below LCP's thresholds, so LCP's buckets put
+  // essentially every real INP sample in bucket 0 and nothing else — a
+  // histogram that is structurally incapable of showing a distribution. 100ms
+  // steps to 1s (+ a tail) land both thresholds exactly on a bucket edge
+  // (200ms is the b1/b2 edge, 500ms is the b4/b5 edge) — matches the
+  // cm-cwv-distribution.dql bucket boundaries above.
+  const INP_BUCKETS = ["0-100ms", "100-200ms", "200-300ms", "300-400ms", "400-500ms", "500-600ms", "600-700ms", "700-800ms", "800-900ms", "900ms-1s", "1s+"];
   const CLS_BUCKETS = ["0-0.1", "0.1-0.2", "0.2-0.3", "0.3-0.4", "0.4-0.5", "0.5-0.6", "0.6-0.7", "0.7-0.8", "0.8-0.9", "0.9-1.0", "1.0+"];
   const bucketCounts = (row, prefix) => Array.from({ length: 11 }, (_, i) => row[`${prefix}_b${i}`] || 0);
   const cmCwvDistribution = {
-    lcp: { buckets: LCP_INP_BUCKETS, counts: bucketCounts(distRow, "lcp"), p75: blended("lcp_p75") },
-    inp: { buckets: LCP_INP_BUCKETS, counts: bucketCounts(distRow, "inp"), p75: blended("inp_p75") },
+    lcp: { buckets: LCP_BUCKETS, counts: bucketCounts(distRow, "lcp"), p75: blended("lcp_p75") },
+    inp: { buckets: INP_BUCKETS, counts: bucketCounts(distRow, "inp"), p75: blended("inp_p75") },
     cls: { buckets: CLS_BUCKETS, counts: bucketCounts(distRow, "cls"), p75: blended("cls_p75") == null ? null : blended("cls_p75") / 10000 },
   };
 
@@ -324,7 +354,7 @@ function demoCurrentMonthData() {
     },
     cmCwvDistribution: {
       lcp: { buckets: ["0-1s", "1-2s", "2-3s", "3-4s", "4-5s", "5-6s", "6-7s", "7-8s", "8-9s", "9-10s", "10s+"], counts: [500, 4200, 5100, 2300, 900, 400, 200, 100, 50, 30, 20], p75: 2600 },
-      inp: { buckets: ["0-1s", "1-2s", "2-3s", "3-4s", "4-5s", "5-6s", "6-7s", "7-8s", "8-9s", "9-10s", "10s+"], counts: [9000, 2000, 400, 100, 50, 20, 10, 5, 3, 2, 1], p75: 210 },
+      inp: { buckets: ["0-100ms", "100-200ms", "200-300ms", "300-400ms", "400-500ms", "500-600ms", "600-700ms", "700-800ms", "800-900ms", "900ms-1s", "1s+"], counts: [500, 4200, 5100, 2300, 900, 400, 200, 100, 50, 30, 20], p75: 210 },
       cls: { buckets: ["0-0.1", "0.1-0.2", "0.2-0.3", "0.3-0.4", "0.4-0.5", "0.5-0.6", "0.6-0.7", "0.7-0.8", "0.8-0.9", "0.9-1.0", "1.0+"], counts: [8000, 900, 300, 100, 50, 20, 10, 5, 3, 1, 0], p75: 0.06 },
     },
     cmDailyCwv: {
@@ -363,22 +393,19 @@ function demoFindings(sections) {
 // 5-page layout: Page 1 = Executive Summary (all findings), Pages 2-5 = chart detail pages (no findings panels)
 const CM_SECTIONS = { FINDINGS_TRAFFIC_HTML: "Traffic", FINDINGS_CWV_HTML: "Core Web Vitals", FINDINGS_PAGES_HTML: "Pages", FINDINGS_ERRORS_HTML: "Error" };
 
-function renderReport(outPath) {
+// Placeholder substitution + Chart.js inlining + contenteditable/save-bar
+// injection — everything that turns (data, findings, meta) into the final
+// HTML string, independent of *where* data/findings came from (a dtctl data
+// dir + findings.txt for a real run, or a fixture for scripts/preview.mjs).
+// Exported so preview.mjs can reuse it instead of re-implementing template
+// substitution against a second copy of report-cm.html.tmpl's placeholder set.
+export function assembleHtml({ data, findings, frontend, environment, dateRangeLabel, generatedAt, outPath }) {
   const template = fs.readFileSync(path.join(SKILL_ROOT, "assets", "report-cm.html.tmpl"), "utf8");
-
-  const data = args.demo ? demoCurrentMonthData() : buildCurrentMonthData(args.data);
-  const findings = args.demo ? demoFindings(CM_SECTIONS) : loadFindings(args.findings, CM_SECTIONS);
-
-  const frontend = args.demo ? "demo-frontend" : args.frontend;
-  const now = new Date();
-  const generatedAt = `Generated ${now.toISOString().slice(0, 16).replace("T", " ")} UTC`;
-  const prevMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
-  const dateRangeLabel = prevMonth.toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 
   const replacements = {
     "{{REPORT_TITLE}}": `${frontend} — ${dateRangeLabel} Review`,
     "{{FRONTEND_NAME}}": frontend || "",
-    "{{ENVIRONMENT_NAME}}": args.environment || "",
+    "{{ENVIRONMENT_NAME}}": environment || "",
     "{{DATE_RANGE_LABEL}}": dateRangeLabel,
     "{{GENERATED_AT}}": generatedAt,
   };
@@ -413,17 +440,26 @@ function renderReport(outPath) {
     .replace(/\/\/# sourceMappingURL=\S+/g, "");
   html = html.replace('<script src="chart.umd.min.js"></script>', `<script>${chartJs}</script>`);
 
-  // Make findings panels editable in the browser preview.
-  html = html.replace(/class="exec-body"/g, 'class="exec-body" contenteditable="true" spellcheck="false"');
+  // Make findings panels editable in the browser preview. The v2 template
+  // renamed these panels' class from "exec-body" to "notes-body" (the shared
+  // deck-base.css idiom, also used by report-trending.html.tmpl) — this regex
+  // was updated in the same change, per the contract in report-cm.html.tmpl's
+  // header comment.
+  html = html.replace(/class="notes-body"/g, 'class="notes-body" contenteditable="true" spellcheck="false"');
 
   // Inject a floating save bar. The save button downloads the current DOM as
   // an HTML file to ~/Downloads — the PDF step uses that file if it exists.
   // Hidden at print time so it never appears in the PDF.
   const reportFilename = path.basename(outPath);
+  // Colours here are var() onto the same Strato tokens the template's own
+  // <style> block declares (this snippet lands inside that same document, so
+  // the custom properties are in scope) rather than new raw hex — the save
+  // bar is chrome, not report content, but "no new hex outside :root" still
+  // holds for anything the reader can see.
   html = html.replace("</body>", `<style>
-  #dt-save-bar{position:fixed;bottom:20px;right:20px;z-index:9999;display:flex;align-items:center;gap:12px;background:#12122a;border:1px solid #7B61FF;border-radius:10px;padding:10px 18px;box-shadow:0 4px 20px rgba(0,0,0,.6);font-family:sans-serif;font-size:13px;color:#ccc}
-  #dt-save-bar button{background:#7B61FF;color:#fff;border:none;border-radius:6px;padding:7px 16px;cursor:pointer;font-size:13px;font-weight:600}
-  #dt-save-bar button:hover{background:#9b85ff}
+  #dt-save-bar{position:fixed;bottom:20px;right:20px;z-index:9999;display:flex;align-items:center;gap:12px;background:var(--bg-container);border:1px solid var(--dt-primary);border-radius:var(--dt-radius);padding:10px 18px;box-shadow:0 4px 20px color-mix(in srgb, var(--dt-bg-base) 70%, transparent);font-family:var(--dt-font-sans);font-size:var(--rp-text-small);color:var(--text-default)}
+  #dt-save-bar button{background:var(--dt-primary);color:var(--dt-bg-base);border:none;border-radius:6px;padding:7px 16px;cursor:pointer;font-size:var(--rp-text-small);font-weight:600}
+  #dt-save-bar button:hover{background:color-mix(in srgb, var(--dt-primary) 85%, white)}
   @media print{#dt-save-bar{display:none!important}}
 </style>
 <div id="dt-save-bar">
@@ -440,7 +476,7 @@ function dtSave(){
   document.body.appendChild(a);a.click();document.body.removeChild(a);
   setTimeout(function(){URL.revokeObjectURL(a.href)},1000);
   var btn=document.getElementById('dt-save-btn');
-  btn.textContent='✓ Saved to Downloads';btn.style.background='#00A98F';
+  btn.textContent='✓ Saved to Downloads';btn.style.background='var(--good)';
   setTimeout(function(){btn.textContent='Save changes';btn.style.background=''},3000);
 }
 </script>
@@ -452,4 +488,18 @@ function dtSave(){
   console.log(`Wrote ${outPath}`);
 }
 
-renderReport(args.out);
+// ── CLI entry (real or --demo run) ──────────────────────────────────────
+function renderReport(outPath) {
+  const data = args.demo ? demoCurrentMonthData() : buildCurrentMonthData(args.data);
+  const findings = args.demo ? demoFindings(CM_SECTIONS) : loadFindings(args.findings, CM_SECTIONS);
+
+  const frontend = args.demo ? "demo-frontend" : args.frontend;
+  const now = new Date();
+  const generatedAt = `Generated ${now.toISOString().slice(0, 16).replace("T", " ")} UTC`;
+  const prevMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  const dateRangeLabel = prevMonth.toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+
+  assembleHtml({ data, findings, frontend, environment: args.environment, dateRangeLabel, generatedAt, outPath });
+}
+
+if (isMain) renderReport(args.out);

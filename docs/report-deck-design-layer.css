@@ -1,0 +1,726 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Business Insights report deck — shared design layer.
+
+   One canonical block, pasted verbatim into report-trending.html.tmpl and
+   report-cm.html.tmpl. It is duplicated rather than @import-ed because both
+   templates must stay single-file self-contained (they are opened straight off
+   disk as file:// and mailed around as one artefact), and neither build script
+   injects assets today. Duplication of a frozen block is cheaper than adding a
+   placeholder + build step to two glue scripts that otherwise need no change.
+
+   Ported from full-page-analysis/assets/report.html.tmpl, whose token layer and
+   component idioms are the current house standard. Rules below either come from
+   that file unchanged or are the deck-shaped equivalent (fixed A4 landscape
+   pages instead of a continuous flow).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Layer 1: Strato tokens ────────────────────────────────────────────────
+   Dynatrace Strato design tokens, extracted from @dynatrace/strato-design-tokens
+   (v1.6.0). Development-time extraction only — the package is NOT a dependency
+   of this skill. Each value cites the Strato role it came from, verified against
+   the package's own generated DARK stylesheet (styles/variables-dark.css).
+   The screen surface is a dark theme, so the dark variant of every role is used;
+   @media print at the bottom re-declares this same block at its light values.
+
+   Nothing below this block holds a raw colour of its own. Every semantic alias
+   and colour-mix derives from these ten roles, which is the whole reason one
+   print override can invert the document without touching another rule. */
+:root {
+  --dt-bg-base:              #19192c; /* Colors.Background.Base.Default (dark) */
+  --dt-bg-container:         #212135; /* Colors.Background.Container.Neutral.Default (dark) */
+  --dt-bg-container-subtle:  #19192c; /* Colors.Background.Container.Neutral.Subdued (dark) */
+  --dt-text-primary:         #ebecff; /* Colors.Text.Neutral.Default — body text */
+  --dt-text-secondary:       #b1b2d2; /* Colors.Text.Neutral.Subdued — secondary text */
+  --dt-border-default:       #3b3b52; /* Colors.Border.Neutral.Default (dark) */
+  --dt-critical:             #ff999c; /* Colors.Text.Critical.Default (dark) */
+  --dt-warning:              #eea83f; /* Colors.Text.Warning.Default (dark) */
+  --dt-success:              #6fc3ba; /* Colors.Text.Success.Default (dark) */
+  --dt-primary:              #adb0ff; /* Colors.Text.Primary.Default (dark) — brand-accent text role */
+
+  /* Typography.Text.Base.Default.Family / Typography.Code.Base.Default.Family.
+     "DT Flow" leads the stack as the family name the @font-face rules above
+     declare; "DynatraceFlow" follows as the name a machine with the font
+     installed system-wide exposes; Roboto/Helvetica are the real fallbacks,
+     which is the normal case outside Dynatrace. */
+  --dt-font-sans: "DT Flow", DynatraceFlow, Roboto, Helvetica, sans-serif;
+  --dt-font-mono: "Roboto Mono", ui-monospace, monospace;
+
+  /* Borders.Radius.Container.Default */
+  --dt-radius: 9px;
+  /* Spacings.Size8 / Size16 / Size32 — confirmed 1:1 in px against variables.css. */
+  --dt-space-4: 4px;
+  --dt-space-8: 8px;
+  --dt-space-16: 16px;
+  --dt-space-32: 32px;
+}
+
+/* ── Layer 2: semantic aliases + type ramp ────────────────────────────────
+   Derived shades use colour-mix over the tokens — no new hex anywhere below.
+   Because the surface ramp runs dark base → lighter container, every mix over
+   --dt-bg-base lightens; under the print override the same mixes darken, and
+   each was checked to hold its contrast ratio in both directions. */
+:root {
+  --bg-page:                 var(--dt-bg-base);
+  --bg-surface:              var(--dt-bg-container-subtle);
+  --bg-container:            var(--dt-bg-container);
+  --bg-container-emphasized: color-mix(in srgb, var(--dt-border-default) 45%, var(--dt-bg-container));
+  --bg-container-primary:    color-mix(in srgb, var(--dt-primary) 8%, var(--dt-bg-base));
+  --border-default:          var(--dt-border-default);
+  --border-subdued:          color-mix(in srgb, var(--dt-border-default) 55%, var(--dt-bg-base));
+  --text-default:            var(--dt-text-primary);
+  --text-subdued:            var(--dt-text-secondary);
+  --good:                    var(--dt-success);
+  --warning:                 var(--dt-warning);
+  --critical:                var(--dt-critical);
+
+  /* One type ramp for the whole deck, replacing the ad-hoc
+     9/9.5/10/10.5/11/12/13/15/16/18/32px sizes the v1 decks accumulated.
+     A page is 297mm ≈ 1122px wide at 96dpi, so these px values are close to
+     what a reader actually sees on a printed page — the ramp is deliberately
+     one step larger than the portrait document's, because a landscape page is
+     read at arm's length or projected, not held. */
+  --rp-text-micro:   10px;  /* column headers, chip text, footer */
+  --rp-text-small:   12px;  /* dense labels, table cells, axis text */
+  --rp-text-body:    13px;  /* body / analyst notes */
+  --rp-text-lead:    16px;  /* emphasised numbers, panel subject */
+  --rp-text-title:   20px;  /* page section heading */
+  --rp-text-display: 30px;  /* KPI figures */
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0; padding: 0;
+  background: var(--bg-page);
+  color: var(--text-default);
+  font-family: var(--dt-font-sans);
+  font-size: var(--rp-text-body);
+  /* Every figure in this deck is a number in a column or a number beside a
+     bar, so proportional digits are never wanted anywhere in it. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Page ──────────────────────────────────────────────────────────────────
+   A fixed A4-landscape canvas per topic. The deck is authored at print size
+   rather than reflowed, so what a reviewer sees in the browser is what lands
+   in the PDF — the point of keeping pages at all. `overflow: hidden` is the
+   contract that makes that true: content that does not fit is a layout bug to
+   fix at build time, not something the page silently grows to swallow.
+
+   The v1 decks painted a blue radial-dot texture over every page. It is gone:
+   it read as a screen-app background rather than as a document, it fought the
+   chart marks it sat underneath, and it was the one place in the file that
+   used a raw brand hue as decoration instead of as data. */
+@page { size: A4 landscape; margin: 0; }
+.page {
+  width: 297mm; height: 210mm;
+  /* Centres the fixed-width sheet in a wider browser window. In print the page
+     box is the sheet, so auto resolves to 0 and this is a no-op. */
+  margin-inline: auto;
+  padding: 11mm 13mm 9mm;
+  background: var(--bg-page);
+  color: var(--text-default);
+  display: flex; flex-direction: column;
+  page-break-after: always;
+  position: relative;
+  overflow: hidden;
+}
+.page:last-child { page-break-after: auto; }
+
+/* ── Masthead ──────────────────────────────────────────────────────────────
+   Logo, a hairline divider, the team lockup, then the document's own subject
+   on the far side. Deliberately quiet — a deliverable looks official because
+   the mark is placed with confidence and the rule under it is crisp, not
+   because the branding is large.
+
+   v1 centred a 24px-tracked "TRENDING" between the two halves, which made the
+   kind of document the loudest text on every page while the application name —
+   the thing a reader needs to know — sat small in the corner. The kind now
+   rides as an eyebrow over the section name on the left of the rule, and the
+   application takes the display line on the right. */
+.hdr {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: var(--dt-space-16);
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-default);
+  flex: 0 0 auto;
+}
+.hdr-left { display: flex; align-items: center; gap: 13px; }
+.dt-logo { width: 132px; height: auto; display: block; flex: none; }
+/* The wordmark group is fill="currentColor" so it picks up the document ink and
+   inverts with the print override; the logo mark keeps its fixed brand colours,
+   the one place in this file where a hue is not a design token and must not be. */
+.brand-rule { width: 1px; align-self: stretch; min-height: 20px; background: var(--border-default); }
+/* An all-caps lockup, not UI copy — the one place the deck shouts, and it
+   shouts quietly: tracked out, small, and in the secondary ink so it sits
+   beside the mark rather than competing with it. */
+.brand-team {
+  font-size: var(--rp-text-small); font-weight: 700;
+  letter-spacing: .16em; text-transform: uppercase;
+  color: var(--text-subdued); white-space: nowrap;
+}
+.hdr-right { text-align: right; display: flex; flex-direction: column; gap: 2px; }
+.hdr-right .kind {
+  font-size: var(--rp-text-micro); font-weight: 700;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--text-subdued);
+}
+.hdr-right .name { font-size: var(--rp-text-lead); font-weight: 600; color: var(--text-default); line-height: 1.1; }
+.hdr-right .meta { font-size: var(--rp-text-small); color: var(--text-subdued); }
+/* Passed as "" when there is no environment to name; :empty then removes the
+   row rather than leaving a gap where a value should be. */
+.hdr-right .meta:empty { display: none; }
+
+/* Section name for the page, sitting between the masthead rule and the first
+   panel so it is the thing a reader lands on after the letterhead. */
+.page-title { flex: 0 0 auto; margin: 9px 0 var(--dt-space-16); }
+.page-title h2 {
+  margin: 0; font-size: var(--rp-text-title); font-weight: 600;
+  letter-spacing: -.01em; color: var(--text-default);
+}
+.page-title .lede { margin: 3px 0 0; font-size: var(--rp-text-small); color: var(--text-subdued); }
+.page-title .lede:empty { display: none; }
+
+.content { flex: 1; display: flex; flex-direction: column; gap: var(--dt-space-16); min-height: 0; }
+
+/* ── Footer ────────────────────────────────────────────────────────────────
+   A hairline, the lockup, and the page's own position in the deck. The page
+   number is the part that earns the row: a printed deck gets separated, and a
+   page with no number cannot be put back. */
+.ftr {
+  flex: 0 0 auto; display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--dt-space-16); margin-top: 10px; padding-top: 8px;
+  border-top: 1px solid var(--border-subdued);
+  font-size: var(--rp-text-micro); color: var(--text-subdued); letter-spacing: .05em;
+}
+.ftr .brand-name { color: var(--text-subdued); font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+
+/* ── Panel ─────────────────────────────────────────────────────────────────
+   One card idiom for everything on a page: chart, table, notes. v1 ran three
+   near-identical card classes (.kpi-tile, .exec-card, .chart-card) that each
+   drew their own border colour, radius and gradient top-accent. The gradients
+   are gone — a fading brand-blue bar on top of every card is chrome that says
+   nothing about the card's contents, and with one per card it stopped
+   distinguishing anything at all. What distinguishes a panel now is its
+   heading and, where the content is graded, its status accent. */
+.panel {
+  background: var(--bg-container);
+  border: 1px solid var(--border-default);
+  border-radius: var(--dt-radius);
+  padding: 13px 15px 11px;
+  display: flex; flex-direction: column; min-height: 0; min-width: 0;
+}
+.panel-title {
+  flex: 0 0 auto; margin: 0 0 9px;
+  font-size: var(--rp-text-micro); font-weight: 700;
+  text-transform: uppercase; letter-spacing: .1em; color: var(--text-subdued);
+}
+/* A short sentence under a panel title, for the qualifier a title cannot carry
+   ("p75 across N loads", "top 10 by visits"). */
+.panel-note { flex: 0 0 auto; margin: -5px 0 9px; font-size: var(--rp-text-small); color: var(--text-subdued); }
+.panel-note strong { color: var(--text-default); font-weight: 600; }
+.panel-row { display: flex; gap: var(--dt-space-16); flex: 1; min-height: 0; }
+.empty-note { color: var(--text-subdued); font-size: var(--rp-text-small); font-style: italic; }
+
+/* ── KPI tiles ─────────────────────────────────────────────────────────────
+   The figure is the tile. Label above it in the subdued ink, delta below in a
+   chip whose hue is the verdict — and the verdict is never colour alone: the
+   chip carries an arrow glyph and the delta keeps its sign, so the tile reads
+   stripped of colour and in print.
+
+   v1 hung a 3px accent bar off each tile's top edge in a per-KPI hue. It is
+   dropped: the hue was decorative (assigned per metric, not per state), and it
+   collided with the delta chip, which is the one thing in the tile that a hue
+   should mean something in. */
+.kpi-row { display: flex; gap: var(--dt-space-8); flex: 0 0 auto; }
+.kpi-tile {
+  flex: 1; min-width: 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--dt-radius);
+  padding: 11px 14px 10px;
+}
+.kpi-label {
+  font-size: var(--rp-text-micro); font-weight: 700; color: var(--text-subdued);
+  text-transform: uppercase; letter-spacing: .1em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.kpi-value {
+  margin-top: 7px;
+  font-size: var(--rp-text-display); font-weight: 700; line-height: 1;
+  letter-spacing: -.015em; color: var(--text-default);
+}
+.kpi-unit { font-size: var(--rp-text-small); font-weight: 600; color: var(--text-subdued); margin-left: 5px; letter-spacing: .04em; }
+/* One accent per delta chip, set from the direction+goodness the renderer
+   resolved, and consumed by text, fill and border so the three cannot
+   disagree. --kpi-accent is set inline by the renderer. */
+.kpi-change {
+  display: inline-flex; align-items: center; gap: 4px; margin-top: 9px;
+  font-size: var(--rp-text-small); font-weight: 700;
+  padding: 2px 7px; border-radius: 999px;
+  color: var(--kpi-accent, var(--text-subdued));
+  background: color-mix(in srgb, var(--kpi-accent, var(--text-subdued)) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--kpi-accent, var(--text-subdued)) 45%, transparent);
+}
+.kpi-change.good    { --kpi-accent: var(--good); }
+.kpi-change.bad     { --kpi-accent: var(--critical); }
+.kpi-change.neutral { --kpi-accent: var(--text-subdued); }
+.kpi-change svg { flex: none; display: block; }
+.kpi-sub { display: block; margin-top: 6px; font-size: var(--rp-text-micro); color: var(--text-subdued); }
+
+/* ── Analyst-note cards ───────────────────────────────────────────────────
+   Prose written by a person, edited in place in the HTML before the PDF is
+   rendered. Each card is a .panel; the section it belongs to is named by its
+   title, not by a coloured top bar in a hue picked per section (v1's
+   purple/amber/teal, none of which meant anything — amber in particular read
+   as a warning state on a card that might be reporting good news). */
+.notes-body {
+  flex: 1; min-height: 0; overflow: hidden;
+  font-size: var(--rp-text-body); line-height: 1.55; color: var(--text-default);
+}
+.notes-body ul { margin: 0; padding-left: 17px; }
+.notes-body li { margin-bottom: 6px; }
+.notes-body li:last-child { margin-bottom: 0; }
+.notes-body p { margin: 0 0 7px; }
+.notes-body p:last-child { margin-bottom: 0; }
+.notes-body strong { font-weight: 600; }
+/* --border-default is nowhere near the 3:1 an interactive-component outline
+   needs; --dt-primary is the link/emphasis role and clears it, so an editable
+   region borrowing it reads as "this is interactive", which is the point. */
+.notes-body[contenteditable="true"]:focus { outline: 1px dashed var(--dt-primary); outline-offset: 4px; }
+
+/* Mini-stat chips pinned to the bottom of a notes card: the two or three
+   figures the prose above refers to, so a reader can check the claim without
+   turning the page. */
+.mini-stats {
+  flex: 0 0 auto; margin-top: 12px; padding-top: 9px;
+  border-top: 1px solid var(--border-subdued);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.mini-period { font-size: var(--rp-text-micro); font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--text-subdued); }
+.mini-chips { display: flex; gap: 6px; align-items: stretch; }
+.mini-chip {
+  flex: 1; min-width: 0; text-align: center;
+  background: var(--bg-page);
+  border: 1px solid var(--border-subdued);
+  border-radius: 6px; padding: 5px 7px;
+}
+.mini-chip-label {
+  font-size: var(--rp-text-micro); color: var(--text-subdued);
+  text-transform: uppercase; letter-spacing: .07em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mini-chip-value { font-size: var(--rp-text-small); font-weight: 700; color: var(--text-default); line-height: 1.3; }
+
+/* ── Status chip + rating vocabulary ──────────────────────────────────────
+   Strato's status vocabulary: colour is never the only carrier of a verdict.
+   Each chip pairs its hue with a shaped icon (circle+check ideal,
+   triangle+exclamation warning, diamond+X critical) and the rating spelled
+   out, so the chip survives greyscale printing and colour-blind readers. */
+.status {
+  display: inline-flex; align-items: center; gap: 5px; flex: none;
+  font-size: var(--rp-text-micro); font-weight: 700;
+  padding: 2px 8px; border-radius: 999px;
+  color: var(--st-accent, var(--text-subdued));
+  background: color-mix(in srgb, var(--st-accent, var(--text-subdued)) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--st-accent, var(--text-subdued)) 45%, transparent);
+  text-transform: uppercase; letter-spacing: .06em; white-space: nowrap;
+}
+.status svg { flex: none; display: block; }
+[data-rating="good"]              { --st-accent: var(--good); }
+[data-rating="needs-improvement"] { --st-accent: var(--warning); }
+[data-rating="poor"]              { --st-accent: var(--critical); }
+[data-rating="none"]              { --st-accent: var(--text-subdued); }
+
+/* A bordered label for a categorical tag in a dense row (device type, browser,
+   HTTP method). Neutral by default — a tag is not a verdict. */
+.chip {
+  display: inline-block; border: 1px solid var(--border-default); border-radius: 3px;
+  padding: 0 5px; font-size: var(--rp-text-micro); font-weight: 700;
+  text-transform: uppercase; letter-spacing: .06em;
+  color: var(--text-subdued); background: var(--bg-surface); white-space: nowrap;
+}
+
+/* ── Core Web Vitals metric tile ──────────────────────────────────────────
+   Ported from the portrait report, where it replaced a percentile table, and
+   the reasoning carries over unchanged: LCP/INP/TTFB are milliseconds and CLS
+   is a unitless shift score, so no shared numeric axis can hold them. Each
+   tile normalises its metric against its OWN good/poor boundaries, which pins
+   every threshold to the same x in every tile — good ends at 40%, poor begins
+   at 70%. The axis is semantic rather than numeric: "how far into unacceptable
+   is this" reads straight across all three, while every printed figure stays
+   in its own unit. */
+.metric-grid { display: grid; gap: var(--dt-space-8); grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.metric-tile {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--dt-radius);
+  padding: 12px 14px;
+}
+/* One accent per tile, set from the rating and consumed by the value, the
+   status chip and the p75 marker, so the three can never disagree. */
+.metric-tile[data-rating="good"]              { --mt-accent: var(--good); }
+.metric-tile[data-rating="needs-improvement"] { --mt-accent: var(--warning); }
+.metric-tile[data-rating="poor"]              { --mt-accent: var(--critical); }
+.metric-tile[data-rating="none"]              { --mt-accent: var(--text-subdued); }
+.mt-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--dt-space-8); }
+.mt-abbr { font-weight: 700; font-size: var(--rp-text-title); letter-spacing: .02em; }
+.mt-name { color: var(--text-subdued); font-size: var(--rp-text-small); margin-top: 2px; }
+.mt-value { margin-top: 11px; font-weight: 700; font-size: 26px; line-height: 1; color: var(--mt-accent); }
+.mt-value-tag { font-size: var(--rp-text-small); font-weight: 600; color: var(--text-subdued); margin-left: 7px; letter-spacing: .04em; }
+/* The track carries the three threshold zones; markers sit in the same
+   positioning context but outside the track's overflow, so a marker at 0% or
+   100% is not clipped in half. */
+.mt-scale { position: relative; margin-top: 12px; height: 20px; }
+.mt-track { display: flex; height: 8px; border-radius: 4px; overflow: hidden; }
+/* A 2px gap of the tile surface separates adjacent fills, so the boundary
+   between two zones is a real edge rather than two mixed colours meeting.
+   border-box keeps the percentage widths honest once the border is added. */
+.mt-zone { height: 100%; box-sizing: border-box; }
+.mt-zone + .mt-zone { border-left: 2px solid var(--bg-surface); }
+/* Zone fills stay quieter than the markers — they are a reference backdrop,
+   not data — but each is mixed only part-way toward the page base so the three
+   remain tellable apart at 8px tall. */
+.mt-zone-good { width: 40%; background: color-mix(in srgb, var(--good) 45%, var(--dt-bg-base)); }
+.mt-zone-ni   { width: 30%; background: color-mix(in srgb, var(--warning) 45%, var(--dt-bg-base)); }
+.mt-zone-poor { width: 30%; background: color-mix(in srgb, var(--critical) 45%, var(--dt-bg-base)); }
+/* 2px surface ring, so a marker landing on a zone boundary or overlapping a
+   neighbour stays legible as its own mark. */
+.mt-mark {
+  position: absolute; top: 0; width: 2px; height: 8px; border-radius: 1px;
+  background: var(--text-subdued); transform: translateX(-1px);
+  box-shadow: 0 0 0 2px var(--bg-surface);
+}
+.mt-mark-p75 { width: 4px; height: 16px; top: -4px; transform: translateX(-2px); background: var(--mt-accent); }
+.mt-bounds { display: flex; justify-content: space-between; gap: var(--dt-space-8); margin-top: 2px; font-size: var(--rp-text-micro); color: var(--text-subdued); }
+.mt-tail {
+  display: flex; justify-content: space-between; gap: var(--dt-space-8);
+  margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--border-default);
+  font-size: var(--rp-text-small); color: var(--text-subdued);
+}
+.mt-tail b { color: var(--text-default); font-weight: 600; }
+
+/* ── Table ─────────────────────────────────────────────────────────────────
+   One table idiom for every tabular panel in the deck, and deliberately the
+   same row language as the portrait report: a hairline per row rather than
+   zebra, uppercase micro column heads over a full-weight rule, tabular
+   numerals on every figure, numeric columns shrunk to their content so the
+   slack lands in the label column and the figures stay one scannable block. */
+.rp-table { width: 100%; border-collapse: collapse; font-size: var(--rp-text-small); }
+.rp-table th {
+  text-align: left; padding: 0 8px 6px; white-space: nowrap;
+  font-size: var(--rp-text-micro); font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--text-subdued); border-bottom: 1px solid var(--border-default);
+}
+.rp-table td { padding: 5px 8px; border-bottom: 1px solid var(--border-subdued); vertical-align: middle; }
+.rp-table tbody tr:last-child td { border-bottom: none; }
+.rp-table .num { text-align: right; white-space: nowrap; width: 1%; }
+.rp-table .lead { font-size: var(--rp-text-body); font-weight: 600; }
+.rp-table .path { font-family: var(--dt-font-mono); color: var(--text-default); }
+/* The em dash is the mandated null mark and the one glyph that must stay
+   legible, so it takes the subdued ink rather than a dimmer one: it is already
+   distinct from a figure by shape and does not need to be faint as well. */
+.rp-table .nil { color: var(--text-subdued); }
+/* A row that is the current/latest period, called out so the eye can find
+   "now" in a table of months without counting down it. */
+.rp-table tr.current td { color: var(--text-default); font-weight: 600; }
+
+/* ── Bar-in-cell ───────────────────────────────────────────────────────────
+   The deck's signature device: it turns a numeric column you skim past into a
+   bar you scan down. Each column's bar is relative to that column's own max,
+   which is why the figure is always printed beside the bar — the bar shows
+   shape within a column, the number carries the value. Neutral ink unless the
+   cell is graded against a threshold, in which case the renderer sets
+   --bar-accent from the rating. */
+.bar-cell { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.bar-track { flex: 1; min-width: 44px; }
+.bar-fill { height: 18px; border-radius: 3px; min-width: 2px; background: var(--bar-accent, var(--text-subdued)); }
+.bar-value { white-space: nowrap; font-size: var(--rp-text-small); color: var(--text-default); }
+/* A track outline is the only thing that shows an empty or near-empty bar
+   exists. 40% clears 3:1 against the panel; 30% did not. */
+.bar-track.outlined {
+  position: relative; height: 9px; border-radius: 5px; background: var(--bg-page);
+  border: 1px solid color-mix(in srgb, var(--dt-text-secondary) 40%, var(--dt-border-default));
+  overflow: hidden;
+}
+.bar-track.outlined .bar-fill { height: 100%; border-radius: 0; }
+
+/* Flex-bar rows: the same bar-in-cell language, but as flex rows rather than a
+   <table>, because a fixed-height page needs the rows to grow to fill the card
+   and <tr> cannot flex. Used where the panel owns the full page height. */
+.flex-bars { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.flex-bars-header {
+  display: flex; align-items: baseline; flex: 0 0 auto;
+  padding: 0 10px 6px; margin-bottom: 2px; border-bottom: 1px solid var(--border-default);
+}
+.flex-bars-spacer { flex: 0 0 82px; }
+.flex-bars-col-hdr {
+  flex: 1; font-size: var(--rp-text-micro); font-weight: 700;
+  color: var(--text-subdued); text-transform: uppercase; letter-spacing: .06em;
+}
+.flex-bars-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.flex-bars-row { display: flex; align-items: center; flex: 1; min-height: 0; border-top: 1px solid var(--border-subdued); }
+.flex-bars-row:first-child { border-top: none; }
+.flex-bars-row-label { flex: 0 0 82px; padding: 0 10px; color: var(--text-subdued); font-size: var(--rp-text-small); }
+.flex-bars-cell { flex: 1; display: flex; align-items: center; padding: 5px 10px; min-width: 0; border-left: 1px solid var(--border-subdued); }
+/* The current period is marked by weight and full-strength ink, not by a
+   brightness filter on the fill (v1's approach) — a filter changes a data
+   mark's colour to say something about its row, which is exactly what a
+   threshold hue in the same column already means. */
+.flex-bars-row.current .flex-bars-row-label,
+.flex-bars-row.current .bar-value { color: var(--text-default); font-weight: 700; }
+
+/* ── Chart ─────────────────────────────────────────────────────────────────
+   Chart.js draws into a canvas that fills whatever the flex row gives it.
+   Every chart's colours, grid ink and font come from these same tokens, read
+   out of the computed style by the template's script rather than hard-coded,
+   which is what lets the print override recolour the charts too. */
+.chart-body { position: relative; flex: 1; min-height: 0; min-width: 0; }
+.chart-body canvas { width: 100% !important; height: 100% !important; }
+.chart-legend { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 4px 14px; padding-top: 8px; align-items: center; font-size: var(--rp-text-micro); color: var(--text-subdued); }
+.chart-legend .item { display: inline-flex; align-items: center; gap: 5px; }
+.chart-legend .swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+.chart-legend .dash { width: 14px; height: 0; border-top: 1px dashed currentColor; flex: none; }
+
+/* ── Findings ──────────────────────────────────────────────────────────────
+   One row per rule result: a severity chip in a fixed-width left column
+   spanning both text lines, the title, then the evidence sentence. That puts
+   every title on the same x, so a reader scans titles down one edge and drops
+   into the evidence only where it matters. Title and evidence sit on separate
+   lines because a 600-weight title running inline with a subdued sentence
+   stops being scannable. */
+.finding-row {
+  display: grid; grid-template-columns: 72px minmax(0, 1fr);
+  gap: 3px var(--dt-space-16); padding: 9px 0;
+  border-bottom: 1px solid var(--border-subdued);
+}
+.finding-row:first-child { padding-top: 0; }
+.finding-row:last-child { border-bottom: none; padding-bottom: 0; }
+.finding-chip { grid-row: span 2; align-self: start; justify-self: start; margin-top: 1px; }
+.finding-title { font-weight: 600; color: var(--text-default); }
+.finding-evidence { color: var(--text-subdued); font-size: var(--rp-text-small); line-height: 1.5; overflow-wrap: anywhere; }
+
+/* ── Print ─────────────────────────────────────────────────────────────────
+   The HTML is the review copy; the PDF is what a stakeholder gets. The screen
+   canvas is dark, and browsers print text colour but not background colour by
+   default — so a dark deck printed as-is would put #ebecff text on white
+   paper, and forcing the dark surfaces through would flood the page with ink.
+   Neither is acceptable, so print re-declares the same ten Strato roles at
+   their LIGHT values (read from the same package, styles/variables.css).
+   That is one block; every alias and colour-mix below :root re-derives from
+   it automatically, because nothing under :root holds a raw colour.
+
+   Chart colours are read from the computed style at build time, so the
+   template's script must resolve them AFTER this override applies — see the
+   chart bootstrap note in each template. */
+@media print {
+  :root {
+    --dt-bg-base:             #f9f9fa; /* Colors.Background.Base.Default (light) */
+    --dt-bg-container:        #f2f2f5; /* Colors.Background.Container.Neutral.Default (light) */
+    --dt-bg-container-subtle: #f9f9fa; /* Colors.Background.Container.Neutral.Subdued (light) */
+    --dt-text-primary:        #2f2f4f; /* Colors.Text.Neutral.Default (light) */
+    --dt-text-secondary:      #595a7d; /* Colors.Text.Neutral.Subdued (light) */
+    --dt-border-default:      #dadbe4; /* Colors.Border.Neutral.Default (light) */
+    --dt-critical:            #bb0731; /* Colors.Text.Critical.Default (light) */
+    --dt-warning:             #855400; /* Colors.Text.Warning.Default (light) */
+    --dt-success:             #2d6761; /* Colors.Text.Success.Default (light) */
+    --dt-primary:             #464cce; /* Colors.Text.Primary.Default (light) */
+  }
+  /* The page canvas is already exactly one sheet, so nothing may split and
+     nothing may add a second sheet after the last one. */
+  .page { break-after: page; page-break-after: always; break-inside: avoid; page-break-inside: avoid; }
+  .page:last-child { break-after: auto; page-break-after: auto; }
+  /* Panel surfaces are a light wash over a light page; they need
+     print-color-adjust to survive, and at these values they cost almost no
+     ink — the alternative is every card losing its edge on paper. */
+  .panel, .kpi-tile, .metric-tile, .mini-chip,
+  .bar-fill, .mt-zone, .mt-track, .status, .chip, .kpi-change {
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .notes-body[contenteditable="true"] { outline: none !important; }
+}
+
+/* ── Chart series palette ──────────────────────────────────────────────────
+   The ten Strato roles cover surfaces, ink and the three status hues, and
+   nothing else — a status hue must never be spent on a series, or "mobile"
+   ends up drawn in the same amber that means "needs improvement" two panels
+   away. So series get their own small categorical ramp, declared here as
+   tokens for the same reason every other colour is: the print override can
+   then swap the whole ramp for its light-canvas variant in one block, and the
+   template's script reads the resolved values off the computed style rather
+   than holding hex of its own.
+
+   Six is the cap. Every chart in both decks tops out at four series except
+   the error-type stack, which the renderer must fold into "top 5 + Other".
+
+   Values are the light-canvas variants below (see @media print) and are
+   chosen for separation at 2px line weight and at a 4mm bar, checked in
+   greyscale and against deuteranopia — a stacked bar whose two segments are
+   the same value in grey is a stacked bar that says nothing on a photocopy. */
+:root {
+  --rp-series-1: #5eafff;  /* primary series — traffic, desktop, LCP */
+  --rp-series-2: #c39bff;  /* secondary — page loads, mobile, INP */
+  --rp-series-3: #6fc3ba;  /* tertiary — user actions, CLS */
+  --rp-series-4: #f2a0c8;
+  --rp-series-5: #f0c25a;
+  --rp-series-6: #9aa4c4;  /* always the "Other" bucket — deliberately the
+                              quietest, since it is a residue, not a category */
+  /* Grid lines and axis ink are surface furniture, not data, and must sit
+     under every series without competing. */
+  --rp-grid:      color-mix(in srgb, var(--dt-border-default) 70%, transparent);
+  --rp-axis-text: var(--text-subdued);
+  /* Threshold reference lines on a CWV chart: the same status hues as the
+     tiles, dashed, drawn under the series. Colour agrees with the tiles by
+     construction because it is the same token. */
+  --rp-threshold-good: color-mix(in srgb, var(--good) 70%, transparent);
+  --rp-threshold-poor: color-mix(in srgb, var(--critical) 70%, transparent);
+}
+@media print {
+  :root {
+    --rp-series-1: #1a72c4;
+    --rp-series-2: #6f3bbf;
+    --rp-series-3: #2d6761;
+    --rp-series-4: #b03b78;
+    --rp-series-5: #8a6200;
+    --rp-series-6: #6b7392;
+  }
+}
+
+/* ── Reading a token from JS ───────────────────────────────────────────────
+   Any token above whose value is a colour-mix() CANNOT be handed straight to
+   Chart.js. getComputedStyle().getPropertyValue() on a custom property returns
+   its *declared* text, so `--rp-grid` comes back as the literal string
+   "color-mix(in srgb, #3b3b52 70%, transparent)" — and canvas strokeStyle
+   silently ignores a value it cannot parse, keeping whatever colour was set
+   before it. That is what painted every chart gridline near-black.
+
+   So resolve through a probe element instead, which forces the browser to
+   compute the mix down to an rgb() before JS ever sees it:
+
+     const probe = document.createElement("span");
+     probe.style.display = "none";
+     document.body.appendChild(probe);
+     const cssVar = (name) => {
+       probe.style.color = `var(${name})`;
+       return getComputedStyle(probe).color;
+     };
+
+   Use this for every token a chart consumes, not just the mixed ones — a plain
+   token resolves through it unchanged, and a single accessor means a token can
+   later gain a colour-mix without breaking a chart that reads it. The probe
+   must be re-read on `beforeprint`, since the print override changes what the
+   same name resolves to. */
+
+/* ── Chart colours across the theme swap: why a probe is not enough ───────
+   The probe above solves colour-mix() resolution. It does NOT solve *which
+   theme* is resolved, and that is the harder half.
+
+   Measured in this repo's own render path (Chrome headless --print-to-pdf, a
+   two-line test page):
+
+       beforeprint fires:                    YES
+       matchMedia("print").matches inside:   false
+
+   So at `beforeprint` the print stylesheet has NOT been applied yet. Any
+   getComputedStyle() call in that handler returns the SCREEN (dark) values,
+   which is precisely what a chart rebuild there bakes into a light-printed
+   PDF — near-black gridlines on white paper. Re-reading later does not help
+   either: there is no event that fires after print media applies but before
+   the page is captured.
+
+   The fix is to stop asking the cascade what theme it is in and hand JS both
+   palettes up front. Every token a chart consumes is declared TWICE at :root,
+   in the screen value and a `-print` twin, both always present in both media:
+
+     --ct-grid / --ct-grid-print, --ct-axis-text / --ct-axis-text-print,
+     --ct-series-1 / --ct-series-1-print, … and the two threshold hues.
+
+   The accessor then picks the set, and the print set is chosen by the caller
+   rather than sniffed from the environment:
+
+     const ctVar = (name, printing) =>
+       resolve(`--ct-${name}${printing ? "-print" : ""}`);   // resolve = probe
+
+   Charts build with `printing = false` on DOMContentLoaded and are destroyed
+   and rebuilt with `printing = true` inside `beforeprint`. Because the values
+   come from a token that is live in both media, the handler no longer depends
+   on what the cascade has got round to applying. `Chart.defaults.animation`
+   must stay `false` so the rebuild completes synchronously inside the handler,
+   before the capture. Rebuild on `afterprint` with `printing = false` so a
+   reader who cancels the browser's print dialog is not left with a light-inked
+   chart on the dark screen copy.
+
+   The same applies to any colour JS bakes into markup it generates — an inline
+   `background:` on a legend swatch or a bar fill is a snapshot of one theme and
+   has to be re-emitted on the same two events. Colours that stay in CSS
+   (everything in the rules above) need none of this: the cascade handles them,
+   which is the argument for keeping colour in CSS wherever a chart does not
+   force your hand. */
+
+/* ── A transparent canvas is invisible in Preview, not just uncoloured ─────
+   Chrome exports every <canvas> into a PDF as a vector transparency-group
+   form XObject. Poppler (pdftoppm, and every earlier render check in this
+   file's history) composites that correctly, which is exactly why it never
+   caught this. Apple's CoreGraphics (Preview, `sips`, Quick Look) does not:
+   it leaves the group's region fully transparent (alpha 0) and paints
+   transparent as white. Measured on this deck's own output: 8.74% of a
+   chart-heavy page transparent under CoreGraphics, 0% under poppler for the
+   identical PDF. The holes are placed by the transparency group's bounding
+   box, not by which element visually overlaps it, so they can land over a
+   neighbouring masthead corner as easily as over the chart itself.
+
+   The fix is an opaque backing store, forced before Chart.js ever touches
+   the canvas:
+
+     document.querySelectorAll("canvas").forEach(c => c.getContext("2d", { alpha: false }));
+
+   Chart.js's own later `getContext("2d")` call returns this same cached
+   context — a canvas's rendering context is fixed for its lifetime — so this
+   one pass at script load covers every chart, including ones rebuilt later.
+
+   An opaque context defaults to BLACK, not transparent, so something has to
+   paint the panel colour under the data on every single frame. That has to
+   be a Chart.js plugin's `beforeDraw`, not a one-off paint after the initial
+   build: Chart.js's own resize/redraw passes repaint the canvas and would
+   just paint back over a one-off fill. `source-over` (the default composite
+   operation), not `destination-over` — there is no transparent area left for
+   destination-over to land in on an opaque backing, and painting with it
+   measured out to a fully black canvas. And the fill colour has to come from
+   the same printing-flag system as every other chart-facing token, not from
+   getComputedStyle() at draw time: reading the panel background inside
+   `beforeprint` hits the exact theme-timing trap --ct-grid already exists to
+   avoid, and would paint a dark panel fill onto light print paper. */
+:root {
+  /* Literal hex, not var() onto --dt-* — a var() chain here would still flip
+     under @media print exactly like --rp-grid does, which is the one thing
+     these tokens must NOT do. Values are the same screen/print pairs as the
+     --rp-* tokens above and in @media print; duplicated as fixed literals so
+     both halves are live in both media regardless of which stylesheet the
+     cascade has got round to applying. */
+  --ct-grid:             color-mix(in srgb, #3b3b52 70%, transparent);
+  --ct-grid-print:       color-mix(in srgb, #dadbe4 70%, transparent);
+  --ct-axis-text:        #b1b2d2;
+  --ct-axis-text-print:  #595a7d;
+  --ct-series-1:         #5eafff; --ct-series-1-print: #1a72c4;
+  --ct-series-2:         #c39bff; --ct-series-2-print: #6f3bbf;
+  --ct-series-3:         #6fc3ba; --ct-series-3-print: #2d6761;
+  --ct-series-4:         #f2a0c8; --ct-series-4-print: #b03b78;
+  --ct-series-5:         #f0c25a; --ct-series-5-print: #8a6200;
+  --ct-series-6:         #9aa4c4; --ct-series-6-print: #6b7392;
+  --ct-critical:         #ff999c; --ct-critical-print: #bb0731;
+  --ct-good:             #6fc3ba; --ct-good-print:     #2d6761;
+  --ct-threshold-good:       color-mix(in srgb, #6fc3ba 70%, transparent);
+  --ct-threshold-good-print: color-mix(in srgb, #2d6761 70%, transparent);
+  --ct-threshold-poor:       color-mix(in srgb, #ff999c 70%, transparent);
+  --ct-threshold-poor-print: color-mix(in srgb, #bb0731 70%, transparent);
+  /* Panel background, duplicated here for the same reason as every other
+     --ct-* pair: a chart canvas that gets an opaque (alpha:false) 2D context
+     needs to paint SOMETHING under its data every frame (an opaque context
+     defaults to black), and that paint has to match whichever panel it sits
+     in — under a var()-chained token that would resolve to the dark value
+     inside beforeprint for the same timing reason --ct-grid did. See the
+     "why every chart canvas needs an opaque backing" comment in each
+     template's <script> block for the CoreGraphics/Preview bug this token
+     exists to work around. */
+  --ct-panel-bg:       #212135; /* Colors.Background.Container.Neutral.Default (dark) */
+  --ct-panel-bg-print: #f2f2f5; /* Colors.Background.Container.Neutral.Default (light) */
+}

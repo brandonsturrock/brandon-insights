@@ -9,8 +9,8 @@ Reproduces the current-month page of the RUM monthly review PDF from a
 dt-app's live pipeline using `dtctl query` + Claude-authored findings instead
 of the app's React/Davis CoPilot stack.
 
-**Current-Month** (4 pages): last full calendar month deep-dive — daily
-traffic, CWV distribution/tiers, top pages, top errors.
+**Current-Month** (5 pages): last full calendar month deep-dive — executive
+summary, daily traffic, CWV distribution/tiers, top pages, top errors.
 
 **Precondition:** `dtctl` must be configured with an active context. On every
 normal run, check the current context and offer the user a chance to switch or

@@ -6,8 +6,8 @@ Generates a Dynatrace RUM monthly review report for a web frontend. Produces an 
 
 | Type | Pages | Timeframe | Contents |
 |---|---|---|---|
-| **Trending** | 3 | Last 6 months | Traffic trends, CWV trends, device/browser breakdown |
-| **Current-Month** | 4 | Last full calendar month | Daily traffic, CWV distribution/tiers, top pages, top errors |
+| **Trending** | 4 | Last 6 months | Traffic trends, CWV trends, device/browser breakdown |
+| **Current-Month** | 5 | Last full calendar month | Daily traffic, CWV distribution/tiers, top pages, top errors |
 
 Both can be generated in one run.
 
@@ -34,3 +34,20 @@ The skill will:
 ## Output
 
 Saved to `~/Downloads/` as an HTML file. Open in Chrome and print to PDF for sharing.
+
+## Previewing the layout without a tenant
+
+The report layout can be rendered from a committed fixture, with no `dtctl` and no
+Dynatrace access — use this when changing the template or the design layer:
+
+```
+node scripts/preview.mjs
+```
+
+Reads `assets/fixtures/sample.json` and writes a standalone HTML file; override with
+`--fixture` / `--out`. Render it to PDF with `assets/render-pdf.sh <in.html> <out.pdf>`.
+
+Verify the resulting PDF with `sips` (CoreGraphics), not `pdftoppm` — poppler
+composites Chrome's canvas transparency groups correctly and is blind to a class of
+bug that shows up as white blocks in macOS Preview. See
+`docs/report-deck-overhaul.md` for the check.
