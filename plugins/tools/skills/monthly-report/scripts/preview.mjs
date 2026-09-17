@@ -5,9 +5,13 @@
 // there is exactly one place that knows the template's placeholder contract.
 //
 // Usage:
-//   node scripts/preview.mjs [outPath]
+//   node scripts/preview.mjs [--out <path>] [outPath]
 //   (default outPath: SCRATCH/preview-cm.html if $CLAUDE_SCRATCH_DIR is set,
 //    else /tmp/preview-cm.html)
+//
+// --out is accepted as well as a bare positional because build-report.mjs and
+// the trending skill's preview both take the flag form: taking only a
+// positional here meant `--out foo.html` silently wrote a file named "--out".
 
 import fs from "node:fs";
 import path from "node:path";
@@ -19,7 +23,10 @@ const SKILL_ROOT = path.dirname(__dirname);
 
 const fixture = JSON.parse(fs.readFileSync(path.join(SKILL_ROOT, "assets", "fixtures", "sample.json"), "utf8"));
 
-const outPath = process.argv[2] || path.join(process.env.CLAUDE_SCRATCH_DIR || "/tmp", "preview-cm.html");
+const argv = process.argv.slice(2);
+const flagIdx = argv.indexOf("--out");
+const outArg = flagIdx >= 0 ? argv[flagIdx + 1] : argv.find((a) => !a.startsWith("-"));
+const outPath = outArg || path.join(process.env.CLAUDE_SCRATCH_DIR || "/tmp", "preview-cm.html");
 
 assembleHtml({
   data: fixture.data,

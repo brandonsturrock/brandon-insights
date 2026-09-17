@@ -191,7 +191,23 @@ function buildCurrentMonthData(dataDir) {
     });
     return { desktop, mobile };
   };
-  const cmDailyDevice = { labels: dayLabels, ...byDayDevice(dailyDeviceRowsFiltered, "sessions") };
+  // Whether this frontend has a mobile audience worth drawing at all. Decided
+  // ONCE here, from the device totals, and applied to every device-split
+  // series below — otherwise a frontend with 3 mobile sessions against 477k
+  // desktop gets a flat zero line and a "Mobile" legend entry on four separate
+  // charts, each claiming a series the reader cannot see. A null series is the
+  // signal to the template to omit both the line and its legend entry.
+  const mobileSessions = deviceCompareRows
+    .filter((r) => r.device_type === "mobile")
+    .reduce((s, r) => s + (r.sessions || 0), 0);
+  const allSessions = deviceCompareRows.reduce((s, r) => s + (r.sessions || 0), 0);
+  const hasMobile = allSessions > 0 && mobileSessions / allSessions >= 0.005;
+  const splitByDevice = (rows, valueKey) => {
+    const { desktop, mobile } = byDayDevice(rows, valueKey);
+    return { desktop, mobile: hasMobile ? mobile : null };
+  };
+
+  const cmDailyDevice = { labels: dayLabels, ...splitByDevice(dailyDeviceRowsFiltered, "sessions") };
 
   // deviceCompareRows
   const deviceCompare = deviceCompareRows.map((r) => ({
@@ -243,24 +259,44 @@ function buildCurrentMonthData(dataDir) {
   // cmDailyCwv
   const cmDailyCwv = {
     labels: dayLabels,
-    lcp: byDayDevice(dailyCwvRowsFiltered, "lcp"),
-    inp: byDayDevice(dailyCwvRowsFiltered, "inp"),
+    lcp: splitByDevice(dailyCwvRowsFiltered, "lcp"),
+    inp: splitByDevice(dailyCwvRowsFiltered, "inp"),
     cls: (() => {
-      const c = byDayDevice(dailyCwvRowsFiltered, "cls");
-      return { desktop: c.desktop.map((v) => (v == null ? null : v / 10000)), mobile: c.mobile.map((v) => (v == null ? null : v / 10000)) };
+      const c = splitByDevice(dailyCwvRowsFiltered, "cls");
+      const scale = (arr) => (arr == null ? null : arr.map((v) => (v == null ? null : v / 10000)));
+      return { desktop: scale(c.desktop), mobile: scale(c.mobile) };
     })(),
   };
 
   // topPagesRows
-  const topPagesOut = topPagesRows.map((r) => ({
+  //
+  // A 0 for LCP or INP is an ABSENT measurement, not a perfect one. INP only
+  // exists once a page has been interacted with, so crawler and asset paths
+  // (/robots.txt, /sitemap.xml) come back as 0 — and rendered as a figure
+  // those grade "good" green, i.e. the report claiming a flawless score for a
+  // page that was never measured. Map them to null so the template's own
+  // null handling (msRating -> "none", the em-dash) takes over.
+  //
+  // CLS is deliberately NOT included: zero layout shift is a real, achievable
+  // measurement, so 0 there is a value rather than a gap.
+  const absentIfZero = (v) => (v == null || v <= 0 ? null : v);
+  const topPagesAll = topPagesRows.map((r) => ({
     name: r["page.name"],
-    count: r.count,
-    lcp: r.lcp,
-    inp: r.inp,
+    count: Number(r.count) || 0,
+    lcp: absentIfZero(r.lcp),
+    inp: absentIfZero(r.inp),
     cls: r.cls,
     exceptions: r.exceptions,
     requestErrors: r.request_errors,
   }));
+  // Long-tail floor, same shape as the trending deck's BP_MIN_VISITS: a page
+  // with a handful of visits contributes a row whose bar is an empty track
+  // next to a leader three orders of magnitude bigger. Falls back to the
+  // unfiltered set so a genuinely low-traffic frontend still gets a table
+  // instead of an empty panel.
+  const TOP_PAGES_MIN_VISITS = 10;
+  const topPagesFiltered = topPagesAll.filter((r) => r.count >= TOP_PAGES_MIN_VISITS);
+  const topPagesOut = topPagesFiltered.length ? topPagesFiltered : topPagesAll;
 
   // cmErrorRates: sum across devices per day
   const errByDay = new Map();
@@ -271,11 +307,24 @@ function buildCurrentMonthData(dataDir) {
     cur.req += r.req_error_sessions || 0;
     errByDay.set(r.day, cur);
   });
-  const errDays = [...errByDay.keys()].sort((a, b) => a - b);
+  // Plotted across the WHOLE month (the same `days` axis every other daily
+  // chart uses), not just the days this query happened to return. cm-errors
+  // reads user.events, whose retention is shorter than the metrics the other
+  // daily charts read, so on a real tenant it comes back covering only the
+  // tail of the month — Aug 13-31 against Aug 1-31 when this was written.
+  // Rendered on its own axis that silently became a different date range from
+  // the error-count chart directly beneath it on the same page. Days with no
+  // data are null (a gap in the line), which reads as "not measured" rather
+  // than as a zero error rate.
+  const rateOn = (day, pick) => {
+    const v = errByDay.get(day);
+    if (!v || !(v.total > 0)) return null;
+    return Number(((pick(v) / v.total) * 100).toFixed(2));
+  };
   const cmErrorRates = {
-    labels: errDays.map(dayLabel),
-    jsErrorRate: errDays.map((d) => { const v = errByDay.get(d); return v.total > 0 ? Number(((v.js / v.total) * 100).toFixed(2)) : 0; }),
-    reqErrorRate: errDays.map((d) => { const v = errByDay.get(d); return v.total > 0 ? Number(((v.req / v.total) * 100).toFixed(2)) : 0; }),
+    labels: dayLabels,
+    jsErrorRate: days.map((d) => rateOn(d, (v) => v.js)),
+    reqErrorRate: days.map((d) => rateOn(d, (v) => v.req)),
   };
 
   // cmErrorCounts: pivot by day x error.type, summed across device
@@ -306,11 +355,14 @@ function buildCurrentMonthData(dataDir) {
     path: r["url.path"],
   }));
 
+  // Traffic counters only. LCP/INP/CLS are NOT listed here: a bare "863ms"
+  // beside a session count carries no verdict, so the template renders the
+  // three vitals as rated metric-tiles read straight off cmCwvDistribution's
+  // p75 (see renderKpis). Per-KPI `color` is gone with them — it was a raw
+  // hex assigned per metric rather than per state, so it said nothing.
   const kpis = [
-    { label: "Sessions", value: compact(totalSessions), change: null, color: "#7B61FF", lowerIsBetter: false },
-    { label: "Page Loads", value: compact(totalPageLoads), change: null, color: "#1D8AB7", lowerIsBetter: false },
-    { label: "LCP p75", value: fmtMs(blended("lcp_p75")), change: null, color: "#F5A623", lowerIsBetter: true },
-    { label: "INP p75", value: fmtMs(blended("inp_p75")), change: null, color: "#1496ff", lowerIsBetter: true },
+    { label: "Sessions", value: compact(totalSessions), change: null, lowerIsBetter: false },
+    { label: "Page Loads", value: compact(totalPageLoads), change: null, lowerIsBetter: false },
   ];
 
   return {
@@ -333,10 +385,8 @@ function demoCurrentMonthData() {
   const dayLabels = Array.from({ length: 30 }, (_, i) => String(i + 1));
   return {
     kpis: [
-      { label: "Sessions", value: "71K", change: null, color: "#7B61FF", lowerIsBetter: false },
-      { label: "Page Loads", value: "89K", change: null, color: "#1D8AB7", lowerIsBetter: false },
-      { label: "LCP p75", value: "2.6s", change: null, color: "#F5A623", lowerIsBetter: true },
-      { label: "INP p75", value: "210ms", change: null, color: "#1496ff", lowerIsBetter: true },
+      { label: "Sessions", value: "71K", change: null, lowerIsBetter: false },
+      { label: "Page Loads", value: "89K", change: null, lowerIsBetter: false },
     ],
     cmDailyDevice: {
       labels: dayLabels,
@@ -457,7 +507,11 @@ export function assembleHtml({ data, findings, frontend, environment, dateRangeL
   // bar is chrome, not report content, but "no new hex outside :root" still
   // holds for anything the reader can see.
   html = html.replace("</body>", `<style>
-  #dt-save-bar{position:fixed;bottom:20px;right:20px;z-index:9999;display:flex;align-items:center;gap:12px;background:var(--bg-container);border:1px solid var(--dt-primary);border-radius:var(--dt-radius);padding:10px 18px;box-shadow:0 4px 20px color-mix(in srgb, var(--dt-bg-base) 70%, transparent);font-family:var(--dt-font-sans);font-size:var(--rp-text-small);color:var(--text-default)}
+  /* Bottom-centre, matching the trending deck: the bar is viewport-fixed, so
+     it sits over whichever page is in view, and the middle of the footer
+     strip is the only band that is empty on every page. Bottom-right landed
+     on top of the Top Request Errors panel. */
+  #dt-save-bar{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;align-items:center;gap:12px;background:var(--bg-container);border:1px solid var(--dt-primary);border-radius:var(--dt-radius);padding:10px 18px;box-shadow:0 4px 20px color-mix(in srgb, var(--dt-bg-base) 70%, transparent);font-family:var(--dt-font-sans);font-size:var(--rp-text-small);color:var(--text-default)}
   #dt-save-bar button{background:var(--dt-primary);color:var(--dt-bg-base);border:none;border-radius:6px;padding:7px 16px;cursor:pointer;font-size:var(--rp-text-small);font-weight:600}
   #dt-save-bar button:hover{background:color-mix(in srgb, var(--dt-primary) 85%, white)}
   @media print{#dt-save-bar{display:none!important}}
@@ -495,7 +549,12 @@ function renderReport(outPath) {
 
   const frontend = args.demo ? "demo-frontend" : args.frontend;
   const now = new Date();
-  const generatedAt = `Generated ${now.toISOString().slice(0, 16).replace("T", " ")} UTC`;
+  // Bare timestamp, no "Generated " prefix — the template's footer supplies
+  // that word (report-cm.html.tmpl: `<span>Generated {{GENERATED_AT}}</span>`),
+  // and the fixture's own generatedAt is bare for the same reason. Prefixing
+  // here too rendered "Generated Generated ..." on the live path only, which
+  // is exactly why fixture-only verification never caught it.
+  const generatedAt = `${now.toISOString().slice(0, 16).replace("T", " ")} UTC`;
   const prevMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
   const dateRangeLabel = prevMonth.toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 

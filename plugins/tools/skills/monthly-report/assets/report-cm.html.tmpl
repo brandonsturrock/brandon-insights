@@ -832,6 +832,38 @@
      draws into. */
   .chart-body { overflow: hidden; }
 
+  /* The masthead carries the period, so it is the same four-line lockup the
+     trending deck uses (kind / name / environment / period) rather than
+     relegating the month to the page title. Passed as "" when there is no
+     environment to name; :empty then removes the row instead of leaving a
+     gap where a value should be. */
+  .hdr-right .env { font-size: var(--rp-text-small); color: var(--text-subdued); }
+  .hdr-right .env:empty { display: none; }
+
+  /* Page 1 KPI row: Sessions and Page Loads are bare counts with no verdict
+     to carry, so they stay plain .kpi-tiles. LCP/INP/CLS do have a verdict —
+     "863ms" means nothing next to a session count unless something says it
+     is poor — so they render as the same .metric-tile the CWV page uses,
+     trimmed here to KPI-row height. The tile's HTML is identical in both
+     places (one metricTile()); only this CSS context differs, so the two can
+     never drift apart. */
+  .kpi-row .metric-tile { flex: 1; min-width: 0; padding: 11px 14px 10px; }
+  .kpi-row .metric-tile .mt-name,
+  .kpi-row .metric-tile .mt-bounds,
+  .kpi-row .metric-tile .mt-tail { display: none; }
+  .kpi-row .metric-tile .mt-value { margin-top: 7px; font-size: 24px; }
+  .kpi-row .metric-tile .mt-scale { margin-top: 10px; }
+
+  /* Page 2: one device means the compare table has a single row, and a
+     bar-in-cell is relative to its own column max — so every bar draws full
+     width and encodes nothing. The figures are still worth printing, so a
+     single-device month renders them as a chip strip instead of a table
+     (same .mini-chip language page 1 uses), and the daily chart takes the
+     height the dead table was holding. */
+  .device-strip { display: flex; gap: var(--dt-space-8); align-items: stretch; }
+  .device-strip .mini-chip { flex: 1; }
+  .device-strip .mini-chip-value .grade { font-weight: 700; }
+
   /* Page 1: four analyst-note panels read as quadrants, not a list — a CSS
      grid (not the flex two-column-of-two v1 used) gives all four an equal
      share of the page's remaining height regardless of which one's prose
@@ -973,10 +1005,11 @@
     <div class="hdr-right">
       <div class="kind">Monthly Review</div>
       <div class="name">{{FRONTEND_NAME}}</div>
-      <div class="meta">{{ENVIRONMENT_NAME}}</div>
+      <div class="env">{{ENVIRONMENT_NAME}}</div>
+      <div class="meta">{{DATE_RANGE_LABEL}}</div>
     </div>
   </header>
-  <div class="page-title"><h2>Executive Summary</h2><p class="lede">{{DATE_RANGE_LABEL}}</p></div>
+  <div class="page-title"><h2>Executive Summary</h2><p class="lede"></p></div>
   <div class="content">
     <div class="kpi-row" id="kpi-row"></div>
     <div class="findings-grid">
@@ -1015,10 +1048,11 @@
     <div class="hdr-right">
       <div class="kind">Monthly Review</div>
       <div class="name">{{FRONTEND_NAME}}</div>
-      <div class="meta">{{ENVIRONMENT_NAME}}</div>
+      <div class="env">{{ENVIRONMENT_NAME}}</div>
+      <div class="meta">{{DATE_RANGE_LABEL}}</div>
     </div>
   </header>
-  <div class="page-title"><h2>Traffic</h2><p class="lede">{{DATE_RANGE_LABEL}}</p></div>
+  <div class="page-title"><h2>Traffic</h2><p class="lede">Daily sessions and how the device mix performed</p></div>
   <div class="content">
     <div class="panel" style="flex: 1;">
       <h3 class="panel-title">Daily Sessions by Device</h3>
@@ -1026,7 +1060,7 @@
     </div>
     <div class="panel" style="flex: 0 0 auto;">
       <h3 class="panel-title">Device Compare</h3>
-      <table class="rp-table" id="table-deviceCompare"></table>
+      <div id="deviceCompare"></div>
     </div>
   </div>
   <footer class="ftr">
@@ -1061,10 +1095,11 @@
     <div class="hdr-right">
       <div class="kind">Monthly Review</div>
       <div class="name">{{FRONTEND_NAME}}</div>
-      <div class="meta">{{ENVIRONMENT_NAME}}</div>
+      <div class="env">{{ENVIRONMENT_NAME}}</div>
+      <div class="meta">{{DATE_RANGE_LABEL}}</div>
     </div>
   </header>
-  <div class="page-title"><h2>Core Web Vitals</h2><p class="lede">{{DATE_RANGE_LABEL}}</p></div>
+  <div class="page-title"><h2>Core Web Vitals</h2><p class="lede">Current status against Google’s thresholds, the spread across all loads, and the daily trend</p></div>
   <div class="content">
     <div class="panel" style="flex: 0 0 auto;">
       <h3 class="panel-title">Experience Summary</h3>
@@ -1079,8 +1114,9 @@
         <div class="chart-col"><div class="chart-col-title">CLS</div><div class="chart-body"><canvas id="chart-dist-cls"></canvas></div></div>
       </div>
     </div>
-    <div class="panel" style="flex: 1.3;">
+    <div class="panel" style="flex: 1.8;">
       <h3 class="panel-title">Daily Trend</h3>
+      <p class="panel-note">Scaled to each metric’s own thresholds (dashed) — height means severity, not milliseconds.</p>
       <div class="panel-row">
         <div class="chart-col"><div class="chart-col-title">LCP</div><div class="chart-body"><canvas id="chart-daily-lcp"></canvas></div></div>
         <div class="chart-col"><div class="chart-col-title">INP</div><div class="chart-body"><canvas id="chart-daily-inp"></canvas></div></div>
@@ -1106,14 +1142,15 @@
     <div class="hdr-right">
       <div class="kind">Monthly Review</div>
       <div class="name">{{FRONTEND_NAME}}</div>
-      <div class="meta">{{ENVIRONMENT_NAME}}</div>
+      <div class="env">{{ENVIRONMENT_NAME}}</div>
+      <div class="meta">{{DATE_RANGE_LABEL}}</div>
     </div>
   </header>
-  <div class="page-title"><h2>Top Pages</h2><p class="lede">{{DATE_RANGE_LABEL}}</p></div>
+  <div class="page-title"><h2>Top Pages</h2><p class="lede">Highest-volume pages, graded against the Core Web Vitals thresholds</p></div>
   <div class="content">
     <div class="panel" style="flex: 1;">
       <h3 class="panel-title">Page Performance Scorecard</h3>
-      <p class="panel-note">Top 10 pages by visit volume — LCP, INP, CLS, and error counts (p75)</p>
+      <p class="panel-note">Top pages by visit volume — LCP, INP and CLS at p75; exceptions and request errors as an average per view</p>
       <div class="flex-bars wide-label" id="table-topPages"></div>
     </div>
   </div>
@@ -1134,10 +1171,11 @@
     <div class="hdr-right">
       <div class="kind">Monthly Review</div>
       <div class="name">{{FRONTEND_NAME}}</div>
-      <div class="meta">{{ENVIRONMENT_NAME}}</div>
+      <div class="env">{{ENVIRONMENT_NAME}}</div>
+      <div class="meta">{{DATE_RANGE_LABEL}}</div>
     </div>
   </header>
-  <div class="page-title"><h2>Errors</h2><p class="lede">{{DATE_RANGE_LABEL}}</p></div>
+  <div class="page-title"><h2>Errors</h2><p class="lede">JavaScript exceptions and failed requests across the month</p></div>
   <div class="content">
     <div class="panel-row" style="flex: 0 0 42mm;">
       <div class="panel" style="flex: 1;"><h3 class="panel-title">Sessions with JS Error Rate</h3><div class="chart-body"><canvas id="chart-jsErrorRate"></canvas></div></div>
@@ -1145,7 +1183,7 @@
     </div>
     <div class="panel" style="flex: 1;">
       <h3 class="panel-title">Error Count (Daily)</h3>
-      <p class="panel-note">Top 5 error types by volume; remaining types folded into <strong>Other</strong>.</p>
+      <p class="panel-note" id="note-errorCounts"></p>
       <div class="chart-body"><canvas id="chart-errorCounts"></canvas></div>
     </div>
     <div class="panel-row" style="flex: 0 0 50mm;">
@@ -1241,22 +1279,32 @@ document.querySelectorAll(".notes-body").forEach(el => {
   if (!el.textContent.trim()) el.innerHTML = '<span class="empty-note">No notable changes.</span>';
 });
 
+// DATA.kpis carries only the traffic counters. The three vitals are appended
+// here as rated metric-tiles read off cmCwvDistribution's p75, because a bare
+// figure cannot say whether it is good — see the .kpi-row .metric-tile rule.
 function renderKpis(kpis) {
   const row = document.getElementById("kpi-row");
   if (!row || !kpis) return;
-  row.innerHTML = kpis.map(k => {
+  const plain = kpis.map(k => {
     const positive = k.change != null && (k.lowerIsBetter ? k.change < 0 : k.change > 0);
     const neutral = k.change == null || k.change === 0;
     const cls = neutral ? "neutral" : positive ? "good" : "bad";
     const arrow = k.change == null ? "" : (k.change >= 0 ? "▲" : "▼");
     const changeHtml = k.change == null ? "" :
-      `<div class="kpi-change ${cls}">${arrow} ${Math.abs(k.change).toFixed(1)}% vs prior month</div>`;
+      `<div class="kpi-change ${cls}">${arrow} ${Math.abs(k.change).toFixed(1)}% MoM</div>`;
     return `<div class="kpi-tile">
       <div class="kpi-label">${esc(k.label)}</div>
       <div class="kpi-value">${esc(k.value)}</div>
       ${changeHtml}
     </div>`;
   }).join("");
+  const dist = DATA.cmCwvDistribution, tier = DATA.cmCwvTier;
+  const vitals = dist ? [
+    metricTile("LCP", "Largest contentful paint", "lcp", dist.lcp, tier && tier.lcp),
+    metricTile("INP", "Interaction to next paint", "inp", dist.inp, tier && tier.inp),
+    metricTile("CLS", "Cumulative layout shift", "cls", dist.cls, tier && tier.cls),
+  ].join("") : "";
+  row.innerHTML = plain + vitals;
 }
 
 // `c.num` right-aligns + shrinks a column to its content (deck-base's
@@ -1364,8 +1412,31 @@ function renderMetricGrid() {
   ].join("");
 }
 
-function renderDeviceCompareTable() {
+// A bar-in-cell is relative to its own column's max, so with a single device
+// row every bar draws full width and the table's whole visual apparatus
+// encodes nothing. One device is the common case on a desktop-only frontend,
+// so that case prints the same figures as a chip strip instead — no bars, a
+// fraction of the height, and the daily chart above takes the space back.
+function renderDeviceCompare() {
+  const host = document.getElementById("deviceCompare");
   const rows = DATA.deviceCompareRows || [];
+  if (!host) return;
+  if (!rows.length) { host.innerHTML = `<p class="empty-note">No device breakdown for this period.</p>`; return; }
+  if (rows.length === 1) {
+    const r = rows[0];
+    const chip = (label, value) =>
+      `<div class="mini-chip"><div class="mini-chip-label">${esc(label)}</div><div class="mini-chip-value">${value}</div></div>`;
+    host.innerHTML = `<div class="device-strip">` +
+      chip("Device", esc(r.deviceType)) +
+      chip("Sessions", (r.sessions ?? 0).toLocaleString()) +
+      chip("Page loads", (r.pageLoads ?? 0).toLocaleString()) +
+      chip("LCP p75", gradeCell(r.lcpP75, "lcp", fmtMs)) +
+      chip("INP p75", gradeCell(r.inpP75, "inp", fmtMs)) +
+      chip("CLS p75", gradeCell(r.clsP75, "cls", fmtCls)) +
+      `</div>`;
+    return;
+  }
+  host.innerHTML = `<table class="rp-table" id="table-deviceCompare"></table>`;
   const maxSessions = Math.max(1, ...rows.map(r => r.sessions || 0));
   const maxLoads = Math.max(1, ...rows.map(r => r.pageLoads || 0));
   renderTable("table-deviceCompare", [
@@ -1378,27 +1449,50 @@ function renderDeviceCompareTable() {
   ], rows);
 }
 
+// A bar shows shape WITHIN a column while the printed figure carries the
+// value — so a column whose rows span orders of magnitude has no shape left
+// to show. This tenant's landing page has 250,468 visits and every other row
+// has 34 or fewer: one full bar beside nine tracks pinned to the 2% floor,
+// which reads as a rendering fault rather than as a distribution. When over
+// half the rows would sit on that floor, print the figures alone.
+function barsWorthDrawing(values) {
+  const v = values.map(x => x ?? 0).filter(x => x > 0);
+  if (v.length < 2) return false;
+  const max = Math.max(...v);
+  return v.filter(x => x / max >= 0.02).length > v.length / 2;
+}
+
+// Returns the column fragment for a numeric column, bar-backed or not.
+function measureCol(key, label, rows, fmtFn) {
+  const values = rows.map(r => r[key]);
+  const max = Math.max(1, ...values.map(v => v ?? 0));
+  const bars = barsWorthDrawing(values);
+  return {
+    key, label, num: true, barCol: bars,
+    render: bars
+      ? v => barCell(v, max, fmtFn)
+      : v => `<span class="bar-value">${v == null ? "—" : fmtFn(v)}</span>`,
+  };
+}
+
 function renderTopPagesTable() {
   const rows = DATA.topPagesRows || [];
-  const maxVisits = Math.max(1, ...rows.map(r => r.count || 0));
-  const maxExceptions = Math.max(1, ...rows.map(r => r.exceptions || 0));
-  const maxReqErrors = Math.max(1, ...rows.map(r => r.requestErrors || 0));
+  const num = x => x.toLocaleString();
   renderFlexBars("table-topPages", [
     { key: "name", label: "Page", render: v => `<span class="path">${esc(v)}</span>` },
-    { key: "count", label: "Visits", num: true, barCol: true, render: v => barCell(v, maxVisits, x => x.toLocaleString()) },
+    measureCol("count", "Visits", rows, num),
     { key: "lcp", label: "LCP", num: true, render: v => gradeCell(v, "lcp", fmtMs) },
     { key: "inp", label: "INP", num: true, render: v => gradeCell(v, "inp", fmtMs) },
     { key: "cls", label: "CLS", num: true, render: v => gradeCell(v, "cls", fmtCls) },
-    { key: "exceptions", label: "Exceptions", num: true, barCol: true, render: v => barCell(v, maxExceptions, x => x.toLocaleString()) },
-    { key: "requestErrors", label: "Req. Errors", num: true, barCol: true, render: v => barCell(v, maxReqErrors, x => x.toLocaleString()) },
+    measureCol("exceptions", "Exceptions", rows, num),
+    measureCol("requestErrors", "Req. Errors", rows, num),
   ], rows);
 }
 
 function renderTopExceptionsTable() {
   const rows = (DATA.topExceptionRows || []).slice(0, 5);
-  const max = Math.max(1, ...rows.map(r => r.count || 0));
   renderTable("table-topExceptions", [
-    { key: "count", label: "#", num: true, barCol: true, render: v => barCell(v, max, x => x.toLocaleString()) },
+    measureCol("count", "#", rows, x => x.toLocaleString()),
     { key: "type", label: "Type" },
     // Clipped to one line (see .rp-table td.msg) rather than sized for the
     // wrap case: an exception message is open-ended text with no natural
@@ -1412,10 +1506,9 @@ function renderTopExceptionsTable() {
 
 function renderTopRequestErrorsTable() {
   const rows = (DATA.topRequestErrorRows || []).slice(0, 5);
-  const max = Math.max(1, ...rows.map(r => r.count || 0));
   const statusRating = code => code == null ? "none" : code >= 500 ? "poor" : code >= 400 ? "needs-improvement" : "good";
   renderTable("table-topRequestErrors", [
-    { key: "count", label: "#", num: true, barCol: true, render: v => barCell(v, max, x => x.toLocaleString()) },
+    measureCol("count", "#", rows, x => x.toLocaleString()),
     { key: "method", label: "Method", render: v => `<span class="chip">${esc(v ?? "—")}</span>` },
     { key: "status", label: "Status", render: v => `<span class="grade" data-rating="${statusRating(v)}">${v ?? "—"}</span>` },
     { key: "path", label: "Path", render: (v, r) => `<span class="path">${esc((r.host || "") + (v || ""))}</span>` },
@@ -1484,6 +1577,76 @@ Chart.register({
   },
 });
 
+// Threshold boundaries as dashed rules drawn under the series. Colours arrive
+// as a per-chart plugin option for the same reason opaqueBacking's do: reading
+// the cascade inside a plugin hits the beforeprint dark-palette trap ctVar()
+// exists to dodge.
+//
+// Filled good/NI/poor bands were tried on the trending deck and dropped: the
+// panel is a dark blue-purple, so at any alpha quiet enough to stay behind the
+// series the base dominates the mix and the three bands come out slate, brown
+// and mauve rather than teal, amber and red. A dashed rule carries the same
+// boundary at full strength for a fraction of the ink.
+Chart.register({
+  id: "thresholdLines",
+  beforeDraw(chart, args, opts) {
+    if (!opts || !opts.rules || !chart.chartArea) return;
+    const { top, bottom, left, right } = chart.chartArea;
+    const y = chart.scales.y;
+    const ctx = chart.ctx;
+    ctx.save();
+    opts.rules.forEach(({ at, color }) => {
+      const yAt = Math.max(top, Math.min(bottom, y.getPixelForValue(at)));
+      ctx.beginPath();
+      ctx.setLineDash([4, 3]);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.moveTo(left, yAt + .5);
+      ctx.lineTo(right, yAt + .5);
+      ctx.stroke();
+    });
+    ctx.restore();
+  },
+});
+
+// ── the semantic threshold scale ─────────────────────────────────────────
+// The daily trend charts do NOT plot milliseconds. They plot thresholdPos() —
+// the same 0/40/70/100 anchoring the metric tiles use, where good ends at 40,
+// poor begins at 70 and twice the poor boundary is 100.
+//
+// Two earlier attempts failed on the same axis in opposite directions. Flat
+// threshold datasets make Chart.js fit every series, so a "poor > 4.0s" line
+// drags a chart whose data lives at 622–1,760ms onto a 0–4,000ms axis and
+// irons the trend flat; this tenant's 3,371ms INP day then collapsed the
+// 200ms and 500ms rules into one line on the axis floor. Scaling to the data
+// instead fixes the trend but pushes both LCP boundaries off the canvas, so
+// the one question the page exists to answer — is this good? — can't be read.
+//
+// Normalising the DATA rather than the axis settles both: both boundaries sit
+// at the same place in every chart whether or not the data goes near them,
+// the series keeps its shape, and thresholdPos()'s clamp at 100 keeps an
+// outlier inside the plot instead of stretching it. y is no longer a linear
+// ramp, so the ticks are the boundaries themselves. Raw values are not lost —
+// the tooltip prints the real measurement and the tiles print the p75.
+const ZONE_TICKS = [0, 40, 70, 100];
+function semanticSeries(values, t) {
+  return (values || []).map(v => (typeof v === "number" ? thresholdPos(v, t) : null));
+}
+function semanticYScale(metric, printing) {
+  const t = THRESHOLDS[metric];
+  const fmtFn = metric === "cls" ? fmtCls : fmtMs;
+  const atTick = { 0: 0, 40: t.good, 70: t.poor, 100: t.poor * 2 };
+  return {
+    min: 0, max: 100,
+    grid: { color: ctVar("grid", printing) },
+    ticks: {
+      color: ctVar("axis-text", printing), font: { size: 10 }, autoSkip: false,
+      callback: v => (atTick[v] === undefined ? "" : fmtFn(atTick[v])),
+    },
+    afterBuildTicks: axis => { axis.ticks = ZONE_TICKS.map(v => ({ value: v })); },
+  };
+}
+
 function mkChart(el, config) {
   if (!el) return;
   const c = new Chart(el, config);
@@ -1506,21 +1669,48 @@ function applyChartDefaults() {
   Chart.defaults.plugins.legend.labels.color = ctVar("axis-text", PRINTING);
 }
 
+// Daily bars are noisy at month scale — weekday/weekend swing alone moves
+// this tenant between 10.3k and 21.4k — so the shape of the month is hard to
+// read off the bars themselves. A trailing 7-day mean over the stacked total
+// is one derived series (no extra query) that answers "which way is this
+// going", which is the question a monthly review is actually asked.
+// ponytail: trailing mean, not centred — a centred window would need to
+// invent half a window of future days at the month boundary.
+function trailingMean(values, window) {
+  return values.map((_, i) => {
+    if (i < window - 1) return null;
+    let sum = 0;
+    for (let j = i - window + 1; j <= i; j++) sum += values[j] ?? 0;
+    return sum / window;
+  });
+}
+
 function renderCmDailyDevice() {
   const d = DATA.cmDailyDevice;
   const el = document.getElementById("chart-cmDailyDevice");
   if (!d || !el) return;
+  const totals = d.labels.map((_, i) => (d.desktop?.[i] ?? 0) + (d.mobile?.[i] ?? 0));
   mkChart(el, {
     type: "bar",
     data: {
       labels: d.labels,
+      // A null mobile series means this frontend has no mobile audience worth
+      // drawing (decided once in build-report.mjs, see hasMobile) — drop the
+      // dataset entirely rather than stacking an invisible zero bar and
+      // captioning it in the legend.
       datasets: [
         { label: "Desktop", data: d.desktop, backgroundColor: ctVar("series-1", PRINTING), stack: "s", borderRadius: 2 },
-        { label: "Mobile", data: d.mobile, backgroundColor: ctVar("series-2", PRINTING), stack: "s", borderRadius: 2 },
+        ...(d.mobile ? [{ label: "Mobile", data: d.mobile, backgroundColor: ctVar("series-2", PRINTING), stack: "s", borderRadius: 2 }] : []),
+        {
+          type: "line", label: "7-day average", data: trailingMean(totals, 7),
+          borderColor: ctVar("series-5", PRINTING), backgroundColor: ctVar("series-5", PRINTING),
+          borderWidth: 2, tension: .35, pointRadius: 0, spanGaps: false,
+        },
       ],
     },
     options: {
       responsive: true, maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
       scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, beginAtZero: true, grid: { color: ctVar("grid", PRINTING) } } },
       plugins: { legend: { position: "bottom" } },
     },
@@ -1573,22 +1763,33 @@ function renderDailyCwv() {
     const el = document.getElementById("chart-daily-" + metric);
     if (!m || !el) return;
     const t = THRESHOLDS[metric];
-    const flat = v => d.labels.map(() => v);
+    const fmtFn = metric === "cls" ? fmtCls : fmtMs;
+    // Raw values, kept so the tooltip can report the real measurement rather
+    // than the normalised position the chart actually plots.
+    const raw = { Desktop: m.desktop, Mobile: m.mobile };
     mkChart(el, {
       type: "line",
       data: {
         labels: d.labels,
         datasets: [
-          { label: "Desktop", data: m.desktop, borderColor: ctVar("series-1", PRINTING), backgroundColor: ctVar("series-1", PRINTING), borderWidth: 2, tension: 0.25, pointRadius: 0 },
-          { label: "Mobile", data: m.mobile, borderColor: ctVar("series-2", PRINTING), backgroundColor: ctVar("series-2", PRINTING), borderWidth: 2, tension: 0.25, pointRadius: 0 },
-          { label: "Good threshold", data: flat(t.good), borderColor: ctVar("threshold-good", PRINTING), borderDash: [4, 4], borderWidth: 1, pointRadius: 0 },
-          { label: "Poor threshold", data: flat(t.poor), borderColor: ctVar("threshold-poor", PRINTING), borderDash: [4, 4], borderWidth: 1, pointRadius: 0 },
+          { label: "Desktop", data: semanticSeries(m.desktop, t), borderColor: ctVar("series-1", PRINTING), backgroundColor: ctVar("series-1", PRINTING), borderWidth: 2, tension: 0.25, pointRadius: 0, spanGaps: true },
+          ...(m.mobile ? [{ label: "Mobile", data: semanticSeries(m.mobile, t), borderColor: ctVar("series-2", PRINTING), backgroundColor: ctVar("series-2", PRINTING), borderWidth: 2, tension: 0.25, pointRadius: 0, spanGaps: true }] : []),
         ],
       },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: { x: DAY_AXIS, y: { beginAtZero: true, grid: { color: ctVar("grid", PRINTING) } } },
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { display: false },
+          thresholdLines: { rules: [
+            { at: 40, color: ctVar("threshold-good", PRINTING) },
+            { at: 70, color: ctVar("threshold-poor", PRINTING) },
+          ] },
+          tooltip: { callbacks: {
+            label: ctx => `${ctx.dataset.label}: ${fmtFn((raw[ctx.dataset.label] || [])[ctx.dataIndex])}`,
+          } },
+        },
+        scales: { x: DAY_AXIS, y: semanticYScale(metric, PRINTING) },
       },
     });
   });
@@ -1598,9 +1799,10 @@ function renderDailyCwv() {
   // canvas pixels, so it is rebuilt every buildEverything() pass too.
   const legendEl = document.getElementById("legend-dailyCwv");
   if (legendEl) {
+    const hasMobile = ["lcp", "inp", "cls"].some(k => d[k] && d[k].mobile);
     legendEl.innerHTML = [
       `<span class="item"><span class="swatch" style="background:${ctVar("series-1", PRINTING)}"></span>Desktop</span>`,
-      `<span class="item"><span class="swatch" style="background:${ctVar("series-2", PRINTING)}"></span>Mobile</span>`,
+      ...(hasMobile ? [`<span class="item"><span class="swatch" style="background:${ctVar("series-2", PRINTING)}"></span>Mobile</span>`] : []),
       `<span class="item"><span class="dash" style="color:${ctVar("threshold-good", PRINTING)}"></span>Good threshold</span>`,
       `<span class="item"><span class="dash" style="color:${ctVar("threshold-poor", PRINTING)}"></span>Poor threshold</span>`,
     ].join("");
@@ -1635,6 +1837,16 @@ function renderErrorCounts() {
   if (!d || !el) return;
   const folded = foldErrorTypes(d.byType, d.labels.length);
   const keys = Object.keys(folded);
+  // Describe what was actually drawn. The note used to be static prose
+  // promising "top 5 ... remaining folded into Other" on a chart that, on a
+  // tenant with two error types, shows two bars and no Other at all.
+  const noteEl = document.getElementById("note-errorCounts");
+  if (noteEl) {
+    const real = keys.filter(k => k !== "Other").length;
+    noteEl.innerHTML = keys.includes("Other")
+      ? `Top ${real} error types by volume; remaining types folded into <strong>Other</strong>.`
+      : `${real === 1 ? "The only error type" : `All ${real} error types`} recorded this month.`;
+  }
   // series-6 is reserved for "Other" specifically, not "whichever type
   // sorted 6th" — the fold guarantees "Other" only ever appears once, last.
   const seriesFor = (key, i) => ctVar(key === "Other" ? "series-6" : `series-${i + 1}`, PRINTING);
@@ -1659,7 +1871,7 @@ function buildEverything(printing) {
   applyChartDefaults();
   renderKpis(DATA.kpis);
   renderMetricGrid();
-  renderDeviceCompareTable();
+  renderDeviceCompare();
   renderTopPagesTable();
   renderTopExceptionsTable();
   renderTopRequestErrorsTable();
