@@ -67,7 +67,7 @@ If no contexts exist, ask the user for:
 Then run:
 
 ```bash
-dtctl auth login --environment "ENV_URL" --context-name "CONTEXT_NAME"
+dtctl auth login --environment "ENV_URL" --context "CONTEXT_NAME"
 ```
 
 Tell the user to complete the browser OAuth flow and confirm when done.
