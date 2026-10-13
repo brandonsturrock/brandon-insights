@@ -5,7 +5,7 @@ fetch user.events, from: (now()-1M)@M, to: now()@M
 | fieldsAdd
     lcp_ms = toLong(web_vitals.largest_contentful_paint) / 1000000,
     inp_ms = toLong(web_vitals.interaction_to_next_paint) / 1000000,
-    cls_val = toDouble(web_vitals.cumulative_layout_shift) / 10000
+    cls_val = toDouble(web_vitals.cumulative_layout_shift)
 | summarize
     lcp_b0  = countIf(lcp_ms < 1000),
     lcp_b1  = countIf(lcp_ms >= 1000  and lcp_ms < 2000),

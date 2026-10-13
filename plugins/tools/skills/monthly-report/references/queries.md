@@ -51,8 +51,8 @@ and the findings-prompt both read from that directory using these exact names.
     **nanoseconds**; divide by `1e6` for ms. (The queries below already do this
     conversion in DQL via `toLong(...) / 1000000`, so the JSON output is
     already in ms — no further conversion needed downstream.)
-  - `web_vitals.cumulative_layout_shift` → divide by `1e4` for the real decimal
-    value. (Also already done in-query below via `toDouble(...) / 10000`.)
+  - `web_vitals.cumulative_layout_shift` → already the real decimal value; **no
+    scaling** (unlike the timeseries metric above). Queries use `toDouble(...)` as-is.
 - CWV thresholds (used for Good/Needs-Improvement/Poor coloring and query 15's
   bucket counts): LCP good `< 2500ms` / poor `>= 4000ms`; INP good `< 200ms` /
   poor `>= 500ms`; CLS good `< 0.1` / poor `>= 0.25`.
