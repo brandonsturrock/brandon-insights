@@ -951,9 +951,8 @@
      bar, it just lets the bar-cell's own content paint past the cell
      boundary and collide with the next column's text. */
   #table-topExceptions th:nth-child(1), #table-topExceptions td:nth-child(1),
-  #table-topRequestErrors th:nth-child(1), #table-topRequestErrors td:nth-child(1) { width: 86px; }
+  #table-topRequestErrors th:nth-child(1), #table-topRequestErrors td:nth-child(1) { width: 140px; }
   #table-topExceptions th:nth-child(2), #table-topExceptions td:nth-child(2) { width: 104px; }
-  #table-topExceptions th:nth-child(4), #table-topExceptions td:nth-child(4) { width: 140px; }
   #table-topRequestErrors th:nth-child(2), #table-topRequestErrors td:nth-child(2) { width: 66px; }
   #table-topRequestErrors th:nth-child(3), #table-topRequestErrors td:nth-child(3) { width: 56px; }
   .rp-table td.msg {
@@ -980,8 +979,14 @@
      device); a page path like "/product/[id]" needs more, hence
      `.wide-label`. */
   .flex-bars.wide-label .flex-bars-spacer,
-  .flex-bars.wide-label .flex-bars-row-label { flex: 0 0 170px; }
+  .flex-bars.wide-label .flex-bars-row-label { flex: 0 0 170px; min-width: 0; overflow: hidden; }
   .flex-bars-cell.num { justify-content: flex-end; }
+  /* Fill the cell and right-align the value so bars start and end at the same x in every row. */
+  .flex-bars-cell .bar-cell { flex: 1; }
+  .flex-bars-cell .bar-value { min-width: 7ch; text-align: right; }
+  /* Same for the error tables: fixed value slot so every bar has the same width. */
+  .rp-table .bar-cell { width: 100%; }
+  .rp-table .bar-value { min-width: 9ch; text-align: right; }
   .flex-bars-col-hdr.num { text-align: right; }
 
   /* Inline code inside an analyst's note (a literal page path, exception
@@ -1469,14 +1474,15 @@ const TOP_PAGES_MAX_ROWS = 8;
 function renderTopPagesTable() {
   const rows = (DATA.topPagesRows || []).slice(0, TOP_PAGES_MAX_ROWS);
   const num = x => x.toLocaleString();
+  const avg = x => x.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
   renderFlexBars("table-topPages", [
-    { key: "name", label: "Page", render: v => `<span class="path">${esc(v)}</span>` },
+    { key: "name", label: "Page", render: v => { const t = String(v); return `<span class="path" title="${esc(t)}" style="white-space:nowrap;display:block;overflow:hidden">${esc(shortPath(t, 24))}</span>`; } },
     measureCol("count", "Visits", rows, num),
     { key: "lcp", label: "LCP", num: true, render: v => gradeCell(v, "lcp", fmtMs) },
     { key: "inp", label: "INP", num: true, render: v => gradeCell(v, "inp", fmtMs) },
     { key: "cls", label: "CLS", num: true, render: v => gradeCell(v, "cls", fmtCls) },
-    measureCol("exceptions", "Exceptions", rows, num),
-    measureCol("requestErrors", "Req. Errors", rows, num),
+    measureCol("exceptions", "Exceptions", rows, avg),
+    measureCol("requestErrors", "Req. Errors", rows, avg),
   ], rows);
 }
 
@@ -1491,7 +1497,6 @@ function renderTopExceptionsTable() {
     // stable answer, and this and the Top Request Errors table sit side by
     // side and must land on the same row height.
     { key: "message", label: "Message", cellClass: "msg" },
-    { key: "source", label: "Source", render: v => `<span class="path">${esc(v ?? "—")}</span>` },
   ], rows);
 }
 
@@ -1502,7 +1507,7 @@ function renderTopRequestErrorsTable() {
     measureCol("count", "#", rows, x => x.toLocaleString()),
     { key: "method", label: "Method", render: v => `<span class="chip">${esc(v ?? "—")}</span>` },
     { key: "status", label: "Status", render: v => `<span class="grade" data-rating="${statusRating(v)}">${v ?? "—"}</span>` },
-    { key: "path", label: "Path", render: (v, r) => `<span class="path">${esc((r.host || "") + (v || ""))}</span>` },
+    { key: "path", label: "Path", render: (v, r) => (() => { const full = (r.host || "") + (v || ""); return `<span class="path" title="${esc(full)}">${esc(shortPath(full, 26))}</span>`; })() },
   ], rows);
 }
 
@@ -1836,6 +1841,16 @@ const meanPct = (xs) => {
   const v = (xs || []).filter((x) => x != null);
   return v.length ? (v.reduce((a, b) => a + b, 0) / v.length).toFixed(2) + "%" : "—";
 };
+// Left-truncate a path at a "/" boundary so the kept tail is a clean suffix
+// ("/play-online/casino.html"); falls back to a hard tail cut if no "/" fits.
+function shortPath(v, max) {
+  const t = String(v);
+  if (t.length <= max) return t;
+  for (let i = t.indexOf("/", 1); i !== -1; i = t.indexOf("/", i + 1)) {
+    if (t.length - i <= max) return t.slice(i);
+  }
+  return t.slice(-max);
+}
 function miniChip(label, value) {
   return `<div class="mini-chip"><div class="mini-chip-label">${esc(label)}</div><div class="mini-chip-value">${value}</div></div>`;
 }
@@ -1875,7 +1890,7 @@ function renderExecMiniStats() {
   const pages = (DATA.topPagesRows || []).slice(0, 3);
   if (pages.length) {
     miniStats("mini-pages", period,
-      pages.map((p) => miniChip(p.name, compactNum(p.count))).join(""));
+      pages.map((p) => miniChip(shortPath(p.name, 20), compactNum(p.count))).join(""));
   }
 
   const rates = DATA.cmErrorRates || {};
