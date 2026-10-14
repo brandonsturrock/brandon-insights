@@ -27,7 +27,7 @@ If the user invokes this skill with `--no-preview`, skip step 5 entirely —
 do not open the browser and do not ask the `AskUserQuestion`. Proceed directly
 from step 4 to step 6 using `/tmp/<frontend>-trending-<YYYY-MM>.html` as the
 source. The findings panels are still editable in the HTML (they are always
-`contenteditable`), but the PDF is built immediately without waiting for review.
+`contenteditable`), but the PDF is built immediately without waiting for review. The PDF uses the **light** theme.
 
 ---
 
@@ -276,29 +276,31 @@ open /tmp/<frontend>-trending-<YYYY-MM>.html > /dev/null 2>&1
 Start-Process /tmp/<frontend>-trending-<YYYY-MM>.html
 ```
 
-Then use `AskUserQuestion` with the following options, including this prompt text:
+Then use `AskUserQuestion` with **two questions**. The preview has a **Theme: Dark/Light** toggle in the bottom bar; the reader flips it to compare. Question 1 (Review) uses this prompt text:
 "The report is open in your browser. The three findings panels on page 1 are editable — click into any panel and type. When you're done, click **Save changes** (bottom-right) to save your edits to ~/Downloads. Then come back here and confirm."
 
 - **Looks good — build the PDF** — proceed to step 6 using `/tmp/<frontend>-trending-<YYYY-MM>.html`
 - **I edited and saved** — proceed to step 6 using `~/Downloads/<frontend>-trending-<YYYY-MM>.html`
 - **Regenerate analysis** — rewrite the findings (step 3) and rebuild the HTML (step 4), then reopen
 
+Question 2 (Theme), asked in the same call: "Which theme for the PDF? You can flip the Theme toggle in the preview bar to compare." Options: **Light** (print-friendly) and **Dark**. Set `THEME` to `light` or `dark`. If the user chose **Regenerate analysis**, ignore the theme answer until the rebuilt preview is reviewed.
+
 ### 6. Convert to PDF
 
-Determine the source HTML based on the user's choice in step 5:
+Determine the source HTML based on the user's choice in step 5 (and `THEME`, default `light`):
 - **Looks good** or **`--no-preview`**: `SOURCE=/tmp/<frontend>-trending-<YYYY-MM>.html`
 - **I edited and saved**: `SOURCE=~/Downloads/<frontend>-trending-<YYYY-MM>.html`
 
 **macOS:**
 ```bash
 bash assets/render-pdf.sh "$SOURCE" \
-  ~/Downloads/<frontend>-trending-<YYYY-MM>.pdf &>/dev/null
+  ~/Downloads/<frontend>-trending-<YYYY-MM>.pdf "${THEME:-light}" &>/dev/null
 ```
 
 **Windows** (PowerShell):
 ```powershell
 pwsh assets/render-pdf.ps1 $SOURCE `
-  ~/Downloads/<frontend>-trending-<YYYY-MM>.pdf *> $null
+  ~/Downloads/<frontend>-trending-<YYYY-MM>.pdf $THEME *> $null  # light or dark
 ```
 
 ### 7. Clean up and report back

@@ -1,6 +1,6 @@
 # monthly-report
 
-Generates the 5-page Dynatrace RUM "Current Month" review PDF (`assets/report-cm.html.tmpl`
+Generates the 4-page Dynatrace RUM "Current Month" review PDF (`assets/report-cm.html.tmpl`
 + `scripts/build-report.mjs`). See `SKILL.md` for the full dtctl-driven workflow.
 
 ## Previewing the template without a tenant

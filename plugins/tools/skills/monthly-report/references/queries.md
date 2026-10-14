@@ -246,7 +246,7 @@ latest month) avoids one anomalous month skewing which browsers "matter."
 
 ## 6. `cm-daily-device.dql` — last full calendar month, daily sessions by device
 
-**Tab:** Current-Month. **Feeds:** page 1 Daily Device Traffic chart.
+**Tab:** Current-Month. **Feeds:** page 2 Daily Sessions by Device chart.
 
 ```dql
 timeseries {
@@ -268,7 +268,7 @@ timeseries {
 
 ## 7. `cm-daily-cwv.dql` — last full calendar month, daily LCP/INP/CLS p75 by device
 
-**Tab:** Current-Month. **Feeds:** page 2 daily CWV trend chart.
+**Tab:** Current-Month. **Feeds:** page 3 daily CWV trend charts.
 
 ```dql
 timeseries {
@@ -292,8 +292,10 @@ by 10000**), `device.type`.
 
 ## 8. `cm-cwv-distribution.dql` — last calendar month, LCP/INP/CLS histogram buckets
 
-**Tab:** Current-Month. **Feeds:** page 2 CWV distribution histograms (one
-per metric, 11 buckets each).
+**Tab:** Current-Month. **Feeds:** the p75 figure on each page-3 metric tile.
+The bucket counts are still returned and still carried in `DATA`, but are no
+longer plotted — the distribution histograms were dropped so the daily trend
+charts could have legible height (see the page-3 CSS comment in the template).
 
 ```dql
 fetch user.events, from: (now()-1M)@M, to: now()@M
@@ -361,7 +363,7 @@ CLS 0.1-wide buckets 0–1.0+. No further conversion needed; just compute
 
 ## 9. `cm-top-pages.dql` — top 10 pages by traffic, last calendar month
 
-**Tab:** Current-Month. **Feeds:** page 3 Page Performance table. **Do not**
+**Tab:** Current-Month. **Feeds:** page 2 Page Performance scorecard. **Do not**
 pad short result sets with placeholder rows — only emit the real rows
 returned (the source app pads to 10 with a hardcoded demo array; this skill
 must not replicate that).
@@ -485,7 +487,7 @@ conversion.
 
 ## 14. `cm-device-compare.dql` — device-level rollup, last calendar month
 
-**Tab:** Current-Month. **Feeds:** page 1 Mobile-vs-Desktop comparison table
+**Tab:** Current-Month. **Feeds:** page 2 Device Compare strip/table
 (also used to compute the overall/blended KPI numbers for the current-month
 report header).
 
@@ -521,8 +523,10 @@ row by `page_loads` across all rows.
 
 ## 15. `cm-cwv-tier.dql` — Good/Needs-Improvement/Poor tier counts, last calendar month
 
-**Tab:** Current-Month. **Feeds:** page 2 CWV Tier chart (stacked
-good/needs-improvement/poor bars per metric).
+**Tab:** Current-Month. **Feeds:** the good/needs-improvement/poor split
+printed on the foot of each page-3 metric tile. It was a standalone stacked
+bar chart in v1; folding it into the tile removed a chart that repeated what
+the tile's threshold scale already showed.
 
 ```dql
 fetch user.events, from: (now()-1M)@M, to: now()@M

@@ -5,14 +5,17 @@
 <title>{{REPORT_TITLE}}</title>
 <!--
   CONTRACT for scripts/build-report.mjs (owned by another workstream).
-  This file is the 5-PAGE "Current Month" report layout:
-    Page 1: Executive Summary (KPI row + 2×2 findings grid)
-    Page 2: Traffic (daily stacked-bar chart + device compare table)
-    Page 3: Core Web Vitals (3 metric-tile summaries + 3 distribution histograms + 3 daily trend charts)
-    Page 4: Top Pages (page performance scorecard table)
-    Page 5: Errors (JS/request rate charts + error count chart + exception/request-error tables)
+  This file is the 4-PAGE "Current Month" report layout:
+    Page 1: Executive Summary (KPI row + 2×2 findings grid, each card footed with mini-stat chips)
+    Page 2: Traffic & Top Pages (daily stacked-bar chart + device compare + page performance scorecard)
+    Page 3: Core Web Vitals (3 metric-tile summaries + 3 daily trend charts)
+    Page 4: Errors (JS/request rate charts + error count chart + exception/request-error tables)
 
-  Its sibling report-trending.html.tmpl is the 3-page "Trending" layout — pick ONE per render,
+  cmCwvDistribution's `buckets`/`counts` are still accepted (and still carry the p75 each
+  metric-tile reads) but are no longer plotted: the distribution histograms were dropped so the
+  daily trends could have legible height. See the page-3 CSS comment for the trade.
+
+  Its sibling report-trending.html.tmpl is the 4-page "Trending" layout — pick ONE per render,
   they are two separate template files (not one file with a REPORT_TYPE switch).
 
   PLACEHOLDERS (plain string replace, each appears exactly once):
@@ -605,19 +608,26 @@
      Chart colours are read from the computed style at build time, so the
      template's script must resolve them AFTER this override applies — see
      buildEverything()/`beforeprint` in the <script> block below. */
+  /* Light theme: chosen in the preview (toggle) or by render-pdf.sh (#theme=light).
+     Print follows whichever theme is active — there is no automatic light swap. */
+  :root[data-theme="light"] {
+    --dt-bg-base:             #f9f9fa; /* Colors.Background.Base.Default (light) */
+    --dt-bg-container:        #f2f2f5; /* Colors.Background.Container.Neutral.Default (light) */
+    --dt-bg-container-subtle: #f9f9fa; /* Colors.Background.Container.Neutral.Subdued (light) */
+    --dt-text-primary:        #2f2f4f; /* Colors.Text.Neutral.Default (light) */
+    --dt-text-secondary:      #3f4060; /* darker than Strato Subdued (#595a7d) for print contrast */
+    --dt-border-default:      #bfc1d2; /* darker than Strato Default (#dadbe4) so card edges survive print */
+    --dt-critical:            #bb0731; /* Colors.Text.Critical.Default (light) */
+    --dt-warning:             #855400; /* Colors.Text.Warning.Default (light) */
+    --dt-success:             #2d6761; /* Colors.Text.Success.Default (light) */
+    --dt-primary:             #464cce; /* Colors.Text.Primary.Default (light) */
+  }
+  /* Gauge zones: the 45% screen mix washes out on white; strengthen for light. */
+  :root[data-theme="light"] .mt-zone-good { background: color-mix(in srgb, var(--good) 75%, var(--dt-bg-base)); }
+  :root[data-theme="light"] .mt-zone-ni   { background: color-mix(in srgb, var(--warning) 75%, var(--dt-bg-base)); }
+  :root[data-theme="light"] .mt-zone-poor { background: color-mix(in srgb, var(--critical) 75%, var(--dt-bg-base)); }
   @media print {
-    :root {
-      --dt-bg-base:             #f9f9fa; /* Colors.Background.Base.Default (light) */
-      --dt-bg-container:        #f2f2f5; /* Colors.Background.Container.Neutral.Default (light) */
-      --dt-bg-container-subtle: #f9f9fa; /* Colors.Background.Container.Neutral.Subdued (light) */
-      --dt-text-primary:        #2f2f4f; /* Colors.Text.Neutral.Default (light) */
-      --dt-text-secondary:      #595a7d; /* Colors.Text.Neutral.Subdued (light) */
-      --dt-border-default:      #dadbe4; /* Colors.Border.Neutral.Default (light) */
-      --dt-critical:            #bb0731; /* Colors.Text.Critical.Default (light) */
-      --dt-warning:             #855400; /* Colors.Text.Warning.Default (light) */
-      --dt-success:             #2d6761; /* Colors.Text.Success.Default (light) */
-      --dt-primary:             #464cce; /* Colors.Text.Primary.Default (light) */
-    }
+    :root { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     /* The page canvas is already exactly one sheet, so nothing may split and
        nothing may add a second sheet after the last one. */
     .page { break-after: page; page-break-after: always; break-inside: avoid; page-break-inside: avoid; }
@@ -667,15 +677,13 @@
     --rp-threshold-good: color-mix(in srgb, var(--good) 70%, transparent);
     --rp-threshold-poor: color-mix(in srgb, var(--critical) 70%, transparent);
   }
-  @media print {
-    :root {
-      --rp-series-1: #1a72c4;
-      --rp-series-2: #6f3bbf;
-      --rp-series-3: #2d6761;
-      --rp-series-4: #b03b78;
-      --rp-series-5: #8a6200;
-      --rp-series-6: #6b7392;
-    }
+  :root[data-theme="light"] {
+    --rp-series-1: #1a72c4;
+    --rp-series-2: #6f3bbf;
+    --rp-series-3: #2d6761;
+    --rp-series-4: #b03b78;
+    --rp-series-5: #8a6200;
+    --rp-series-6: #6b7392;
   }
 
   /* ── Reading a token from JS ───────────────────────────────────────────────
@@ -874,12 +882,22 @@
     gap: var(--dt-space-16); flex: 1; min-height: 0;
   }
   .findings-grid .panel { min-height: 0; }
+  /* These four cards are the only place in the deck where authored prose and
+     a chip strip share one fixed-height box, and the box is not a fixed
+     height at all — it is whatever the KPI row above leaves behind, which
+     changes with whether the KPIs carry month-over-month chips. At the
+     shared layer's body size that swing is enough to push a third bullet
+     under `.notes-body`'s overflow, where it is silently clipped
+     mid-sentence. Dropping to the small step and tightening the leading buys
+     back roughly two lines per card, which covers the taller-KPI case
+     without asking the analyst to write to a budget that moves. */
+  .findings-grid .notes-body { font-size: var(--rp-text-small); line-height: 1.45; }
+  .findings-grid .mini-stats { margin-top: 9px; padding-top: 7px; }
 
-  /* Page 3: three metrics side by side under one panel roof (distribution
-     histograms, daily trends). A bare chart-body has no way to say which of
-     the three columns is LCP vs. INP vs. CLS other than the axis units, so
-     each gets a micro label — the same eyebrow language as .panel-title, one
-     level down. */
+  /* Page 3: three metrics side by side under one panel roof (the daily
+     trends). A bare chart-body has no way to say which of the three columns
+     is LCP vs. INP vs. CLS other than the axis units, so each gets a micro
+     label — the same eyebrow language as .panel-title, one level down. */
   .chart-col { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
   .chart-col-title {
     flex: 0 0 auto; margin: 0 0 4px; text-align: center;
@@ -887,22 +905,14 @@
     text-transform: uppercase; letter-spacing: .06em; color: var(--text-subdued);
   }
 
-  /* The Experience Summary row was taking roughly twice the height of either
-     chart row below it (three full metric-tiles, each with its own head,
-     name line, value, scale, bounds and tail), which left the daily-trend
-     line charts under 60px of plot height — flat, indistinguishable ribbons
-     with unreadable threshold dashes. This page's tiles only need to repeat
-     what a reader can already see on page 1's KPI row plus the tier split;
-     `.compact` tightens the internal spacing so the row reads as a strip of
-     reference figures rather than a fourth chart competing for the same
-     space as the two rows that actually carry shape (distribution across the
-     month, change day over day) — the whole reason page 3 exists. */
-  .metric-grid.compact .metric-tile { padding: 8px 12px; }
-  .metric-grid.compact .mt-name { display: none; }
-  .metric-grid.compact .mt-value { margin-top: 5px; font-size: 21px; }
-  .metric-grid.compact .mt-scale { margin-top: 7px; height: 16px; }
-  .metric-grid.compact .mt-bounds { margin-top: 1px; }
-  .metric-grid.compact .mt-tail { margin-top: 6px; padding-top: 6px; }
+  /* Page 3 used to stack three panels — tiles, distribution histograms and
+     daily trends — which left the trend charts under 60px of plot height:
+     flat ribbons with unreadable threshold dashes, and they are the panel
+     that actually earns the page. The histograms are gone. The tier split
+     they illustrated already prints on each tile's mt-tail line, so what was
+     lost is bucket-level shape (a bimodal distribution, say) and what was
+     bought is a legible trend. With only two panels left the tiles no longer
+     need their `.compact` trim and render at full size. */
 
   /* A plain-text threshold grade for a table cell: the same --st-accent a
      .status chip or .metric-tile consumes, but spent on the figure itself
@@ -959,12 +969,13 @@
      works here too. */
   .rp-table .path { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-  /* Page 4: Top Pages is a single panel that owns the whole page height, and
-     an <rp-table> sized to its own 10 rows left ~200px of dead space below
-     the last row on a fixed-height page — reading as an unfinished page
-     rather than a complete scorecard. `.flex-bars` (already in the shared
-     layer, built for exactly this: a fixed-height page whose <tr> can't
-     flex) replaces the table so the 10 rows grow to fill the panel instead.
+  /* The Top Pages scorecard shares page 2 with the daily traffic chart. On
+     its own page it was a handful of rows stranded in a full-height panel,
+     most of their cells empty on a real tenant where only the landing page
+     carries meaningful volume; beside the traffic chart it reads as the
+     detail behind the volume rather than as a page that ran out of content.
+     `.flex-bars` (shared layer, built for a fixed-height page whose <tr>
+     can't flex) lets the rows grow to fill whatever height the panel gets.
      The shared 82px row-label width assumes a short label (a month, a
      device); a page path like "/product/[id]" needs more, hence
      `.wide-label`. */
@@ -1016,28 +1027,32 @@
       <div class="panel">
         <h3 class="panel-title">Traffic</h3>
         <div class="notes-body" id="exec-traffic">{{FINDINGS_TRAFFIC_HTML}}</div>
+        <div class="mini-stats" id="mini-traffic"></div>
       </div>
       <div class="panel">
         <h3 class="panel-title">Core Web Vitals</h3>
         <div class="notes-body" id="exec-cwv">{{FINDINGS_CWV_HTML}}</div>
+        <div class="mini-stats" id="mini-cwv"></div>
       </div>
       <div class="panel">
         <h3 class="panel-title">Top Pages</h3>
         <div class="notes-body" id="exec-pages">{{FINDINGS_PAGES_HTML}}</div>
+        <div class="mini-stats" id="mini-pages"></div>
       </div>
       <div class="panel">
         <h3 class="panel-title">Errors</h3>
         <div class="notes-body" id="exec-errors">{{FINDINGS_ERRORS_HTML}}</div>
+        <div class="mini-stats" id="mini-errors"></div>
       </div>
     </div>
   </div>
   <footer class="ftr">
     <span>Generated {{GENERATED_AT}}</span>
-    <span>Page 1 of 5 · Powered by <span class="brand-name">Dynatrace</span></span>
+    <span>Page 1 of 4 · Powered by <span class="brand-name">Dynatrace</span></span>
   </footer>
 </section>
 
-<!-- ── Page 2: Traffic ───────────────────────────────────────────────── -->
+<!-- ── Page 2: Traffic & Top Pages ─────────────────────────────────── -->
 <section class="page" data-page="2">
   <header class="hdr">
     <div class="hdr-left">
@@ -1052,7 +1067,7 @@
       <div class="meta">{{DATE_RANGE_LABEL}}</div>
     </div>
   </header>
-  <div class="page-title"><h2>Traffic</h2><p class="lede">Daily sessions and how the device mix performed</p></div>
+  <div class="page-title"><h2>Traffic &amp; Top Pages</h2><p class="lede">Daily session volume, the device mix behind it, and how the busiest pages performed</p></div>
   <div class="content">
     <div class="panel" style="flex: 1;">
       <h3 class="panel-title">Daily Sessions by Device</h3>
@@ -1062,10 +1077,15 @@
       <h3 class="panel-title">Device Compare</h3>
       <div id="deviceCompare"></div>
     </div>
+    <div class="panel" style="flex: 1.15;">
+      <h3 class="panel-title">Page Performance Scorecard</h3>
+      <p class="panel-note">Top pages by visit volume — LCP, INP and CLS at p75; exceptions and request errors as an average per view</p>
+      <div class="flex-bars wide-label" id="table-topPages"></div>
+    </div>
   </div>
   <footer class="ftr">
     <span>Confidential — for customer use only</span>
-    <span>Page 2 of 5 · Powered by <span class="brand-name">Dynatrace</span></span>
+    <span>Page 2 of 4 · Powered by <span class="brand-name">Dynatrace</span></span>
   </footer>
 </section>
 
@@ -1099,22 +1119,14 @@
       <div class="meta">{{DATE_RANGE_LABEL}}</div>
     </div>
   </header>
-  <div class="page-title"><h2>Core Web Vitals</h2><p class="lede">Current status against Google’s thresholds, the spread across all loads, and the daily trend</p></div>
+  <div class="page-title"><h2>Core Web Vitals</h2><p class="lede">Current status against Google’s thresholds, and the daily trend across the month</p></div>
   <div class="content">
     <div class="panel" style="flex: 0 0 auto;">
       <h3 class="panel-title">Experience Summary</h3>
       <p class="panel-note">p75 across all sessions this month, each tile scaled to its own thresholds.</p>
-      <div class="metric-grid compact" id="metric-grid"></div>
+      <div class="metric-grid" id="metric-grid"></div>
     </div>
     <div class="panel" style="flex: 1;">
-      <h3 class="panel-title">Load Time Distribution</h3>
-      <div class="panel-row">
-        <div class="chart-col"><div class="chart-col-title">LCP</div><div class="chart-body"><canvas id="chart-dist-lcp"></canvas></div></div>
-        <div class="chart-col"><div class="chart-col-title">INP</div><div class="chart-body"><canvas id="chart-dist-inp"></canvas></div></div>
-        <div class="chart-col"><div class="chart-col-title">CLS</div><div class="chart-body"><canvas id="chart-dist-cls"></canvas></div></div>
-      </div>
-    </div>
-    <div class="panel" style="flex: 1.8;">
       <h3 class="panel-title">Daily Trend</h3>
       <p class="panel-note">Scaled to each metric’s own thresholds (dashed) — height means severity, not milliseconds.</p>
       <div class="panel-row">
@@ -1127,41 +1139,12 @@
   </div>
   <footer class="ftr">
     <span>Confidential — for customer use only</span>
-    <span>Page 3 of 5 · Powered by <span class="brand-name">Dynatrace</span></span>
+    <span>Page 3 of 4 · Powered by <span class="brand-name">Dynatrace</span></span>
   </footer>
 </section>
 
-<!-- ── Page 4: Top Pages ────────────────────────────────────────────── -->
+<!-- ── Page 4: Errors ───────────────────────────────────────────────── -->
 <section class="page" data-page="4">
-  <header class="hdr">
-    <div class="hdr-left">
-      <svg class="dt-logo" viewBox="0 0 800 142" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Dynatrace"><g fill="currentColor"><path d="m578.6 37.2h-18.4c-5.2 0-8.8 1-11 3.2-2.2 2.1-3.3 5.8-3.3 10.8v63.6h-11v-64.4c.1-4.9.9-10.2 3.5-14.2 4.7-7.5 13.7-8.9 20.4-8.9h19.9v9.9z"/><path d="m507.6 104.8c-5.2 0-8.8-1-11-3.2-2.2-2.1-3.3-5.6-3.3-10.6v-53.8h23.1v-9.9h-23.1v-26.3h-11v90.6c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h19.9v-9.9z"/><path d="m219.3 1v26.2h-23.1c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h10.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2v-90.7zm-3.3 100.7c-2.2 2.1-5.8 3.2-11 3.2h-10c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-28.9c0-4.1 1.4-9.4 5.5-13.4 3.5-3.4 9.1-6 18.2-6h24.2v53.9c.1 4.9-1 8.4-3.2 10.6z"/><path d="m678.2 43.2c3.5-3.4 9.1-6 18.2-6h26.5v-9.9h-25.4c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h25.4v-9.9h-26.5c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-29c0-4.1 1.4-9.5 5.5-13.4z"/><path d="m470.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m652.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m317.8 27.2h-11.5l-27.9 72.6-27.9-72.6h-11.4l33.6 87.5-10.1 26.3h11.5z"/><path d="m392.2 56.9c0-1.2 0-12.5-8-20.4-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v57.9h11v-58.2c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v58.2h11c0-4.5 0-56.5 0-57.9z"/><path d="m791 36.5c-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v28.2c0 1.2 0 12.5 8 20.4 5.1 5 13.2 9.1 26.4 9.3h26v-10h-25.4c-8.7-.1-15.2-2.7-18.6-6-4-4-5.4-9.3-5.4-13.4v-10.3h59v-18.2c.1-1.2.1-12.5-8-20.4zm-50.9 28.7v-8.6c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v8.6z"/></g><g><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9-2.1 25.2-.8 42.1-.8 42.1l-35.5 33.7s-2.7-18.9-4.1-40.2c-.8-13.2-1.1-24.8-1.1-31.8 0-.4.2-.8.2-1.2 0-.5.6-5.2 5.2-9.6 5-4.8 41.9-33.7 41.3-30.9z" fill="#1496ff"/><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9 0 0-39.3-4.7-41.5 4.8 0-.5.7-6.3 5.3-10.7 5-4.8 42-34.8 41.4-32z" fill="#1284ea"/><path d="m1 53.1v2.2c.4-1.7 1.1-2.9 2.5-4.8 2.9-3.7 7.6-4.7 9.5-4.9 9.6-1.3 23.8-2.8 38.1-3.2 25.3-.8 42 1.3 42 1.3l35.5-33.7s-18.6-3.5-39.8-6c-13.9-1.7-26.1-2.6-33-3-.5 0-5.4-.6-10 3.8-5 4.8-30.4 28.9-40.6 38.6-4.6 4.4-4.2 9.3-4.2 9.7z" fill="#b4dc00"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4-25.3.8-42.1-1.3-42.1-1.3l-35.5 33.8s18.8 3.7 40 6.1c13 1.5 24.5 2.3 31.5 2.7.5 0 1.3-.4 1.8-.4s5.4-.9 10-5.3c5-4.8 35.2-39.3 32.4-39z" fill="#6f2da8"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4 0 0 2.7 39.5-6.8 41.2.5 0 7-.3 11.6-4.7 5-4.8 36.1-40.2 33.3-39.9z" fill="#591f91"/><path d="m84.5 141c-.7 0-1.4-.1-2.2-.1 1.8-.3 3-.9 4.9-2.3 3.8-2.7 5-7.4 5.4-9.3 1.7-9.5 4-23.6 5.1-37.9 2-25.2.8-42 .8-42l35.5-33.8s2.6 18.8 4.1 40.1c.9 13.9 1.2 26.2 1.3 33 0 .5.4 5.4-4.2 9.8-5 4.8-30.4 29-40.5 38.7-4.8 4.4-9.7 3.8-10.2 3.8z" fill="#73be28"/></g></svg>
-      <span class="brand-rule" aria-hidden="true"></span>
-      <span class="brand-team">Business Insights</span>
-    </div>
-    <div class="hdr-right">
-      <div class="kind">Monthly Review</div>
-      <div class="name">{{FRONTEND_NAME}}</div>
-      <div class="env">{{ENVIRONMENT_NAME}}</div>
-      <div class="meta">{{DATE_RANGE_LABEL}}</div>
-    </div>
-  </header>
-  <div class="page-title"><h2>Top Pages</h2><p class="lede">Highest-volume pages, graded against the Core Web Vitals thresholds</p></div>
-  <div class="content">
-    <div class="panel" style="flex: 1;">
-      <h3 class="panel-title">Page Performance Scorecard</h3>
-      <p class="panel-note">Top pages by visit volume — LCP, INP and CLS at p75; exceptions and request errors as an average per view</p>
-      <div class="flex-bars wide-label" id="table-topPages"></div>
-    </div>
-  </div>
-  <footer class="ftr">
-    <span>Confidential — for customer use only</span>
-    <span>Page 4 of 5 · Powered by <span class="brand-name">Dynatrace</span></span>
-  </footer>
-</section>
-
-<!-- ── Page 5: Errors ───────────────────────────────────────────────── -->
-<section class="page" data-page="5">
   <header class="hdr">
     <div class="hdr-left">
       <svg class="dt-logo" viewBox="0 0 800 142" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Dynatrace"><g fill="currentColor"><path d="m578.6 37.2h-18.4c-5.2 0-8.8 1-11 3.2-2.2 2.1-3.3 5.8-3.3 10.8v63.6h-11v-64.4c.1-4.9.9-10.2 3.5-14.2 4.7-7.5 13.7-8.9 20.4-8.9h19.9v9.9z"/><path d="m507.6 104.8c-5.2 0-8.8-1-11-3.2-2.2-2.1-3.3-5.6-3.3-10.6v-53.8h23.1v-9.9h-23.1v-26.3h-11v90.6c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h19.9v-9.9z"/><path d="m219.3 1v26.2h-23.1c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h10.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2v-90.7zm-3.3 100.7c-2.2 2.1-5.8 3.2-11 3.2h-10c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-28.9c0-4.1 1.4-9.4 5.5-13.4 3.5-3.4 9.1-6 18.2-6h24.2v53.9c.1 4.9-1 8.4-3.2 10.6z"/><path d="m678.2 43.2c3.5-3.4 9.1-6 18.2-6h26.5v-9.9h-25.4c-14 0-22.5 4.2-27.8 9.3-8.1 7.9-8.1 19.2-8.1 20.4v28.2c0 1.2 0 12.5 8.1 20.4 5.2 5.1 13.7 9.3 27.8 9.3h25.4v-9.9h-26.5c-9.1 0-14.8-2.6-18.2-6-4.1-4-5.5-9.3-5.5-13.4v-29c0-4.1 1.4-9.5 5.5-13.4z"/><path d="m470.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m652.9 56.9c0-1.2 0-12.5-8.1-20.4-5.2-5.1-13.7-9.3-27.8-9.3h-24.5v9.9h25.6c9.1 0 14.8 2.6 18.2 6 4.1 4 5.5 9.3 5.5 13.4v8.5h-35.1c-6.7 0-15.7 1.5-20.4 8.9-2.5 4-3.4 9.3-3.5 14.2v3.5c.1 4.9.9 10.2 3.5 14.2 4.7 7.5 13.7 8.9 20.4 8.9h22.3c6.7 0 15.7-1.5 20.4-8.9 2.5-4 3.4-9.3 3.5-14.2 0 0 0-29 0-34.7zm-14.3 44.8c-2.2 2.1-5.8 3.2-11 3.2h-19.4c-5.2 0-8.8-1-11-3.2s-3.2-5.7-3.2-10.6v-2.4c0-5 1.1-8.5 3.3-10.6s5.8-3.2 11-3.2h33.6v16.2c0 4.9-1.1 8.4-3.3 10.6z"/><path d="m317.8 27.2h-11.5l-27.9 72.6-27.9-72.6h-11.4l33.6 87.5-10.1 26.3h11.5z"/><path d="m392.2 56.9c0-1.2 0-12.5-8-20.4-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v57.9h11v-58.2c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v58.2h11c0-4.5 0-56.5 0-57.9z"/><path d="m791 36.5c-5.1-5-13.2-9.1-26.4-9.3h-1.2c-13.2.2-21.3 4.3-26.4 9.3-8 7.9-8 19.2-8 20.4v28.2c0 1.2 0 12.5 8 20.4 5.1 5 13.2 9.1 26.4 9.3h26v-10h-25.4c-8.7-.1-15.2-2.7-18.6-6-4-4-5.4-9.3-5.4-13.4v-10.3h59v-18.2c.1-1.2.1-12.5-8-20.4zm-50.9 28.7v-8.6c0-4.1 1.3-9.4 5.4-13.4 3.4-3.3 9.9-5.9 18.6-6 8.7.1 15.2 2.7 18.6 6 4 4 5.4 9.3 5.4 13.4v8.6z"/></g><g><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9-2.1 25.2-.8 42.1-.8 42.1l-35.5 33.7s-2.7-18.9-4.1-40.2c-.8-13.2-1.1-24.8-1.1-31.8 0-.4.2-.8.2-1.2 0-.5.6-5.2 5.2-9.6 5-4.8 41.9-33.7 41.3-30.9z" fill="#1496ff"/><path d="m47.7 12.7c-1.8 9.5-4 23.6-5.2 37.9 0 0-39.3-4.7-41.5 4.8 0-.5.7-6.3 5.3-10.7 5-4.8 42-34.8 41.4-32z" fill="#1284ea"/><path d="m1 53.1v2.2c.4-1.7 1.1-2.9 2.5-4.8 2.9-3.7 7.6-4.7 9.5-4.9 9.6-1.3 23.8-2.8 38.1-3.2 25.3-.8 42 1.3 42 1.3l35.5-33.7s-18.6-3.5-39.8-6c-13.9-1.7-26.1-2.6-33-3-.5 0-5.4-.6-10 3.8-5 4.8-30.4 28.9-40.6 38.6-4.6 4.4-4.2 9.3-4.2 9.7z" fill="#b4dc00"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4-25.3.8-42.1-1.3-42.1-1.3l-35.5 33.8s18.8 3.7 40 6.1c13 1.5 24.5 2.3 31.5 2.7.5 0 1.3-.4 1.8-.4s5.4-.9 10-5.3c5-4.8 35.2-39.3 32.4-39z" fill="#6f2da8"/><path d="m127.3 96.2c-9.6 1.3-23.8 2.9-38.1 3.4 0 0 2.7 39.5-6.8 41.2.5 0 7-.3 11.6-4.7 5-4.8 36.1-40.2 33.3-39.9z" fill="#591f91"/><path d="m84.5 141c-.7 0-1.4-.1-2.2-.1 1.8-.3 3-.9 4.9-2.3 3.8-2.7 5-7.4 5.4-9.3 1.7-9.5 4-23.6 5.1-37.9 2-25.2.8-42 .8-42l35.5-33.8s2.6 18.8 4.1 40.1c.9 13.9 1.2 26.2 1.3 33 0 .5.4 5.4-4.2 9.8-5 4.8-30.4 29-40.5 38.7-4.8 4.4-9.7 3.8-10.2 3.8z" fill="#73be28"/></g></svg>
@@ -1199,7 +1182,7 @@
   </div>
   <footer class="ftr">
     <span>Confidential — for customer use only</span>
-    <span>Page 5 of 5 · Powered by <span class="brand-name">Dynatrace</span></span>
+    <span>Page 4 of 4 · Powered by <span class="brand-name">Dynatrace</span></span>
   </footer>
 </section>
 
@@ -1475,8 +1458,16 @@ function measureCol(key, label, rows, fmtFn) {
   };
 }
 
+// The scorecard shares page 2 with the daily chart and the device strip, so
+// its panel height is fixed and the flex-bars rows divide whatever is left.
+// Past about eight rows they compress until the text of adjacent rows almost
+// touches — the builder's volume floor happens to leave 7 on a tenant where
+// one page dominates, but a site with evenly spread traffic passes far more.
+// Cap here rather than in the builder: this is a property of the space the
+// panel has, not of which pages are worth reporting.
+const TOP_PAGES_MAX_ROWS = 8;
 function renderTopPagesTable() {
-  const rows = DATA.topPagesRows || [];
+  const rows = (DATA.topPagesRows || []).slice(0, TOP_PAGES_MAX_ROWS);
   const num = x => x.toLocaleString();
   renderFlexBars("table-topPages", [
     { key: "name", label: "Page", render: v => `<span class="path">${esc(v)}</span>` },
@@ -1717,43 +1708,12 @@ function renderCmDailyDevice() {
   });
 }
 
-// p75 is shown as a value on the metric-tile (renderMetricGrid) rather than a
-// rendered vertical reference line on the histogram — a real marker line needs
-// the Chart.js annotation plugin (an added vendor dependency) for what the
-// tile already shows for free.
-//
-// 11 buckets in a third-of-a-page-wide chart cannot all carry a label without
-// either rotating (illegible at this scale) or shrinking past the deck's
-// --rp-text-micro floor, so BUCKET_AXIS below fixes the font at that floor,
-// forces the labels flat, and skips down to every-other tick — the dropped
-// labels are still even/odd-spaced, so the reader can interpolate them,
-// which a 45° rotation or a sub-10px font cannot offer at all.
-const BUCKET_AXIS = { ticks: { font: { size: 10 }, maxRotation: 0, minRotation: 0, autoSkip: true, maxTicksLimit: 6 }, grid: { display: false } };
-function renderDistribution() {
-  const d = DATA.cmCwvDistribution;
-  if (!d) return;
-  const seriesVar = { lcp: "series-1", inp: "series-2", cls: "series-3" };
-  ["lcp", "inp", "cls"].forEach(metric => {
-    const m = d[metric];
-    const el = document.getElementById("chart-dist-" + metric);
-    if (!m || !el) return;
-    mkChart(el, {
-      type: "bar",
-      data: { labels: m.buckets, datasets: [{ data: m.counts, backgroundColor: ctVar(seriesVar[metric], PRINTING), borderRadius: 2 }] },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: BUCKET_AXIS,
-          y: { beginAtZero: true, grid: { color: ctVar("grid", PRINTING) } },
-        },
-      },
-    });
-  });
-}
-
-// 31 day-of-month labels in a third- or half-width chart hit the same
-// crowding as BUCKET_AXIS above; same fix (floor font, flat, auto-skip).
+// 31 day-of-month labels in a third- or half-width chart cannot all carry a
+// label without either rotating (illegible at this scale) or shrinking past
+// the deck's --rp-text-micro floor. So the font is fixed at that floor, the
+// labels forced flat, and ticks skipped down — the dropped labels stay evenly
+// spaced, so a reader can interpolate them, which a 45-degree rotation or a
+// sub-10px font cannot offer at all.
 const DAY_AXIS = { ticks: { font: { size: 10 }, maxRotation: 0, minRotation: 0, autoSkip: true, maxTicksLimit: 10 }, grid: { display: false } };
 function renderDailyCwv() {
   const d = DATA.cmDailyCwv;
@@ -1845,7 +1805,7 @@ function renderErrorCounts() {
     const real = keys.filter(k => k !== "Other").length;
     noteEl.innerHTML = keys.includes("Other")
       ? `Top ${real} error types by volume; remaining types folded into <strong>Other</strong>.`
-      : `${real === 1 ? "The only error type" : `All ${real} error types`} recorded this month.`;
+      : "JS and request errors recorded this month.";
   }
   // series-6 is reserved for "Other" specifically, not "whichever type
   // sorted 6th" — the fold guarantees "Other" only ever appears once, last.
@@ -1864,19 +1824,81 @@ function renderErrorCounts() {
   });
 }
 
+// Mini-stat chips pinned to the foot of each page-1 findings card: the two or
+// three figures the prose above refers to, so a reader can check a claim
+// without turning the page, and four cards of unbroken bullets get a visual
+// anchor. Same component and same reasoning as the trending deck's exec row.
+const compactNum = (n) => n == null ? "—"
+  : n >= 1e6 ? (n / 1e6).toFixed(1).replace(/\.0$/, "") + "M"
+  : n >= 1e3 ? (n / 1e3).toFixed(1).replace(/\.0$/, "") + "k"
+  : String(n);
+const meanPct = (xs) => {
+  const v = (xs || []).filter((x) => x != null);
+  return v.length ? (v.reduce((a, b) => a + b, 0) / v.length).toFixed(2) + "%" : "—";
+};
+function miniChip(label, value) {
+  return `<div class="mini-chip"><div class="mini-chip-label">${esc(label)}</div><div class="mini-chip-value">${value}</div></div>`;
+}
+function miniStats(elId, period, chipsHtml) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  el.innerHTML = `<div class="mini-period">${esc(period)}</div><div class="mini-chips">${chipsHtml}</div>`;
+}
+function renderExecMiniStats() {
+  // The period is already printed in the masthead; read it back rather than
+  // adding a placeholder that could drift out of step with it.
+  const period = (document.querySelector(".hdr-right .meta") || {}).textContent || "";
+
+  const devices = DATA.deviceCompareRows || [];
+  const sessions = devices.reduce((s, r) => s + (r.sessions || 0), 0);
+  const pageLoads = devices.reduce((s, r) => s + (r.pageLoads || 0), 0);
+  const daily = DATA.cmDailyDevice;
+  let peak = "—";
+  if (daily && daily.labels && daily.labels.length) {
+    const totals = daily.labels.map((_, i) => (daily.desktop?.[i] || 0) + (daily.mobile?.[i] || 0));
+    const max = Math.max(...totals);
+    peak = max > 0 ? compactNum(max) : "—";
+  }
+  miniStats("mini-traffic", period,
+    miniChip("Sessions", compactNum(sessions)) +
+    miniChip("Page loads", compactNum(pageLoads)) +
+    miniChip("Peak day", peak));
+
+  const dist = DATA.cmCwvDistribution;
+  if (dist) {
+    miniStats("mini-cwv", period,
+      miniChip("LCP p75", gradeCell(dist.lcp?.p75, "lcp", fmtMs)) +
+      miniChip("INP p75", gradeCell(dist.inp?.p75, "inp", fmtMs)) +
+      miniChip("CLS p75", gradeCell(dist.cls?.p75, "cls", fmtCls)));
+  }
+
+  const pages = (DATA.topPagesRows || []).slice(0, 3);
+  if (pages.length) {
+    miniStats("mini-pages", period,
+      pages.map((p) => miniChip(p.name, compactNum(p.count))).join(""));
+  }
+
+  const rates = DATA.cmErrorRates || {};
+  const topExc = (DATA.topExceptionRows || [])[0];
+  miniStats("mini-errors", period,
+    miniChip("JS error rate", meanPct(rates.jsErrorRate)) +
+    miniChip("Req error rate", meanPct(rates.reqErrorRate)) +
+    miniChip("Top exception", topExc ? compactNum(topExc.count) : "—"));
+}
+
 function buildEverything(printing) {
   PRINTING = printing;
   charts.forEach(c => c.destroy());
   charts = [];
   applyChartDefaults();
   renderKpis(DATA.kpis);
+  renderExecMiniStats();
   renderMetricGrid();
   renderDeviceCompare();
   renderTopPagesTable();
   renderTopExceptionsTable();
   renderTopRequestErrorsTable();
   renderCmDailyDevice();
-  renderDistribution();
   renderDailyCwv();
   renderErrorRates();
   renderErrorCounts();
@@ -1889,9 +1911,20 @@ function buildEverything(printing) {
 // theme is active); afterprint redraws with the screen palette again, so a
 // reader who opens the system print dialog and cancels it is not left
 // looking at a light-inked chart on the dark screen copy.
-document.addEventListener("DOMContentLoaded", () => buildEverything(false));
-window.addEventListener("beforeprint", () => buildEverything(true));
-window.addEventListener("afterprint", () => buildEverything(false));
+// Theme: dark (default) or light. Set by the preview toggle (dtSetTheme), by a
+// `#theme=light|dark` URL hash (render-pdf.sh), or carried in a saved copy's
+// <html data-theme>. Print follows the active theme.
+const isLight = () => document.documentElement.dataset.theme === "light";
+window.dtSetTheme = (t) => {
+  document.documentElement.dataset.theme = t === "light" ? "light" : "dark";
+  buildEverything(isLight());
+  window.dispatchEvent(new CustomEvent("dt-theme", { detail: document.documentElement.dataset.theme }));
+};
+const hashTheme = /[#&]theme=(light|dark)/.exec(location.hash);
+if (hashTheme) document.documentElement.dataset.theme = hashTheme[1];
+document.addEventListener("DOMContentLoaded", () => buildEverything(isLight()));
+window.addEventListener("beforeprint", () => buildEverything(isLight()));
+window.addEventListener("afterprint", () => buildEverything(isLight()));
 </script>
 </body>
 </html>

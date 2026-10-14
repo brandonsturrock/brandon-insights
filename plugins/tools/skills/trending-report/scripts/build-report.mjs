@@ -396,9 +396,12 @@ function renderReport(outPath) {
 </style>
 <div id="dt-save-bar">
   <span>Edit findings above, then save when ready</span>
+  <button id="dt-theme-btn" onclick="dtSetTheme(document.documentElement.dataset.theme==='light'?'dark':'light')">Theme: Dark</button>
   <button id="dt-save-btn" onclick="dtSave()">Save changes</button>
 </div>
 <script>
+window.addEventListener('dt-theme',function(e){document.getElementById('dt-theme-btn').textContent='Theme: '+(e.detail==='light'?'Light':'Dark')});
+document.addEventListener('DOMContentLoaded',function(){document.getElementById('dt-theme-btn').textContent='Theme: '+(document.documentElement.dataset.theme==='light'?'Light':'Dark')});
 function dtSave(){
   var html='<!DOCTYPE html>\\n'+document.documentElement.outerHTML;
   var blob=new Blob([html],{type:'text/html'});

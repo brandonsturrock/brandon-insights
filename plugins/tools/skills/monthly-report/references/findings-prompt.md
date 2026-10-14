@@ -50,8 +50,18 @@ Apply these Core Web Vitals thresholds (p75) when flagging violations:
 
 - Strict markdown, bullets only (`- `), one short sentence per bullet.
 - **Writing style:** clear and direct. Lead with the finding, follow with the supporting number. Cut filler words ("notably", "it is worth noting", "significantly", "continues to"). Avoid restating what the reader can see in the chart — state the implication or the delta, not the raw description. Aim for ~15 words per bullet; hard cap at 20.
-- 3-4 bullets per heading maximum, and only if genuinely warranted by the
+- **3 bullets per heading maximum**, and only if genuinely warranted by the
   data — fewer bullets (or the fallback in §5) when there's less to say.
+  This is a hard layout budget, not a style preference: each findings card on
+  page 1 is a fixed-height box that now also carries a row of mini-stat chips
+  at its foot, and prose past the budget is silently clipped mid-sentence by
+  the card's `overflow: hidden`. Four bullets, or three that each wrap to two
+  lines, will lose the last one. Count wrapped lines, not bullets: budget
+  roughly 5 rendered lines per card.
+- Those mini-stat chips already print the headline figures for each section
+  (session and page-load totals, the three CWV p75s, the top pages by visits,
+  the error rates). Don't spend a bullet restating a number the chip shows —
+  spend it on what the number means.
 - No preamble, no conclusion, no general advice.
 - Use exactly these headings, in this order:
 

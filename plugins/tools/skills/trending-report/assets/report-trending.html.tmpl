@@ -407,19 +407,25 @@
   .finding-title { font-weight: 600; color: var(--text-default); }
   .finding-evidence { color: var(--text-subdued); font-size: var(--rp-text-small); line-height: 1.5; overflow-wrap: anywhere; }
 
+  /* Light theme: chosen in the preview (toggle) or by render-pdf.sh (#theme=light).
+     Print follows whichever theme is active. */
+  :root[data-theme="light"] {
+    --dt-bg-base:             #f9f9fa;
+    --dt-bg-container:        #f2f2f5;
+    --dt-bg-container-subtle: #f9f9fa;
+    --dt-text-primary:        #2f2f4f;
+    --dt-text-secondary:      #3f4060;
+    --dt-border-default:      #bfc1d2;
+    --dt-critical:            #bb0731;
+    --dt-warning:             #855400;
+    --dt-success:             #2d6761;
+    --dt-primary:             #464cce;
+  }
+  :root[data-theme="light"] .mt-zone-good { background: color-mix(in srgb, var(--good) 75%, var(--dt-bg-base)); }
+  :root[data-theme="light"] .mt-zone-ni   { background: color-mix(in srgb, var(--warning) 75%, var(--dt-bg-base)); }
+  :root[data-theme="light"] .mt-zone-poor { background: color-mix(in srgb, var(--critical) 75%, var(--dt-bg-base)); }
   @media print {
-    :root {
-      --dt-bg-base:             #f9f9fa;
-      --dt-bg-container:        #f2f2f5;
-      --dt-bg-container-subtle: #f9f9fa;
-      --dt-text-primary:        #2f2f4f;
-      --dt-text-secondary:      #595a7d;
-      --dt-border-default:      #dadbe4;
-      --dt-critical:            #bb0731;
-      --dt-warning:             #855400;
-      --dt-success:             #2d6761;
-      --dt-primary:             #464cce;
-    }
+    :root { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .page { break-after: page; page-break-after: always; break-inside: avoid; page-break-inside: avoid; }
     .page:last-child { break-after: auto; page-break-after: auto; }
     .panel, .kpi-tile, .metric-tile, .mini-chip,
@@ -441,15 +447,13 @@
     --rp-threshold-good: color-mix(in srgb, var(--good) 70%, transparent);
     --rp-threshold-poor: color-mix(in srgb, var(--critical) 70%, transparent);
   }
-  @media print {
-    :root {
-      --rp-series-1: #1a72c4;
-      --rp-series-2: #6f3bbf;
-      --rp-series-3: #2d6761;
-      --rp-series-4: #b03b78;
-      --rp-series-5: #8a6200;
-      --rp-series-6: #6b7392;
-    }
+  :root[data-theme="light"] {
+    --rp-series-1: #1a72c4;
+    --rp-series-2: #6f3bbf;
+    --rp-series-3: #2d6761;
+    --rp-series-4: #b03b78;
+    --rp-series-5: #8a6200;
+    --rp-series-6: #6b7392;
   }
 
   /* ═══════════════════════════════════════════════════════════════════════
@@ -1518,9 +1522,20 @@ function renderAll(printing) {
   renderBrowserPerfPanels();
 }
 
-document.addEventListener("DOMContentLoaded", () => renderAll(false));
-window.addEventListener("beforeprint", () => renderAll(true));
-window.addEventListener("afterprint", () => renderAll(false));
+// Theme: dark (default) or light. Set by the preview toggle (dtSetTheme), by a
+// `#theme=light|dark` URL hash (render-pdf.sh), or carried in a saved copy's
+// <html data-theme>. Print follows the active theme.
+const isLight = () => document.documentElement.dataset.theme === "light";
+window.dtSetTheme = (t) => {
+  document.documentElement.dataset.theme = t === "light" ? "light" : "dark";
+  renderAll(isLight());
+  window.dispatchEvent(new CustomEvent("dt-theme", { detail: document.documentElement.dataset.theme }));
+};
+const hashTheme = /[#&]theme=(light|dark)/.exec(location.hash);
+if (hashTheme) document.documentElement.dataset.theme = hashTheme[1];
+document.addEventListener("DOMContentLoaded", () => renderAll(isLight()));
+window.addEventListener("beforeprint", () => renderAll(isLight()));
+window.addEventListener("afterprint", () => renderAll(isLight()));
 </script>
 </body>
 </html>

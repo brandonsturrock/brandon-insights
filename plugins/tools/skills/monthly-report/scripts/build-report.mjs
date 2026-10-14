@@ -327,17 +327,17 @@ function buildCurrentMonthData(dataDir) {
     reqErrorRate: days.map((d) => rateOn(d, (v) => v.req)),
   };
 
-  // cmErrorCounts: pivot by day x error.type, summed across device
+  // cmErrorCounts: JS (error.type "exception") and Request only, per day,
+  // summed across device. Other types (csp, ...) are dropped — the stacked
+  // chart has no room for a long tail of series.
+  const ERROR_SERIES = { exception: "JS Error", request: "Request" };
   const errCountDays = [...new Set(errorCountRowsFiltered.map((r) => r.day))].sort((a, b) => a - b);
-  const errorTypes = [...new Set(errorCountRowsFiltered.map((r) => r["error.type"]).filter((t) => t != null))];
-  const byType = {};
-  errorTypes.forEach((t) => { byType[t] = new Array(errCountDays.length).fill(0); });
+  const byType = Object.fromEntries(Object.values(ERROR_SERIES).map((n) => [n, new Array(errCountDays.length).fill(0)]));
   errorCountRowsFiltered.forEach((r) => {
-    const type = r["error.type"];
-    if (type == null) return;
+    const name = ERROR_SERIES[r["error.type"]];
     const idx = errCountDays.indexOf(r.day);
-    if (idx === -1) return;
-    byType[type][idx] += r.error_count || 0;
+    if (!name || idx === -1) return;
+    byType[name][idx] += r.error_count || 0;
   });
   const cmErrorCounts = { labels: errCountDays.map(dayLabel), byType };
 
@@ -518,9 +518,12 @@ export function assembleHtml({ data, findings, frontend, environment, dateRangeL
 </style>
 <div id="dt-save-bar">
   <span>Edit findings above, then save when ready</span>
+  <button id="dt-theme-btn" onclick="dtSetTheme(document.documentElement.dataset.theme==='light'?'dark':'light')">Theme: Dark</button>
   <button id="dt-save-btn" onclick="dtSave()">Save changes</button>
 </div>
 <script>
+window.addEventListener('dt-theme',function(e){document.getElementById('dt-theme-btn').textContent='Theme: '+(e.detail==='light'?'Light':'Dark')});
+document.addEventListener('DOMContentLoaded',function(){document.getElementById('dt-theme-btn').textContent='Theme: '+(document.documentElement.dataset.theme==='light'?'Light':'Dark')});
 function dtSave(){
   var html='<!DOCTYPE html>\\n'+document.documentElement.outerHTML;
   var blob=new Blob([html],{type:'text/html'});
