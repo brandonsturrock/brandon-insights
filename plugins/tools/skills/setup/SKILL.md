@@ -1,120 +1,180 @@
 ---
 name: setup
-description: One-time dependency setup for all brandon-insights tools skills. Installs dtctl, registers Claude skills, authenticates a Dynatrace environment, and verifies Node.js. Run this before using any other skill in this plugin, or when a skill reports a missing dependency.
+description: One-time dependency setup for all brandon-insights tools skills. Installs Git for Windows (Windows only), dtctl, Claude skills, Node.js and a Chromium browser, then authenticates a Dynatrace environment. Run this before using any other skill in this plugin, or when a skill reports a missing dependency.
 ---
 
 # Setup — brandon-insights tools
 
-Check and install all dependencies required by the skills in this plugin:
-- `dtctl` binary
-- dtctl Claude skills registration
-- Dynatrace environment context (OAuth login)
-- Node.js
+Single owner of every install for the skills in this plugin: Git for Windows (Windows only), `dtctl`, dtctl Claude skills, Node.js ≥ 18, a Chromium browser, a Dynatrace context.
 
-Run each step in order. Stop and surface errors immediately — do not skip a failing step.
+Rules:
+- Run steps in order. Stop and surface any error immediately; never skip a failing step.
+- Everything runs non-interactively in the Bash tool. Never use `sudo`, never redirect output (`>`, `&>`, `/dev/null`) on install commands — the error text is the diagnosis.
+- Windows: the Bash tool must be Git Bash. Step 0 handles the case where it is not.
+- Shell state does not persist between Bash calls; repeat any `export` or full path each time.
+- Windows: `dtctl` and `node` installed during setup are not on PATH until Claude Code restarts. Whenever `dtctl` is only found via the Step 1 fallback, or was just installed, use `"$(cygpath "$LOCALAPPDATA")/dtctl/dtctl.exe"` in place of `dtctl` in every later step (2, 5, 6).
 
 ---
 
-## Step 1 — Check dtctl binary
+## Step 0 — Shell check (Windows bootstrap)
+
+```bash
+uname -s
+```
+
+- Prints `Darwin`, `Linux`, `MINGW…` or `MSYS…` → remember it as `OS` (`MINGW*`/`MSYS*` = Windows) and continue to Step 1.
+- Fails (`uname` is not recognized) → Claude is running PowerShell, meaning Git for Windows is missing or Claude Code cannot find it. These Step 0 commands and the Windows dtctl install in Step 1 are the only PowerShell in any skill. Check:
+
+  ```powershell
+  Test-Path "C:\Program Files\Git\bin\bash.exe"
+  Test-Path "$env:LOCALAPPDATA\Programs\Git\bin\bash.exe"
+  ```
+
+  - Neither exists → install Git for Windows (a Windows admin prompt may appear; tell the user to accept it):
+
+    ```powershell
+    winget install --id Git.Git -e --source winget --accept-source-agreements --accept-package-agreements
+    ```
+
+    If `winget` is not found, tell the user to install Git from https://git-scm.com/download/win instead.
+  - One exists → tell the user to set the user environment variable `CLAUDE_CODE_GIT_BASH_PATH` to that `bash.exe` path (Start menu → "Edit environment variables for your account" → New).
+  - Either way, tell the user to fully restart Claude Code (CLI or desktop app) and run `/tools:setup` again. Stop here.
+
+---
+
+## Step 1 — dtctl (≥ 0.45.0)
 
 ```bash
 dtctl version
 ```
 
-If the command fails, install using the first applicable method:
+Windows fallback (dtctl is not on PATH until Claude Code restarts):
 
-**Homebrew (Mac/Linux — check first):**
 ```bash
-brew install dynatrace-oss/tap/dtctl
+"$(cygpath "$LOCALAPPDATA")/dtctl/dtctl.exe" version
 ```
 
-**Mac/Linux (no Homebrew):**
+Missing, or older than `0.45.0` → install with the first applicable method:
+
+**Any OS with Homebrew** (`command -v brew` prints a path):
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dynatrace-oss/dtctl/main/install.sh | sh
+brew install dynatrace-oss/tap/dtctl || brew upgrade dtctl
 ```
 
-**Windows (PowerShell):**
-```powershell
-irm https://raw.githubusercontent.com/dynatrace-oss/dtctl/main/install.ps1 | iex
+**macOS/Linux without Homebrew** (user-local, no sudo):
+```bash
+curl -fsSL https://raw.githubusercontent.com/dynatrace-oss/dtctl/main/install.sh | DTCTL_INSTALL_DIR="$HOME/.local/bin" sh
+export PATH="$HOME/.local/bin:$PATH"
 ```
+Repeat the `export` at the start of each later Bash call, or use `"$HOME/.local/bin/dtctl"` in place of `dtctl`. Tell the user to add the `export` line to their shell profile (`~/.zshrc` or `~/.bashrc`).
 
-Verify with `dtctl version`. On Windows, if not found, open a new PowerShell session first — the installer may need a fresh session for PATH to take effect. If it still fails, stop and tell the user.
+**Windows:**
+```bash
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/dynatrace-oss/dtctl/main/install.ps1 | iex"
+```
+For the rest of setup, use `"$(cygpath "$LOCALAPPDATA")/dtctl/dtctl.exe"` in place of `dtctl`.
+
+Re-run the version check; it must show ≥ `0.45.0`. Otherwise stop and report the error.
 
 ---
 
-## Step 2 — Register Claude skills
+## Step 2 — Register dtctl's Claude skills
 
 ```bash
-dtctl skills install --for claude
+dtctl skills install --for claude --global --force
 ```
 
-Run unconditionally — safe to re-run, idempotent.
+`--global` installs under `~/.claude/skills/` (not the current project); `--force` avoids the overwrite prompt. Safe to re-run.
 
 ---
 
-## Step 3 — Check Dynatrace environment context
+## Step 3 — Node.js ≥ 18
+
+```bash
+node -e "process.exit(+process.versions.node.split('.')[0] >= 18 ? 0 : 1)"
+```
+
+Exit 0 → continue. Command not found or exit 1 → install:
+
+- **Homebrew:** `brew install node`
+- **Windows:**
+  ```bash
+  winget install --id OpenJS.NodeJS.LTS -e --accept-source-agreements --accept-package-agreements
+  ```
+  Node lands in `C:\Program Files\nodejs`, which is not on PATH until Claude Code restarts. Verify with `"/c/Program Files/nodejs/node.exe" --version`.
+- **macOS without Homebrew:** tell the user to install the LTS from https://nodejs.org, then stop.
+- **Linux without Homebrew:** tell the user to install Node.js LTS with their package manager (e.g. `! sudo apt-get install -y nodejs`) or from https://nodejs.org, then stop.
+
+---
+
+## Step 4 — Chromium browser (PDF rendering)
+
+Reports are rendered by headless Chrome, Edge, Chromium or Brave. Run the one `ls` for the current OS. `ls` prints "No such file" for each absent candidate and exits non-zero if any is missing; that is expected. At least one path printed = a browser is present (a set `CHROME_PATH` pointing at an existing file also counts).
+
+**macOS:**
+```bash
+ls "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" "$HOME/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge" "/Applications/Chromium.app/Contents/MacOS/Chromium" "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
+```
+
+**Windows (Git Bash):**
+```bash
+ls "/c/Program Files/Google/Chrome/Application/chrome.exe" "/c/Program Files (x86)/Google/Chrome/Application/chrome.exe" "$(cygpath "$LOCALAPPDATA")/Google/Chrome/Application/chrome.exe" "/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" "/c/Program Files/Microsoft/Edge/Application/msedge.exe"
+```
+
+**Linux:**
+```bash
+ls /usr/bin/google-chrome /usr/bin/google-chrome-stable /usr/bin/chromium /usr/bin/chromium-browser /snap/bin/chromium /usr/bin/microsoft-edge
+```
+
+None found:
+- **macOS with Homebrew:** `brew install --cask google-chrome`
+- **macOS without Homebrew:** tell the user to install Chrome from https://www.google.com/chrome, then stop.
+- **Windows:** Edge ships with Windows 10/11, so a missing browser is unusual. Report it and point the user to https://www.google.com/chrome, then stop.
+- **Linux:** tell the user to install Chrome or Chromium with their package manager, then stop.
+
+---
+
+## Step 5 — Dynatrace environment
 
 ```bash
 dtctl config get-contexts
 ```
 
-If one or more contexts exist, skip to Step 4.
+(Windows: use the full `dtctl.exe` path from Step 1.) At least one context listed → continue to Step 6.
 
-If no contexts exist, ask the user for:
-- A **context name** (e.g. `production`, `my-env`)
-- Their **Dynatrace environment URL** (e.g. `https://abc12345.live.dynatrace.com`)
+None → ask the user for:
+- a **context name** (e.g. `my-env`)
+- their **environment URL**, in the `.apps.dynatrace.com` form (e.g. `https://abc12345.apps.dynatrace.com`, not `.live.dynatrace.com`)
 
-Then run:
+Login blocks on a browser OAuth callback, so Claude cannot run it. Tell the user to run it themselves (the `!` prefix runs it in this session):
 
-```bash
-dtctl auth login --environment "ENV_URL" --context "CONTEXT_NAME"
+```
+! dtctl auth login --context "<NAME>" --environment "<URL>"
 ```
 
-Tell the user to complete the browser OAuth flow and confirm when done.
+Windows: `! "$(cygpath "$LOCALAPPDATA")/dtctl/dtctl.exe" auth login --context "<NAME>" --environment "<URL>"`.
+
+Ask them to confirm when the browser login finishes, then re-run `dtctl config get-contexts` to confirm the context exists.
 
 ---
 
-## Step 4 — Run doctor
+## Step 6 — Doctor
 
 ```bash
 dtctl doctor
 ```
 
-Show any failures. If all checks pass, continue.
+Surface any failures to the user verbatim and stop; otherwise continue.
 
 ---
 
-## Step 5 — Check Node.js
-
-```bash
-node --version
-```
-
-If Node.js is not found, install it:
-
-**Mac/Linux (Homebrew):**
-```bash
-brew install node
-```
-
-**Mac/Linux (no Homebrew):**
-```bash
-curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && apt-get install -y nodejs
-```
-
-**Windows:**
-```
-winget install OpenJS.NodeJS
-```
-
-Verify with `node --version`. If it still fails, tell the user to install from https://nodejs.org and stop.
-
----
-
-## Step 6 — Report
+## Step 7 — Report
 
 Tell the user:
+- shell (`uname -s` output)
 - `dtctl` version
-- Active context name and environment URL
 - Node.js version
-- All skills are ready to use: `full-page-analysis`, `user-journeys`, `trending-report`, `monthly-report`
+- browser path (from Step 4)
+- active context name and environment URL
+- Windows only: restart Claude Code so `dtctl` and `node` are on PATH
+- skills ready: `full-page-analysis`, `user-journeys`, `trending-report`, `monthly-report`
