@@ -10,7 +10,7 @@ top of `report-cm.html.tmpl`) plus sample findings markdown, committed so the la
 checked without running any `dtctl` queries.
 
 ```bash
-node scripts/preview.mjs [outPath]   # default: $CLAUDE_SCRATCH_DIR/preview-cm.html or /tmp/preview-cm.html
+node scripts/preview.mjs [outPath]   # default: $CLAUDE_SCRATCH_DIR/preview-cm.html or the OS temp dir
 ```
 
 Then either open the HTML directly, or render the PDF to check pagination and the print theme:

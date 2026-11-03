@@ -30,23 +30,28 @@ function parseArgs(argv) {
   return out;
 }
 
-const args = parseArgs(process.argv.slice(2));
-if (args.type !== "trending") {
+// CLI arg parsing/validation and the renderReport(args.out) call at the
+// bottom of this file only run when the script is invoked directly (`node
+// build-report.mjs ...`) — guarded so `scripts/preview.mjs` and the tests can
+// import from here without tripping the "Missing --type" exit.
+const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const args = isMain ? parseArgs(process.argv.slice(2)) : {};
+if (isMain && args.type !== "trending") {
   console.error('Missing/invalid --type (must be "trending")');
   process.exit(1);
 }
-if (!args.out) {
+if (isMain && !args.out) {
   console.error("Missing --out <report.html>");
   process.exit(1);
 }
-if (!args.demo && !args.data) {
+if (isMain && !args.demo && !args.data) {
   console.error("Missing --data <dir> (or pass --demo)");
   process.exit(1);
 }
 // How many browser×device combos to show on the Browser Performance page.
 // Real apps can report 10+ browsers; showing all of them doesn't fit the
-// page and dilutes the analysis. See references/queries.md for the
-// selection policy (top N by total visits over the period). Default is 6
+// page and dilutes the analysis. Ranked by the latest month's visits (see
+// the selection comment in buildTrendingData). Default is 6
 // (a 2-column, 3-row grid, matching the live app's panel layout).
 const MAX_BROWSERS = parseInt(args["max-browsers"] || "6", 10);
 
@@ -76,13 +81,20 @@ function dayLabel(ms) {
 // references/queries.md): rows inline under `result.records` when
 // `result.kind === "records"`. Be defensive about the exact envelope nesting
 // since it isn't pinned down 1:1 anywhere — accept a bare array too.
-function loadRecords(dataDir, filename) {
+//
+// dtctl hoists columns that are identical in every row into `result.constant`
+// and drops null keys from each record — merge the constants back so a
+// desktop-only frontend still has `device.type` on every row.
+export function loadRecords(dataDir, filename) {
   const p = path.join(dataDir, filename);
   const raw = fs.readFileSync(p, "utf8");
   const parsed = JSON.parse(raw);
   if (Array.isArray(parsed)) return parsed;
   const result = parsed.result ?? parsed;
-  if (result && Array.isArray(result.records)) return result.records;
+  if (result && Array.isArray(result.records)) {
+    const constant = result.constant && typeof result.constant === "object" ? result.constant : null;
+    return constant ? result.records.map((r) => ({ ...constant, ...r })) : result.records;
+  }
   if (Array.isArray(result)) return result;
   throw new Error(`Unexpected JSON envelope shape in ${filename} (kind=${result && result.kind})`);
 }
@@ -157,19 +169,24 @@ function loadFindings(findingsPath, sections) {
 }
 
 // ── data transforms: trending ───────────────────────────────────────────
-function buildTrendingData(dataDir) {
+export function buildTrendingData(dataDir) {
+  // month/week are ISO strings, so subtraction sorts nothing — compare as strings.
+  // A month with no Sessions yet has no measurements at all: null its traffic
+  // figures so charts show a gap (and the KPI an em dash) rather than 0.
   const metricsRows = loadRecords(dataDir, "metrics-monthly.json")
-    .sort((a, b) => a.month - b.month);
+    .sort((a, b) => a.month.localeCompare(b.month))
+    .map((r) => (r.Sessions ? r : { ...r, Sessions: null, "XHR Requests": null, Navigations: null }));
   const cwvRows = loadRecords(dataDir, "cwv-monthly.json")
-    .sort((a, b) => a.month - b.month);
-  // Filter weekly rows to the completed 6-month window (exclude current partial month).
-  const cutoffMs = Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1);
-  const weeklyRows = loadRecords(dataDir, "cwv-weekly.json")
-    .filter(r => new Date(r.week).getTime() < cutoffMs)
-    .sort((a, b) => new Date(a.week).getTime() - new Date(b.week).getTime());
-  const trafficWeeklyRows = (loadRecordsOptional(dataDir, "traffic-weekly.json") ?? [])
-    .filter(r => new Date(r.week).getTime() < cutoffMs)
-    .sort((a, b) => new Date(a.week).getTime() - new Date(b.week).getTime());
+    .sort((a, b) => a.month.localeCompare(b.month));
+  // Weekly rows: only the completed window — nothing from the current partial
+  // month, nothing from a leading week that starts before the first month.
+  const nowDate = new Date();
+  const cutoffMs = Date.UTC(nowDate.getUTCFullYear(), nowDate.getUTCMonth(), 1);
+  const firstMonthMs = metricsRows.length ? new Date(metricsRows[0].month).getTime() : -Infinity;
+  const inWindow = (r) => { const t = new Date(r.week).getTime(); return t >= firstMonthMs && t < cutoffMs; };
+  const byWeek = (a, b) => a.week.localeCompare(b.week);
+  const weeklyRows = loadRecords(dataDir, "cwv-weekly.json").filter(inWindow).sort(byWeek);
+  const trafficWeeklyRows = (loadRecordsOptional(dataDir, "traffic-weekly.json") ?? []).filter(inWindow).sort(byWeek);
   const browserRows = loadRecords(dataDir, "browser-perf-monthly.json");
 
   const trafficMonthly = {
@@ -204,12 +221,10 @@ function buildTrendingData(dataDir) {
     sessions: trafficWeeklyRows.map((r) => r.sessions),
   } : null;
 
-  // Browser selection policy: group by browser×device, rank by total visits
-  // summed across the whole 6-month window (not just the latest month, to
-  // avoid a one-month spike skewing which browsers "matter"), keep only the
-  // top MAX_BROWSERS. Real tenants can report 10+ browser/device combos —
-  // showing all of them doesn't fit the page and buries the ones that
-  // actually carry traffic.
+  // Browser selection policy: group by browser×device, rank by the latest
+  // month's visits, keep only the top MAX_BROWSERS. Real tenants can report
+  // 10+ browser/device combos — showing all of them doesn't fit the page and
+  // buries the ones that actually carry traffic.
   const browserGroups = new Map();
   browserRows.forEach((r) => {
     const browser = r["browser.name"] || "Unknown";
@@ -218,15 +233,13 @@ function buildTrendingData(dataDir) {
     if (!browserGroups.has(key)) {
       browserGroups.set(key, {
         label: `${browser} · ${device.charAt(0).toUpperCase()}${device.slice(1)}`,
-        totalVisits: 0,
         byMonth: new Map(),
       });
     }
     const g = browserGroups.get(key);
-    g.totalVisits += r.Visits || 0;
     g.byMonth.set(r.month, r);
   });
-  const allMonths = [...new Set(browserRows.map((r) => r.month))].sort((a, b) => a - b);
+  const allMonths = [...new Set(browserRows.map((r) => r.month))].sort();
   const latestMonth = allMonths[allMonths.length - 1];
   const prevMonth = allMonths[allMonths.length - 2];
   const topGroups = [...browserGroups.values()]
@@ -325,22 +338,21 @@ function demoFindings(sections) {
 // ── render ───────────────────────────────────────────────────────────────
 const TRENDING_SECTIONS = { FINDINGS_TRAFFIC_HTML: "Traffic", FINDINGS_CWV_HTML: "Core Web Vitals", FINDINGS_BROWSER_HTML: "Browser" };
 
-function renderReport(outPath) {
+// Placeholder substitution + Chart.js inlining + contenteditable/save-bar
+// injection — everything that turns (data, findings, meta) into the final
+// HTML string, independent of *where* data/findings came from (a dtctl data
+// dir + findings.txt for a real run, or a fixture for scripts/preview.mjs).
+// Exported so preview.mjs reuses it instead of keeping a second copy of the
+// template's placeholder contract.
+// generatedAt is accepted for signature parity with monthly-report; the
+// template doesn't carry a {{GENERATED_AT}} placeholder yet.
+export function assembleHtml({ data, findings, frontend, environment, dateRangeLabel, generatedAt, outPath }) {
   const template = fs.readFileSync(path.join(SKILL_ROOT, "assets", "report-trending.html.tmpl"), "utf8");
-
-  const data = args.demo ? demoTrendingData() : buildTrendingData(args.data);
-  const findings = args.demo ? demoFindings(TRENDING_SECTIONS) : loadFindings(args.findings, TRENDING_SECTIONS);
-
-  const frontend = args.demo ? "demo-frontend" : args.frontend;
-  const dateRangeLabel = (() => {
-    const labels = data.trafficMonthly.labels;
-    return labels.length ? `${labels[0]} – ${labels[labels.length - 1]}` : "";
-  })();
 
   const replacements = {
     "{{REPORT_TITLE}}": `${frontend} — Trending Report`,
     "{{FRONTEND_NAME}}": frontend || "",
-    "{{ENVIRONMENT_NAME}}": args.environment || "",
+    "{{ENVIRONMENT_NAME}}": environment || "",
     "{{DATE_RANGE_LABEL}}": dateRangeLabel,
   };
   for (const [key, value] of Object.entries(findings)) {
@@ -423,4 +435,16 @@ function dtSave(){
   console.log(`Wrote ${outPath}`);
 }
 
-renderReport(args.out);
+// ── CLI entry (real or --demo run) ──────────────────────────────────────
+function renderReport(outPath) {
+  const data = args.demo ? demoTrendingData() : buildTrendingData(args.data);
+  const findings = args.demo ? demoFindings(TRENDING_SECTIONS) : loadFindings(args.findings, TRENDING_SECTIONS);
+
+  const frontend = args.demo ? "demo-frontend" : args.frontend;
+  const labels = data.trafficMonthly.labels;
+  const dateRangeLabel = labels.length ? `${labels[0]} – ${labels[labels.length - 1]}` : "";
+
+  assembleHtml({ data, findings, frontend, environment: args.environment, dateRangeLabel, outPath });
+}
+
+if (isMain) renderReport(args.out);
