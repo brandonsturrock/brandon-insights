@@ -447,6 +447,41 @@ Expected: monthly PDF page 1 KPIs show non-zero Sessions and an LCP tile with a 
 
 ---
 
+### Task 7b: LCP/INP of 0 are absent, not "good" (D5 follow-up, found in Task 7 E2E)
+
+Task 7's live run printed "INP 0ms" (rated good) on monthly page 1 for a frontend that captures no INP. Metric queries return p75 `0` when nothing was measured.
+
+**Files:**
+- Modify: `monthly-report/scripts/build-report.mjs`, `trending-report/scripts/build-report.mjs`
+- Test: both `scripts/test-build-report.mjs`
+
+**Interfaces:**
+- Consumes: `buildCurrentMonthData`, `buildTrendingData`, `renderTables` (Tasks 1, 2, 4).
+- Produces: in DATA, every LCP/INP value ≤ 0 becomes `null`. That covers:
+  - monthly: `deviceCompareRows[].lcpP75`/`inpP75`, `cmCwvDistribution.{lcp,inp}.p75`, `cmDailyCwv.{lcp,inp}.{desktop,mobile}[]`;
+  - trending: `cwvMonthly.lcp/inp`, `cwvWeekly.lcp/inp`, `browserPerf.panels[].months[].lcp/inp`.
+
+  CLS is unchanged, because 0 is a real CLS value. Reuse monthly's existing `absentIfZero` helper; trending gets the same one-liner.
+
+- [ ] **Step 1: Write failing tests** (append to each `test-build-report.mjs`):
+
+```js
+// monthly: cm-device-compare desktop row { lcp_p75: 1763, inp_p75: 0, cls_p75: 0 }
+assert.equal(data.deviceCompareRows[0].inpP75, null);
+assert.equal(data.cmCwvDistribution.inp.p75, null);
+assert.equal(data.cmCwvDistribution.cls.p75, 0);
+// trending: cwv-monthly row { "Interaction to Next Paint": 0, "Largest Contentful Paint": 1754 }
+assert.equal(data.cwvMonthly.inp.at(-1), null);
+assert.equal(data.cwvMonthly.lcp.at(-1), 1754);
+```
+
+- [ ] **Step 2: Run, confirm failure** — both test files exit non-zero.
+- [ ] **Step 3: Implement.** Apply `absentIfZero` where each value enters DATA. For the blended p75, compute from the rows that have a non-null value; all null → null.
+- [ ] **Step 4: Verify.** Run both test files. Then run `node monthly-report/scripts/build-report.mjs --data "$HOME/.dt-reports/check-monthly" --print-tables | grep -E '^(Desktop|INP)'` and the trending equivalent on `check-trending`. Expected: INP shows `—`, never `0ms`.
+- [ ] **Step 5: Commit** — `fix(reports): treat LCP/INP p75 of 0 as not measured`
+
+---
+
 ### Task 8: Setup skill — single install owner (I1-I7, I10, I11)
 
 **Files:**
