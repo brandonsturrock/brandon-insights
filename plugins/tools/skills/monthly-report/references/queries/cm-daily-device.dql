@@ -4,7 +4,6 @@ timeseries {
   }, from: (now()-1M)@M - 2d, to: now()@M, interval: 1d, filter: frontend.name == "{{.frontend}}", by: {device.type}
 | fieldsAdd d = record(sessions = sessions[], t = t[])
 | expand d
-| fieldsAdd day = d[t], sessions = d[sessions]
-| fields day, sessions, device.type
+| fields day = d[t], sessions = d[sessions], device.type
 | filterOut isNull(device.type)
 | sort day asc

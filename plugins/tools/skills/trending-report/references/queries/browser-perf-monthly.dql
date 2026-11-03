@@ -7,7 +7,7 @@ timeseries {
     cls = percentile(dt.frontend.web.page.cumulative_layout_shift, 75),
     cls2 = count(dt.frontend.web.page.cumulative_layout_shift),
     t=start()
-  }, from: -6M, to: now()@M, interval: 1d, filter: frontend.name == "{{.frontend}}", by: {device.type, browser.name}
+  }, from: now()@M - 6M, to: now()@M, interval: 1d, filter: frontend.name == "{{.frontend}}", by: {device.type, browser.name}, union: true
 | fieldsAdd d = record(sessions = sessions[], t = t[], inp=inp[], inp2=inp2[], lcp=lcp[], lcp2=lcp2[], cls=cls[], cls2=cls2[])
 | expand d
 | summarize
@@ -19,3 +19,4 @@ timeseries {
 | fieldsAdd month = t[start]
 | fieldsRemove t
 | filterOut isNull(device.type)
+| sort month asc
