@@ -45,7 +45,7 @@ node scripts/preview.mjs
 ```
 
 Reads `assets/fixtures/sample.json` and writes a standalone HTML file; override the
-output with `--out <path>` or a positional path. Render it to PDF with `assets/render-pdf.sh <in.html> <out.pdf>`.
+output with `--out <path>` or a positional path. Render it to PDF with `node scripts/render-pdf.mjs --in <html> --out <pdf> --source <html>`.
 
 Verify the resulting PDF with `sips` (CoreGraphics), not `pdftoppm` — poppler
 composites Chrome's canvas transparency groups correctly and is blind to a class of

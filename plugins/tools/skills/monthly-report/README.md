@@ -16,7 +16,7 @@ node scripts/preview.mjs [outPath]   # default: $CLAUDE_SCRATCH_DIR/preview-cm.h
 Then either open the HTML directly, or render the PDF to check pagination and the print theme:
 
 ```bash
-bash assets/render-pdf.sh <outPath> <outPath>.pdf
+node scripts/render-pdf.mjs --in <outPath> --out <outPath>.pdf --source <outPath>
 ```
 
 `preview.mjs` reuses `build-report.mjs`'s own `assembleHtml()`/`markdownToHtml()` exports —
