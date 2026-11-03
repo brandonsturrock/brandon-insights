@@ -1,187 +1,37 @@
 # Trending Report — Queries
 
-Five DQL queries for the trending report. Each uses `{{.frontend}}` as the
-only template variable (Go-template syntax). Run each with:
+The `.dql` files in `references/queries/` are the source of truth; this file is the map. Each uses `{{.frontend}}` as its only template variable (Go-template syntax, filled by `--set frontend=<name>`). Window: the last 6 full calendar months, `from: now()@M - 6M, to: now()@M` (starts on the 1st, no partial first month). Monthly queries sum/weight daily points into calendar-month buckets.
+
+## Running
 
 ```bash
-dtctl query -f <query>.dql --set frontend="NAME" [--context NAME] -o json --agent --spill=never | grep '^{' > <data-dir>/<canonical-filename>.json
+node scripts/run-queries.mjs --frontend "<name>" --out <dir> [--context <ctx>]
 ```
 
-`--spill=never` keeps rows inline (`result.kind == "records"`). If a query
-spills anyway, use `dtctl inspect` per the dtctl skill.
+Runs every `references/queries/*.dql` concurrently through `dtctl query -f <file> --set frontend=<name> -o json --agent --spill=never`, writes each raw envelope to `<dir>/<query>.json`, and prints `<query>: N rows` or `<query>: FAILED <error>`. Exit 1 if any query failed, 2 if `dtctl` is missing.
 
-The `| grep '^{'` strips any warning lines dtctl emits before the JSON
-envelope (e.g. field-override warnings from timeseries queries).
+`node scripts/run-queries.mjs --list-frontends [--context <ctx>]` runs `references/frontends.dql` (7-day page loads per frontend, top 30) and prints `<page_loads>` TAB `<frontend.name>`.
 
-## Filename map (contract for build-report.mjs)
+## Filename map
 
-| # | Query file | Canonical output filename |
-|---|-----------|---------------------------|
-| 1 | `metrics-monthly.dql` | `metrics-monthly.json` |
-| 2 | `cwv-monthly.dql` | `cwv-monthly.json` |
-| 3 | `cwv-weekly.dql` | `cwv-weekly.json` |
-| 4 | `browser-perf-monthly.dql` | `browser-perf-monthly.json` |
-| 5 | `traffic-weekly.dql` | `traffic-weekly.json` |
+`build-report.mjs --data <dir>` reads these exact names (`<query>.dql` -> `<query>.json`):
+
+`metrics-monthly`, `cwv-monthly`, `cwv-weekly`, `browser-perf-monthly`, `traffic-weekly` (optional: the build tolerates it being absent).
 
 ## Unit conversions
 
-- LCP / INP timeseries metrics → already **milliseconds**, no conversion.
-- CLS timeseries metric → stored **×10000**; divide by `10000` for the real value.
-- CWV thresholds: LCP good `<2500ms` / poor `≥4000ms`; INP good `<200ms` / poor `≥500ms`; CLS good `<0.1` / poor `≥0.25`.
+- All five are timeseries queries: LCP/INP already **ms**; CLS is stored **x10000**, so `build-report.mjs` divides by `10000`.
+- LCP/INP of `0` = not measured (INP needs an interaction); the build turns it into null / "—". CLS `0` is a real value.
+- Thresholds: LCP good `<2500ms` / poor `>=4000ms`; INP good `<200ms` / poor `>=500ms`; CLS good `<0.1` / poor `>=0.25`.
 
----
+## Queries
 
-## 1. `metrics-monthly.dql` — 6-month monthly Sessions / User Actions / Page Loads / device split
+- `metrics-monthly` — monthly traffic and device split (page 1 KPI cards, page 2 traffic table). Columns: `Sessions`, `XHR Requests`, `Navigations`, `% Desktop`, `% Mobile`, `month`. ~6 rows.
+- `cwv-monthly` — monthly LCP/INP/CLS p75, page-load-weighted (page 1 CWV KPI tiles, page 3 status row). Columns: `Largest Contentful Paint`, `Interaction to Next Paint`, `Cumulative Layout Shift` (x10000), `month`. ~6 rows.
+- `cwv-weekly` — weekly LCP/INP/CLS p75 (page 3 trend charts). Columns: `week`, `lcp`, `inp`, `cls` (x10000). ~26 rows.
+- `browser-perf-monthly` — monthly visits and CWV by device and browser (page 4 panels; the build keeps the top `--max-browsers`, default 6, ranked by latest-month visits). Columns: `Visits`, `Largest Contentful Paint`, `Interaction to Next Paint`, `Cumulative Layout Shift` (x10000), `device.type`, `browser.name`, `month`.
+- `traffic-weekly` — weekly traffic (page 2 weekly sessions chart; only `sessions` is plotted). Columns: `week`, `sessions`, `xhr`, `navigations`. ~26 rows, same 7d bucketing as `cwv-weekly` so the x-axes line up.
 
-**Feeds:** KPI cards (latest month vs prior month) and the User Traffic monthly chart.
+## `union: true`
 
-```dql
-timeseries {
-    x=countDistinct(dt.frontend.session.active.estimated_count),
-    y = count(dt.frontend.user_action.count, filter: user_action.type == "same_view"),
-    z = percentile(dt.frontend.web.page.largest_contentful_paint, 75),
-    z2 = count(dt.frontend.user_action.count, filter: user_action.type != "same_view"),
-    t=start()
-  }, from: -6M, to: now()@M, interval: 1d, filter: frontend.name == "{{.frontend}}", by:device.type
-| fieldsAdd d = record(d = x[], t = t[], y=y[], z=z[], z2=z2[])
-| expand d
-| summarize
-    Sessions = sum(d[d]),
-    `XHR Requests` = sum(d[y]),
-    `Navigations` = sum(d[z2]),
-    Desktop_Sessions = sum(if(device.type == "desktop", d[d], else: 0)),
-    Mobile_Sessions  = sum(if(device.type == "mobile",  d[d], else: 0)),
-    Total_NonNull    = sum(if(isNotNull(device.type),   d[d], else: 0)),
-  by: { t = timeframe(from: (d[t]+interval/2)@M, to: (d[t]+interval/2)@M + 1M) }
-| fieldsAdd month = t[start]
-| fieldsRemove t
-| fieldsAdd
-    `% Desktop` = if(Total_NonNull > 0, round(toDouble(Desktop_Sessions) / toDouble(Total_NonNull) * 100, decimals: 2), else: null),
-    `% Mobile`  = if(Total_NonNull > 0, round(toDouble(Mobile_Sessions)  / toDouble(Total_NonNull) * 100, decimals: 2), else: null)
-| fieldsRemove Desktop_Sessions, Mobile_Sessions, Total_NonNull
-| sort month asc
-```
-
-**Output columns:** `Sessions`, `XHR Requests`, `Navigations`, `% Desktop`, `% Mobile`, `month`. ~6 rows.
-
----
-
-## 2. `cwv-monthly.dql` — 6-month monthly LCP/INP/CLS p75 (weighted)
-
-**Feeds:** Core Web Vitals monthly chart.
-
-```dql
-timeseries {
-    x=countDistinct(dt.frontend.session.active.estimated_count),
-    lcp = percentile(dt.frontend.web.page.largest_contentful_paint, 75),
-    lcp2 = count(dt.frontend.web.page.largest_contentful_paint),
-    inp = percentile(dt.frontend.web.page.interaction_to_next_paint, 75),
-    inp2 = count(dt.frontend.web.page.interaction_to_next_paint),
-    cls = percentile(dt.frontend.web.page.cumulative_layout_shift, 75),
-    cls2 = count(dt.frontend.web.page.cumulative_layout_shift),
-    t=start()
-  }, from: -6M, to: now()@M, interval: 1d, filter: frontend.name == "{{.frontend}}"
-| fieldsAdd d = record(d = x[], t = t[], inp=inp[], inp2=inp2[], lcp=lcp[], lcp2=lcp2[], cls=cls[], cls2=cls2[])
-| expand d
-| summarize
-    `Largest Contentful Paint` = sum(d[lcp] * d[lcp2]) / sum(d[lcp2]),
-    `Interaction to Next Paint` = sum(d[inp] * d[inp2]) / sum(d[inp2]),
-    `Cumulative Layout Shift` = sum(d[cls] * d[cls2]) / sum(d[cls2]),
-  by: { t = timeframe(from: (d[t]+interval/2)@M, to: (d[t]+interval/2)@M + 1M) }
-| fieldsAdd month = t[start]
-| fieldsRemove t
-| sort month asc
-```
-
-**Output columns:** `Largest Contentful Paint` (ms), `Interaction to Next Paint` (ms), `Cumulative Layout Shift` (**÷10000**), `month`. ~6 rows.
-
----
-
-## 3. `cwv-weekly.dql` — 6-month weekly LCP/INP/CLS p75
-
-**Feeds:** Core Web Vitals Historical trend chart.
-
-```dql
-timeseries {
-    lcp = percentile(dt.frontend.web.page.largest_contentful_paint, 75),
-    inp = percentile(dt.frontend.web.page.interaction_to_next_paint, 75),
-    cls = percentile(dt.frontend.web.page.cumulative_layout_shift, 75),
-    t = start()
-  }, from: -6M, to: now()@M, interval: 7d, filter: frontend.name == "{{.frontend}}"
-| fieldsAdd d = record(t=t[], lcp=lcp[], inp=inp[], cls=cls[])
-| expand d
-| fieldsAdd week = d[t], lcp = d[lcp], inp = d[inp], cls = d[cls]
-| fieldsRemove d
-| filterOut isNull(lcp) and isNull(inp) and isNull(cls)
-| sort week asc
-```
-
-**Output columns:** `week` (bucket start), `lcp` (ms), `inp` (ms), `cls` (**÷10000**). ~26 rows.
-
----
-
-## 4. `browser-perf-monthly.dql` — 6-month monthly sessions + CWV by device × browser
-
-**Feeds:** Browser Performance panel grid.
-
-```dql
-timeseries {
-    sessions=countDistinct(dt.frontend.session.active.estimated_count),
-    lcp = percentile(dt.frontend.web.page.largest_contentful_paint, 75),
-    lcp2 = count(dt.frontend.web.page.largest_contentful_paint),
-    inp = percentile(dt.frontend.web.page.interaction_to_next_paint, 75),
-    inp2 = count(dt.frontend.web.page.interaction_to_next_paint),
-    cls = percentile(dt.frontend.web.page.cumulative_layout_shift, 75),
-    cls2 = count(dt.frontend.web.page.cumulative_layout_shift),
-    t=start()
-  }, from: -6M, to: now()@M, interval: 1d, filter: frontend.name == "{{.frontend}}", by: {device.type, browser.name}
-| fieldsAdd d = record(sessions = sessions[], t = t[], inp=inp[], inp2=inp2[], lcp=lcp[], lcp2=lcp2[], cls=cls[], cls2=cls2[])
-| expand d
-| summarize
-  `Visits` = sum(d[sessions]),
-  `Largest Contentful Paint` = sum(d[lcp] * d[lcp2]) / sum(d[lcp2]),
-  `Interaction to Next Paint` = sum(d[inp] * d[inp2]) / sum(d[inp2]),
-  `Cumulative Layout Shift` = sum(d[cls] * d[cls2]) / sum(d[cls2]),
-  by: { t = timeframe(from: (d[t]+interval/2)@M, to: (d[t]+interval/2)@M + 1M), device.type, browser.name }
-| fieldsAdd month = t[start]
-| fieldsRemove t
-| filterOut isNull(device.type)
-```
-
-**Output columns:** `Visits`, `Largest Contentful Paint` (ms), `Interaction to Next Paint` (ms), `Cumulative Layout Shift` (**÷10000**), `device.type`, `browser.name`, `month`. All 6 months kept — panels trend the full period.
-
-**Selection policy:** group by `{browser.name, device.type}`, rank by latest-month visits descending, keep top N (default 6). Exclude combos where current and previous month both have negligible visits (≤10). Remaining slots pad to N as blank cards.
-
----
-
-## 5. `traffic-weekly.dql` — 6-month weekly sessions
-
-**Feeds:** Traffic page, Weekly sessions trend chart.
-
-```dql
-timeseries {
-    sessions = countDistinct(dt.frontend.session.active.estimated_count),
-    xhr = count(dt.frontend.user_action.count, filter: user_action.type == "same_view"),
-    navigations = count(dt.frontend.user_action.count, filter: user_action.type != "same_view"),
-    t = start()
-  }, from: -6M, to: now()@M, interval: 7d, filter: frontend.name == "{{.frontend}}"
-| fieldsAdd d = record(t=t[], sessions=sessions[], xhr=xhr[], navigations=navigations[])
-| expand d
-| fieldsAdd week = d[t], sessions = d[sessions], xhr = d[xhr], navigations = d[navigations]
-| fieldsRemove d
-| filterOut isNull(sessions) and isNull(xhr) and isNull(navigations)
-| sort week asc
-```
-
-**Output columns:** `week` (bucket start), `sessions`, `xhr`, `navigations`. ~26 rows.
-
-Bucketing matches `cwv-weekly.dql` exactly (`interval: 7d`, same window), so the
-weekly x-axis on the Traffic page lines up with the Core Web Vitals charts.
-
-**Only `sessions` is plotted.** `xhr` and `navigations` are returned because they
-cost nothing extra, but they are frequently null for much of the window and the
-monthly table on the same page already carries both.
-
-**Optional file.** `build-report.mjs` tolerates `traffic-weekly.json` being absent
-(data directories captured before this query existed): the chart panel is hidden
-and the Traffic page falls back to the monthly table alone.
+All five queries are multi-metric `timeseries` and set `union: true`. Without it the metrics are inner-joined on dimensions, so when one metric (e.g. INP) has no `device.type` split the query returns 0 rows and the report shows blank CWV and browser pages. Keep it on any new multi-metric `timeseries`.
