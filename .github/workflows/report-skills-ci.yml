@@ -15,12 +15,17 @@ on:
       - plugins/tools/skills/trending-report/**
       - .github/workflows/report-skills-ci.yml
 
+permissions:
+  contents: read
+
 jobs:
   test:
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest, windows-latest, ubuntu-latest]
+        node: [18, 22] # 18 = the floor the SKILL.md precheck promises, 22 = current LTS
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -30,7 +35,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ matrix.node }}
 
       - name: Test, preview and render each report skill
         run: |
@@ -42,6 +47,8 @@ jobs:
               node scripts/test-run-queries.mjs
               node scripts/test-render-pdf.mjs
               node scripts/test-review.mjs
+              node scripts/build-report.mjs --demo --out "$RUNNER_TEMP/$skill-demo.html"
+              test -s "$RUNNER_TEMP/$skill-demo.html"
               node scripts/preview.mjs "$RUNNER_TEMP/$skill.html"
               node scripts/render-pdf.mjs --in "$RUNNER_TEMP/$skill.html" --out "$RUNNER_TEMP/$skill.pdf"
               test -s "$RUNNER_TEMP/$skill.pdf"
@@ -52,6 +59,7 @@ jobs:
   # The two skills ship as standalone zips, so shared files are copied, not
   # imported. Fail if a copy drifts.
   identical:
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
