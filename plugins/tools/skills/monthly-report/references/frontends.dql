@@ -1,0 +1,5 @@
+timeseries loads = sum(dt.frontend.web.page.largest_contentful_paint, rollup: count), from: now()-7d, by: {frontend.name}
+| fieldsAdd page_loads = arraySum(loads)
+| fields frontend.name, page_loads
+| sort page_loads desc
+| limit 30
