@@ -121,3 +121,25 @@ macOS, Windows and Linux.
   remains for remote sessions (browser can't reach 127.0.0.1 there).
 - **U9** — Each skill must stay standalone (release workflow zips each skill dir
   alone), so shared files are copies; nothing checks they stay identical.
+
+## Release checklist (Windows manual pass — run before publishing 2.13.0)
+
+Once in the Claude Code CLI and once in a desktop-app local session, as a fresh Windows user with no Git for Windows and no dtctl:
+1. Install the plugin from the branch.
+2. `/tools:setup` → detects PowerShell, installs Git via winget without prompts, asks you to open a new terminal, stops.
+3. New terminal, `/tools:setup` again → `uname -s` prints `MINGW64_NT…`; finishes with no hangs, sudo or agreement prompts.
+4. New terminal; `/tools:monthly-report www.cloud.easytravel.com` and `/tools:trending-report www.cloud.easytravel.com`. On each review page: edit a finding, Theme → Dark, Create PDF. Expect: PDF opens from `%USERPROFILE%\Downloads`, dark, with the edit; Claude reports the path unprompted; `%USERPROFILE%\.dt-reports\` empty.
+5. Monthly again → Rewrite analysis → Claude rewrites the findings and opens a fresh review page.
+6. Trending again → edit, close the tab, tell Claude "build the PDF" → PDF contains the edit.
+7. On a Git-less machine, run a report skill before setup → precheck stops with the "run `/tools:setup`" message.
+Also: push the branch and confirm `.github/workflows/report-skills-ci.yml` is green on all 6 legs (first real Windows/Linux run).
+
+## Follow-ups (deliberately not done in this branch)
+
+- `full-page-analysis` and `user-journeys` still use the old render-pdf.sh/.ps1 + Downloads save flow — port them to render-pdf.mjs / review.mjs.
+- `--cleanup` only refuses blank paths and ancestors of the PDF; an allow-list rooted at `~/.dt-reports` would stop a mistyped path (needs an injectable root for tests).
+- CI checks whole shared files for identity, not the duplicated `REVIEW_BAR` / `loadRecords` blocks inside the two build scripts.
+- review.mjs: malformed request-targets get 500 before the auth check and re-arm the idle timer; `render` must stay synchronous (commented); autosave status can briefly overwrite "Creating PDF…".
+- Linux: Ubuntu's `~/.bashrc` returns early for non-interactive shells, so a PATH line appended at the end may not apply; zsh users on Linux are pointed at `~/.bashrc`. `setup/SKILL.md` "run /tools:setup again" lacks the standalone `/setup` hint.
+- Tables: error rates print with 1 decimal (hides <0.05%); weekly sessions aren't printed for findings; long exception messages aren't truncated.
+- Data: blended p75 weights aren't `Number()`-coerced; trending weekly cutoff is wall-clock based; "Unknown · Desktop" browser panel (rows without `browser.name`) shown as a real panel — product decision.
