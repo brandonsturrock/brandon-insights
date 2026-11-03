@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { chromeArgs, cleanupTargets, expandHome, findBrowser, finalize, openCommand, pdfIsFresh, pickSource, savedCopies } from "./render-pdf.mjs";
+import { chromeArgs, cleanupTargets, expandHome, findBrowser, finalize, openCommand, pdfIsFresh } from "./render-pdf.mjs";
 
 // findBrowser (literal inputs: platform is injected, host path module must not matter)
 const H = "/Users/x";
@@ -42,29 +42,6 @@ assert.equal(expandHome("/abs/~/a"), "/abs/~/a");
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "rp-"));
 try {
-  const dl = path.join(tmp, "dl");
-  fs.mkdirSync(dl);
-  const stem = "my.shop+eu-monthly-2026-10";
-  const gen = path.join(tmp, `${stem}.html`);
-  const touch = (file, secs) => {
-    fs.writeFileSync(file, "x");
-    const t = new Date(1_700_000_000_000 + secs * 1000);
-    fs.utimesSync(file, t, t);
-  };
-  touch(gen, 0);
-  touch(path.join(dl, `${stem}.html`), 30);
-  touch(path.join(dl, `${stem} (1).html`), 60);   // newest matching
-  touch(path.join(dl, `${stem}-other.html`), 120); // not a saved copy
-  touch(path.join(dl, `${stem.replace(".", "X")} (2).html`), 120); // "." in stem is literal, not a wildcard
-
-  // savedCopies / pickSource
-  assert.deepEqual(savedCopies(stem, dl).sort(), [path.join(dl, `${stem} (1).html`), path.join(dl, `${stem}.html`)].sort());
-  assert.deepEqual(savedCopies(stem, path.join(dl, "missing")), []);
-  assert.equal(pickSource(gen, dl), path.join(dl, `${stem} (1).html`));
-  assert.equal(pickSource(gen, path.join(dl, "missing")), gen);
-  touch(gen, 90); // regenerated after the last save -> generated wins
-  assert.equal(pickSource(gen, dl), gen);
-
   // finalize gating
   const emptyPdf = path.join(tmp, "empty.pdf"), realPdf = path.join(tmp, "real.pdf");
   fs.writeFileSync(emptyPdf, "");

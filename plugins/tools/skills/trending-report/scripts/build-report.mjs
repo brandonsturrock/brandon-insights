@@ -362,7 +362,83 @@ function demoFindings(sections) {
 // ── render ───────────────────────────────────────────────────────────────
 const TRENDING_SECTIONS = { FINDINGS_TRAFFIC_HTML: "Traffic", FINDINGS_CWV_HTML: "Core Web Vitals", FINDINGS_BROWSER_HTML: "Browser" };
 
-// Placeholder substitution + Chart.js inlining + contenteditable/save-bar
+// Review bar, injected before </body>. Identical in monthly- and trending-report.
+// Hidden unless review.mjs served the page (it injects window.DT_REVIEW), so a
+// static file or a headless render never shows it; @media print hides it too.
+// Autosaves the whole document to review.mjs; "Create PDF" and "Rewrite
+// analysis" hand the same HTML over and let the server finish. html() serializes
+// a clone with the bar reset so a reload of the saved file starts clean.
+// Colours are var() onto the template's own Strato tokens (no new hex).
+const REVIEW_BAR = `<style>
+  /* Bottom-centre: the bar is viewport-fixed, so it sits over whichever page is
+     in view, and the middle of the footer strip is the only band that is empty
+     on every page. */
+  #dt-review-bar{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;align-items:center;gap:12px;background:var(--bg-container);border:1px solid var(--dt-primary);border-radius:var(--dt-radius);padding:10px 18px;box-shadow:0 4px 20px color-mix(in srgb, var(--dt-bg-base) 70%, transparent);font-family:var(--dt-font-sans);font-size:var(--rp-text-small);color:var(--text-default)}
+  #dt-review-bar[hidden]{display:none}
+  #dt-review-status{max-width:min(60ch,40vw);white-space:pre-line;overflow-wrap:anywhere}
+  #dt-review-bar button{background:var(--dt-primary);color:var(--dt-bg-base);border:1px solid var(--dt-primary);border-radius:6px;padding:7px 16px;cursor:pointer;font-family:inherit;font-size:var(--rp-text-small);font-weight:600}
+  #dt-review-bar button:hover:not(:disabled){background:color-mix(in srgb, var(--dt-primary) 85%, white)}
+  #dt-review-bar button.dt-sec{background:transparent;color:var(--text-default)}
+  #dt-review-bar button.dt-sec:hover:not(:disabled){background:color-mix(in srgb, var(--dt-primary) 20%, transparent)}
+  #dt-review-bar button:disabled{opacity:.5;cursor:default}
+  @media print{#dt-review-bar{display:none!important}}
+</style>
+<div id="dt-review-bar" hidden>
+  <span id="dt-review-status"></span>
+  <button id="dt-theme-btn" class="dt-sec" onclick="dtSetTheme(document.documentElement.dataset.theme==='light'?'dark':'light')">Theme: Dark</button>
+  <button id="dt-pdf-btn">Create PDF</button>
+  <button id="dt-rewrite-btn" class="dt-sec">Rewrite analysis</button>
+</div>
+<script>
+window.addEventListener('dt-theme',function(e){document.getElementById('dt-theme-btn').textContent='Theme: '+(e.detail==='light'?'Light':'Dark')});
+document.addEventListener('DOMContentLoaded',function(){document.getElementById('dt-theme-btn').textContent='Theme: '+(document.documentElement.dataset.theme==='light'?'Light':'Dark')});
+(function(){
+  var R=window.DT_REVIEW,bar=document.getElementById('dt-review-bar');
+  if(!R||!bar)return;
+  var st=document.getElementById('dt-review-status'),pdf=document.getElementById('dt-pdf-btn'),rw=document.getElementById('dt-rewrite-btn'),timer,q=Promise.resolve(),over=false;
+  function say(t){st.textContent=t}
+  function lock(on){pdf.disabled=on;rw.disabled=on}
+  function finish(t){over=true;say(t);[].forEach.call(bar.querySelectorAll('button'),function(b){b.hidden=true})}
+  function html(){
+    var c=document.documentElement.cloneNode(true),b=c.querySelector('#dt-review-bar');
+    b.hidden=true;b.querySelector('#dt-review-status').textContent='';
+    [].forEach.call(b.querySelectorAll('button'),function(x){x.disabled=false;x.hidden=false});
+    return '<!DOCTYPE html>\\n'+c.outerHTML;
+  }
+  // one request at a time, in order, so a late autosave can never overwrite the final HTML
+  function post(route,query,body){
+    var r=q.catch(function(){}).then(function(){return fetch(route+'?t='+R.token+query,{method:'POST',body:body})});
+    q=r;return r;
+  }
+  function save(){
+    say('Saving…');
+    post('/save','',html()).then(function(r){if(!r.ok)throw 0;if(!over)say('All changes saved')})
+      .catch(function(){if(!over){say("Couldn't save — will retry");timer=setTimeout(save,5000)}});
+  }
+  bar.hidden=false;say('Edit the findings above, then create the PDF');
+  document.addEventListener('input',function(e){
+    if(over||!e.target.closest||!e.target.closest('[contenteditable]'))return;
+    clearTimeout(timer);timer=setTimeout(save,800);
+  });
+  pdf.addEventListener('click',function(){
+    clearTimeout(timer);lock(true);say('Creating PDF…');
+    post('/finish','&theme='+(document.documentElement.dataset.theme==='light'?'light':'dark'),html())
+      .then(function(r){return r.json()})
+      .then(function(j){if(!j.ok)throw new Error(j.error);finish('PDF saved to '+j.pdf+' — you can close this tab.')})
+      .catch(function(e){lock(false);say((e&&e.message)||'Could not create the PDF')});
+  });
+  rw.addEventListener('click',function(){
+    if(!confirm("Discard your edits and ask Claude to rewrite the findings?"))return;
+    clearTimeout(timer);lock(true);
+    post('/rewrite','',html())
+      .then(function(r){if(!r.ok)throw 0;finish('Claude is rewriting the analysis — a new tab will open.')})
+      .catch(function(){lock(false);say("Couldn't reach the review server")});
+  });
+})();
+</script>
+`;
+
+// Placeholder substitution + Chart.js inlining + contenteditable/review-bar
 // injection — everything that turns (data, findings, meta) into the final
 // HTML string, independent of *where* data/findings came from (a dtctl data
 // dir + findings.txt for a real run, or a fixture for scripts/preview.mjs).
@@ -405,7 +481,7 @@ export function assembleHtml({ data, findings, frontend, environment, dateRangeL
   let html = head + comment + after;
 
   // Inline Chart.js so the HTML is self-contained — works from any location
-  // (e.g. ~/Downloads after the user saves edits via the in-browser save bar).
+  // (it is served and rendered from the work dir).
   const chartJs = fs.readFileSync(path.join(SKILL_ROOT, "assets", "chart.umd.min.js"), "utf8")
     .replace(/\/\/# sourceMappingURL=\S+/g, "");
   html = html.replace('<script src="chart.umd.min.js"></script>', `<script>${chartJs}</script>`);
@@ -413,45 +489,7 @@ export function assembleHtml({ data, findings, frontend, environment, dateRangeL
   // Make findings panels editable in the browser preview.
   html = html.replace(/class="findings-body"/g, 'class="findings-body" contenteditable="true" spellcheck="false"');
 
-  // Inject a floating save bar. The save button downloads the current DOM as
-  // an HTML file to ~/Downloads — the PDF step uses that file if it exists.
-  // Hidden at print time so it never appears in the PDF.
-  const reportFilename = path.basename(outPath);
-  html = html.replace("</body>", `<style>
-  /* Bottom-CENTRE, not bottom-right: this is fixed to the viewport, so it
-     overlays whichever page is scrolled into view, and every page's bottom
-     corners hold a panel. The footer strip is the one band that is empty
-     across all four pages — its text sits hard left and hard right — so the
-     centre is the only spot that covers no data. Colours come from the deck's
-     own tokens rather than the hex this carried before, so it tracks the
-     screen theme like everything else. */
-  #dt-save-bar{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;align-items:center;gap:12px;background:var(--bg-container);border:1px solid var(--dt-primary);border-radius:var(--dt-radius);padding:8px 14px;box-shadow:0 4px 20px rgba(0,0,0,.6);font-family:var(--dt-font-sans);font-size:var(--rp-text-small);color:var(--text-subdued)}
-  #dt-save-bar button{background:var(--dt-primary);color:var(--dt-bg-base);border:none;border-radius:var(--dt-radius);padding:6px 14px;cursor:pointer;font-family:inherit;font-size:var(--rp-text-small);font-weight:600}
-  #dt-save-bar button:hover{background:color-mix(in srgb, var(--dt-primary) 80%, var(--text-default))}
-  @media print{#dt-save-bar{display:none!important}}
-</style>
-<div id="dt-save-bar">
-  <span>Edit findings above, then save when ready</span>
-  <button id="dt-theme-btn" onclick="dtSetTheme(document.documentElement.dataset.theme==='light'?'dark':'light')">Theme: Dark</button>
-  <button id="dt-save-btn" onclick="dtSave()">Save changes</button>
-</div>
-<script>
-window.addEventListener('dt-theme',function(e){document.getElementById('dt-theme-btn').textContent='Theme: '+(e.detail==='light'?'Light':'Dark')});
-document.addEventListener('DOMContentLoaded',function(){document.getElementById('dt-theme-btn').textContent='Theme: '+(document.documentElement.dataset.theme==='light'?'Light':'Dark')});
-function dtSave(){
-  var html='<!DOCTYPE html>\\n'+document.documentElement.outerHTML;
-  var blob=new Blob([html],{type:'text/html'});
-  var a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);
-  a.download=${JSON.stringify(reportFilename)};
-  document.body.appendChild(a);a.click();document.body.removeChild(a);
-  setTimeout(function(){URL.revokeObjectURL(a.href)},1000);
-  var btn=document.getElementById('dt-save-btn');
-  btn.textContent='✓ Saved to Downloads';btn.style.background='var(--good)';
-  setTimeout(function(){btn.textContent='Save changes';btn.style.background=''},3000);
-}
-</script>
-</body>`);
+  html = html.replace("</body>", () => REVIEW_BAR + "</body>");
 
   const outDir = path.dirname(path.resolve(outPath));
   fs.mkdirSync(outDir, { recursive: true });

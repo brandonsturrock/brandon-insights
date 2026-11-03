@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Cross-platform report -> PDF via headless Chromium (Chrome, Edge, Chromium, Brave).
 //   node render-pdf.mjs --find-browser
-//   node render-pdf.mjs --open <file>
-//   node render-pdf.mjs --in <generated.html> --out <file.pdf> [--theme light|dark] [--source <html>] [--cleanup <path>...]
+//   node render-pdf.mjs --in <generated.html> --out <file.pdf> [--theme light|dark] [--cleanup <path>...]
+// review.mjs imports renderPdf / openFile / finalize / cleanupTargets from here.
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -10,7 +10,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 
-const NO_BROWSER = "No Chromium-based browser found (Chrome, Edge, Chromium). Install Google Chrome or set CHROME_PATH.";
+export const NO_BROWSER = "No Chromium-based browser found (Chrome, Edge, Chromium). Install Google Chrome or set CHROME_PATH.";
 
 export function findBrowser(platform = process.platform, env = process.env, exists = fs.existsSync) {
   let list = [];
@@ -48,22 +48,6 @@ export function chromeArgs(inHtml, outPdf, theme, profileDir) {
     `--print-to-pdf=${outPdf}`, `${pathToFileURL(inHtml).href}#theme=${theme}`];
 }
 
-// "Save changes" in the report downloads <stem>.html (then "<stem> (1).html", ...) to the browser's download folder.
-export function savedCopies(stem, downloadsDir) {
-  const re = new RegExp(`^${stem.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}( \\(\\d+\\))?\\.html$`);
-  try {
-    return fs.readdirSync(downloadsDir).filter(f => re.test(f)).sort().map(f => path.join(downloadsDir, f));
-  } catch {
-    return [];
-  }
-}
-
-// Newest wins; a tie keeps the generated file.
-export function pickSource(generatedHtml, downloadsDir) {
-  const candidates = [generatedHtml, ...savedCopies(path.basename(generatedHtml, ".html"), downloadsDir)];
-  return candidates.reduce((best, f) => (fs.statSync(f).mtimeMs > fs.statSync(best).mtimeMs ? f : best));
-}
-
 // Deletes only after a non-empty PDF exists, so a failed render never costs the user their work dir.
 // A path that cannot be deleted (e.g. locked on Windows) is a warning, not a failure of the render.
 export function finalize(pdfPath, cleanupPaths) {
@@ -95,6 +79,11 @@ export function openCommand(platform, file) {
   return { cmd: "xdg-open", args: [file] };
 }
 
+export function openFile(file) {
+  const { cmd, args } = openCommand(process.platform, file);
+  spawn(cmd, args, { detached: true, stdio: "ignore", windowsHide: true }).on("error", e => console.error(e.message)).unref();
+}
+
 export function expandHome(p) {
   return /^~([\\/]|$)/.test(p) ? path.join(os.homedir(), p.slice(1)) : p;
 }
@@ -115,16 +104,32 @@ export function cleanupTargets(paths, outPdf, warn = console.error) {
   return targets;
 }
 
+// Browser -> PDF. Never deletes anything; the caller decides what a success is worth (finalize).
+export function renderPdf({ inHtml, outPdf, theme }) {
+  const browser = findBrowser();
+  if (!browser) return { ok: false, error: NO_BROWSER };
+  let before = 0; // mtime of the previous deliverable, kept on failure
+  try { before = fs.statSync(outPdf).mtimeMs; } catch { /* first render */ }
+  const profile = fs.mkdtempSync(path.join(os.tmpdir(), "dt-pdf-"));
+  let run;
+  try {
+    run = spawnSync(browser, chromeArgs(inHtml, outPdf, theme, profile), { timeout: 120000, encoding: "utf8" });
+  } finally {
+    // Chrome helpers can briefly hold the profile (EBUSY/EPERM on Windows); a leftover temp dir is harmless
+    try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* ignore */ }
+  }
+  if (pdfIsFresh(outPdf, before)) return { ok: true };
+  const lines = (run.error ? run.error.message : run.stderr ?? "").split(/\r?\n/).filter(Boolean).slice(-5);
+  return { ok: false, error: [`PDF not written: ${outPdf}`, ...lines, "Nothing was deleted."].join("\n") };
+}
+
 function main() {
   // --cleanup swallows every remaining arg, so split it off before parseArgs
   const argv = process.argv.slice(2);
   const ci = argv.indexOf("--cleanup");
   const { values } = parseArgs({
     args: ci < 0 ? argv : argv.slice(0, ci),
-    options: {
-      "find-browser": { type: "boolean" }, open: { type: "string" }, in: { type: "string" },
-      out: { type: "string" }, theme: { type: "string" }, source: { type: "string" },
-    },
+    options: { "find-browser": { type: "boolean" }, in: { type: "string" }, out: { type: "string" }, theme: { type: "string" } },
   });
   const abs = p => path.resolve(expandHome(p));
 
@@ -135,48 +140,19 @@ function main() {
     return;
   }
 
-  if (values.open) {
-    const { cmd, args } = openCommand(process.platform, abs(values.open));
-    spawn(cmd, args, { detached: true, stdio: "ignore" }).on("error", e => console.error(e.message)).unref();
-    return;
-  }
-
   const theme = values.theme ?? "light";
   if (!values.in || !values.out || (theme !== "light" && theme !== "dark")) {
-    console.error("usage: render-pdf.mjs --find-browser | --open <file> | --in <generated.html> --out <file.pdf> [--theme light|dark] [--source <html>] [--cleanup <path>...]");
+    console.error("usage: render-pdf.mjs --find-browser | --in <generated.html> --out <file.pdf> [--theme light|dark] [--cleanup <path>...]");
     process.exit(2);
   }
-  const browser = findBrowser();
-  if (!browser) { console.error(NO_BROWSER); process.exit(2); }
-
   const inHtml = abs(values.in), outPdf = abs(values.out);
-  const downloads = path.join(os.homedir(), "Downloads");
-  if (!fs.existsSync(inHtml)) { console.error(`Input not found: ${inHtml}`); process.exit(1); }
-  const source = values.source ? abs(values.source) : pickSource(inHtml, downloads);
   // a missing file would render Chrome's error page into a non-empty PDF and pass the gate
-  if (!fs.existsSync(source)) { console.error(`Source not found: ${source}`); process.exit(1); }
-  console.log(`Source: ${source}`);
+  if (!fs.existsSync(inHtml)) { console.error(`Input not found: ${inHtml}`); process.exit(1); }
 
-  let before = 0; // mtime of the previous deliverable, kept on failure
-  try { before = fs.statSync(outPdf).mtimeMs; } catch { /* first render */ }
-  const profile = fs.mkdtempSync(path.join(os.tmpdir(), "dt-pdf-"));
-  let run;
-  try {
-    run = spawnSync(browser, chromeArgs(source, outPdf, theme, profile), { timeout: 120000, encoding: "utf8" });
-  } finally {
-    // Chrome helpers can briefly hold the profile (EBUSY/EPERM on Windows); a leftover temp dir is harmless
-    try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* ignore */ }
-  }
-
-  const cleanup = cleanupTargets(
-    [...(ci < 0 ? [] : argv.slice(ci + 1)), ...savedCopies(path.basename(inHtml, ".html"), downloads)], outPdf);
-  if (pdfIsFresh(outPdf, before) && finalize(outPdf, cleanup)) {
-    console.log(`PDF: ${outPdf}`);
-    return;
-  }
-  const lines = (run.error ? run.error.message : run.stderr ?? "").split(/\r?\n/).filter(Boolean).slice(-5);
-  console.error([`PDF not written: ${outPdf}`, ...lines, "Nothing was deleted."].join("\n"));
-  process.exit(1);
+  const r = renderPdf({ inHtml, outPdf, theme });
+  if (!r.ok) { console.error(r.error); process.exit(r.error === NO_BROWSER ? 2 : 1); }
+  finalize(outPdf, cleanupTargets(ci < 0 ? [] : argv.slice(ci + 1), outPdf));
+  console.log(`PDF: ${outPdf}`);
 }
 
 if (process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) main();

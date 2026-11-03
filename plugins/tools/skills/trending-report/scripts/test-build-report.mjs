@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildTrendingData, loadRecords, renderTables } from "./build-report.mjs";
+import { assembleHtml, buildTrendingData, loadRecords, renderTables } from "./build-report.mjs";
 
+const SAMPLE = JSON.parse(fs.readFileSync(new URL("../assets/fixtures/sample.json", import.meta.url), "utf8"));
 const FILES = ["metrics-monthly", "cwv-monthly", "cwv-weekly", "browser-perf-monthly", "traffic-weekly"];
 const tmpDirs = [];
 
@@ -129,4 +130,24 @@ try {
   assert.doesNotMatch(renderTables(emptyData), /NaN|undefined|null/);
 } finally {
   for (const d of tmpDirs) fs.rmSync(d, { recursive: true, force: true });
+}
+
+// The review bar (autosave / Create PDF / Rewrite) replaces the old Downloads "Save changes" bar
+{
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "cm-html-"));
+  const outPath = path.join(outDir, "r.html");
+  const log = console.log;
+  console.log = () => {}; // assembleHtml announces the file it wrote
+  try {
+    assembleHtml({ data: SAMPLE, findings: {}, frontend: "x", environment: "", dateRangeLabel: "October 2026", generatedAt: "now", outPath });
+  } finally {
+    console.log = log;
+  }
+  const html = fs.readFileSync(outPath, "utf8");
+  fs.rmSync(outDir, { recursive: true, force: true });
+  for (const s of ['id="dt-review-bar"', 'id="dt-review-status"', 'id="dt-pdf-btn"', 'id="dt-rewrite-btn"', "Create PDF", "Rewrite analysis", "/finish", "/save", "/rewrite"])
+    assert.ok(html.includes(s), s);
+  for (const s of ["dtSave(", "dt-save-bar", "Save changes"]) assert.ok(!html.includes(s), s);
+  assert.match(html, /@media print\{#dt-review-bar\{display:none!important\}\}/);
+  assert.match(html, /class="findings-body" contenteditable="true" spellcheck="false"/);
 }
