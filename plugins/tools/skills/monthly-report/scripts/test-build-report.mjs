@@ -179,6 +179,23 @@ assert.equal(typeof emptyData.monthLabel, "string");
   assert.match(renderTables(d), /^INP \| — \| — \| —$/m);
 }
 
+// Visitor-controlled strings (exception messages, URL paths) must not close the <script> that carries DATA
+{
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "month-xss-"));
+  const outPath = path.join(outDir, "r.html");
+  const log = console.log;
+  console.log = () => {};
+  try {
+    assembleHtml({ data: { ...SAMPLE.data, evil: "</script><b>x" }, findings: {}, frontend: "f", environment: "", dateRangeLabel: "x", generatedAt: "now", outPath });
+  } finally {
+    console.log = log;
+  }
+  const html = fs.readFileSync(outPath, "utf8");
+  fs.rmSync(outDir, { recursive: true, force: true });
+  assert.ok(!html.includes("</script><b>"));
+  assert.equal(JSON.parse(html.match(/^const DATA = (.*);$/m)[1]).evil, "</script><b>x");
+}
+
 // LCP/INP of 0 = not measured (null), never "0ms good"; CLS 0 is a real value; blended p75 skips null rows
 {
   const d = buildCurrentMonthData(makeDataDir({

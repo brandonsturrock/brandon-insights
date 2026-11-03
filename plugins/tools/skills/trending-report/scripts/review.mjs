@@ -76,6 +76,7 @@ export async function startReview({ inHtml, outPdf, cleanup = [], timeoutMs = 36
     if (u.pathname === "/rewrite") return send(res, 200, { ok: true }, () => end({ code: 3 }));
 
     clearTimeout(timer); // a render can outlast a short timeout; the response re-arms it
+    // render must stay synchronous (spawnSync): an async render plus a client abort would leave the server with no timer
     const r = await render({ inHtml, outPdf, theme });
     if (!r.ok) { arm(); return send(res, 500, { ok: false, error: r.error }); }
     finalize(outPdf, cleanupTargets(cleanup, outPdf));

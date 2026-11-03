@@ -37,7 +37,7 @@ function parseArgs(argv) {
 // { assembleHtml }` from here (to reuse the placeholder-substitution /
 // Chart.js-inlining / contenteditable logic) without tripping the "Missing
 // --out" exit this file's own CLI entry requires.
-const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const isMain = process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
 const args = isMain ? parseArgs(process.argv.slice(2)) : {};
 if (isMain && !args["print-tables"] && !args.out) {
   console.error("Missing --out <report.html>");
@@ -597,7 +597,8 @@ export function assembleHtml({ data, findings, frontend, environment, dateRangeL
     head = head.split(placeholder).join(value);
     after = after.split(placeholder).join(value);
   }
-  after = after.replace("{{DATA_JSON}}", () => JSON.stringify(data));
+  // "<" escaped so visitor-controlled strings (exception messages, URL paths) cannot close the <script>.
+  after = after.replace("{{DATA_JSON}}", () => JSON.stringify(data).replace(/</g, "\\u003c"));
   let html = head + comment + after;
 
   // Inline Chart.js so the HTML is self-contained — works from any location

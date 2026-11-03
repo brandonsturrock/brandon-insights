@@ -170,11 +170,29 @@ try {
   assert.equal(html.slice(html.indexOf("-->")).match(/\{\{[A-Z_]+\}\}/), null);
 }
 
+// Visitor-controlled strings (exception messages, URL paths) must not close the <script> that carries DATA
+{
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "trend-xss-"));
+  const outPath = path.join(outDir, "r.html");
+  const log = console.log;
+  console.log = () => {};
+  try {
+    assembleHtml({ data: { ...SAMPLE, evil: "</script><b>x" }, findings: {}, frontend: "f", environment: "", dateRangeLabel: "x", generatedAt: "now", outPath });
+  } finally {
+    console.log = log;
+  }
+  const html = fs.readFileSync(outPath, "utf8");
+  fs.rmSync(outDir, { recursive: true, force: true });
+  assert.ok(!html.includes("</script><b>"));
+  assert.equal(JSON.parse(html.match(/^const DATA = (.*);$/m)[1]).evil, "</script><b>x");
+}
+
 // LCP/INP of 0 = not measured (null), never "0ms good"; CLS 0 is a real value
 {
   const dir = makeDataDir({
     "metrics-monthly": { records: [{ month: ts("2026-10-01"), Sessions: 1000, "XHR Requests": 1, Navigations: 1 }] },
     "cwv-monthly": { records: [
+      { month: ts("2026-09-01"), "Largest Contentful Paint": 1700, "Interaction to Next Paint": 150, "Cumulative Layout Shift": null }, // explicit null CLS = not measured
       { month: ts("2026-10-01"), "Largest Contentful Paint": 1754, "Interaction to Next Paint": 0, "Cumulative Layout Shift": 0 },
     ] },
     "cwv-weekly": { records: [{ week: ts("2026-10-04"), lcp: 0, inp: 0, cls: 0 }, { week: ts("2026-10-11"), lcp: 1800, inp: 0, cls: 0 }] },
@@ -187,6 +205,7 @@ try {
     assert.equal(d.cwvMonthly.inp.at(-1), null);
     assert.equal(d.cwvMonthly.lcp.at(-1), 1754);
     assert.equal(d.cwvMonthly.cls.at(-1), 0);
+    assert.equal(d.cwvMonthly.cls[0], null);
     assert.deepEqual(d.cwvWeekly.lcp, [null, 1800]);
     assert.deepEqual(d.cwvWeekly.inp, [null, null]);
     assert.equal(d.cwvWeekly.cls[0], 0);

@@ -35,7 +35,7 @@ function parseArgs(argv) {
 // bottom of this file only run when the script is invoked directly (`node
 // build-report.mjs ...`) — guarded so `scripts/preview.mjs` and the tests can
 // import from here without tripping the "Missing --out" exit.
-const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const isMain = process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
 const args = isMain ? parseArgs(process.argv.slice(2)) : {};
 if (isMain && !args["print-tables"] && !args.out) {
   console.error("Missing --out <report.html>");
@@ -200,7 +200,7 @@ export function buildTrendingData(dataDir) {
     labels: cwvRows.map((r) => monthYearLabel(r.month)),
     lcp: cwvRows.map((r) => absentIfZero(r["Largest Contentful Paint"])),
     inp: cwvRows.map((r) => absentIfZero(r["Interaction to Next Paint"])),
-    cls: cwvRows.map((r) => r["Cumulative Layout Shift"] / 10000),
+    cls: cwvRows.map((r) => (r["Cumulative Layout Shift"] == null ? null : r["Cumulative Layout Shift"] / 10000)),
   };
 
   const cwvWeekly = {
@@ -478,7 +478,8 @@ export function assembleHtml({ data, findings, frontend, environment, dateRangeL
     head = head.split(placeholder).join(value);
     after = after.split(placeholder).join(value);
   }
-  after = after.replace("{{DATA_JSON}}", () => JSON.stringify(data));
+  // "<" escaped so visitor-controlled strings (exception messages, URL paths) cannot close the <script>.
+  after = after.replace("{{DATA_JSON}}", () => JSON.stringify(data).replace(/</g, "\\u003c"));
   let html = head + comment + after;
 
   // Inline Chart.js so the HTML is self-contained — works from any location

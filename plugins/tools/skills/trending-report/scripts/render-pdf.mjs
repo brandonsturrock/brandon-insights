@@ -108,6 +108,8 @@ export function cleanupTargets(paths, outPdf, warn = console.error) {
 export function renderPdf({ inHtml, outPdf, theme }) {
   const browser = findBrowser();
   if (!browser) return { ok: false, error: NO_BROWSER };
+  try { fs.mkdirSync(path.dirname(outPdf), { recursive: true }); } // some Linux setups have no ~/Downloads
+  catch (e) { return { ok: false, error: `Cannot create ${path.dirname(outPdf)}: ${e.message}` }; }
   let before = 0; // mtime of the previous deliverable, kept on failure
   try { before = fs.statSync(outPdf).mtimeMs; } catch { /* first render */ }
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), "dt-pdf-"));
