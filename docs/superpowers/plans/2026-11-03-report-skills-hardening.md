@@ -18,7 +18,7 @@
 - Windows requires Git for Windows (spec I17): without it Claude Code's shell is PowerShell. `setup` installs it; report skills detect PowerShell in their precheck and send the user to `setup`. The only PowerShell-compatible commands anywhere are setup's Step 0 bootstrap and its `powershell -NoProfile -ExecutionPolicy Bypass -Command "…"` dtctl install.
 - Work dir: `$HOME/.dt-reports/<SLUG>-<KIND>-<YYYY-MM>/`. Final PDF: `$HOME/Downloads/<SLUG>-<KIND>-<YYYY-MM>.pdf`. `KIND` ∈ `monthly` | `trending`. `YYYY-MM` = last complete calendar month (UTC) for both kinds.
 - `SLUG` = frontend name lowercased, each run of characters outside `[a-z0-9.-]` replaced by `-`, leading/trailing `-` trimmed.
-- Files that must stay byte-identical across both skills: `scripts/run-queries.mjs`, `scripts/render-pdf.mjs`, `scripts/test-run-queries.mjs`, `scripts/test-render-pdf.mjs`, `references/frontends.dql`, `assets/chart.umd.min.js`. Edit in `monthly-report/`, then `cp` to `trending-report/`.
+- Files that must stay byte-identical across both skills: `scripts/run-queries.mjs`, `scripts/render-pdf.mjs`, `scripts/review.mjs`, `scripts/test-run-queries.mjs`, `scripts/test-render-pdf.mjs`, `scripts/test-review.mjs`, `references/frontends.dql`, `assets/chart.umd.min.js`. Edit in `monthly-report/`, then `cp` to `trending-report/`.
 - No imports across skill directories (each skill is zipped standalone by `.github/workflows/release-skills.yml`).
 - Tests: plain `node scripts/test-<name>.mjs` using `node:assert/strict`; silent on pass, non-zero exit on failure (matches `full-page-analysis/scripts/test-*.mjs`).
 - dtctl invocation for report queries: `query -f <file> --set frontend=<name> -o json --agent --spill=never [--context <ctx>]`.
@@ -30,7 +30,7 @@
 
 - **Windows usernames with spaces** (`C:\Users\John Smith`) — browser must get a percent-encoded `file:` URL and an unsplit `--print-to-pdf` arg. Test: Task 6 `chromeArgs` space-in-path assertion; CI Windows job.
 - **Frontend names with quotes, spaces, slashes** (`Shop "EU"/web app`) — must reach dtctl verbatim as one argument and never appear in a path. Test: Task 5 verbatim-argv assertion.
-- **Browser save naming** — second save is `<stem> (1).html`; the PDF must use the newest saved copy, ignore unrelated files. Test: Task 6 `pickSource` assertions.
+- **User closes the review tab or walks away** — edits must survive: autosave writes each edit to `$WORK`, the idle timeout exits without deleting anything, and "build the PDF" renders from the autosaved file. Test: Task 6b `/save` + timeout assertions.
 - **Frontend with little or no data** (no mobile, no INP, empty months) — build must not throw; show "—", never "0" or "good". Tests: Task 1 and Task 2 empty-input assertions.
 - **PDF render failure** (no browser, Chrome crash) — exit non-zero, delete nothing. Test: Task 6 `finalize` empty-PDF assertion.
 
@@ -325,6 +325,81 @@ Commit — `feat(reports): cross-platform render-pdf.mjs with Edge/per-user Chro
 
 ---
 
+### Task 6b: Review page — autosave, Create PDF, Rewrite (U10; supersedes U2)
+
+**Files:**
+- Create: `monthly-report/scripts/review.mjs`, `monthly-report/scripts/test-review.mjs`; copy both to `trending-report/scripts/`.
+- Modify: `{monthly,trending}-report/scripts/render-pdf.mjs` + `test-render-pdf.mjs` (identical pairs); `{monthly,trending}-report/scripts/build-report.mjs` + `test-build-report.mjs` (review bar replaces the save bar).
+
+**Interfaces:**
+- Consumes: Task 6 `findBrowser`, `chromeArgs`, `pdfIsFresh`, `finalize`, `cleanupTargets`, `openCommand`.
+- Produces in `render-pdf.mjs`:
+  - `export function renderPdf({ inHtml: string, outPdf: string, theme: "light"|"dark" }): { ok: boolean, error?: string }` — the browser/temp-profile/spawn/freshness logic moved out of `main`. No cleanup. `error` = the existing "No Chromium-based browser found…" / "PDF not written: …" text. The CLI render path calls it, then `finalize`.
+  - `export function openFile(file: string): void` — detached, unref'd spawn of `openCommand(process.platform, file)` with `windowsHide: true`.
+  - Delete `pickSource`, `savedCopies`, `--source`, the saved-copy cleanup, and the `--open` CLI mode, plus their tests. Downloads is no longer involved.
+- Produces in `review.mjs`:
+  - `export async function startReview({ inHtml, outPdf, cleanup = [], timeoutMs = 3600000, render = renderPdf, open = openFile }): Promise<{ url: string, token: string, done: Promise<{ code: 0|3|4, pdf?: string }>, close(): void }>`
+    - Server: `node:http` on `127.0.0.1`, port `0`. `token = crypto.randomBytes(16).toString("hex")`. `url = http://127.0.0.1:<port>/?t=<token>`.
+    - Every request gets 403 unless the `Host` header is exactly `127.0.0.1:<port>` and the query `t` equals the token. POSTs also get 403 when an `Origin` header is present and isn't `http://127.0.0.1:<port>`.
+  - Routes:
+    - `GET /` → 200 `text/html; charset=utf-8`, `Cache-Control: no-store`. Body: the current `inHtml` with `<script id="dt-review-config">window.DT_REVIEW={token:"<token>"}</script>` inserted before `</head>`.
+    - `POST /save` → body is the full HTML. Limit 25 MB, else 413. Strip any `<script id="dt-review-config">…</script>`, write to `inHtml` through a temp file + `rename`, return 204.
+    - `POST /finish?theme=light|dark` → save as above, then `render({ inHtml, outPdf, theme })`. If ok: `finalize(outPdf, cleanupTargets(cleanup, outPdf))`, respond 200 JSON `{ ok: true, pdf: outPdf }`, call `open(outPdf)`, resolve `done` with `{ code: 0, pdf: outPdf }`, close. If not ok: 500 JSON `{ ok: false, error }`. The server keeps running and nothing is deleted.
+    - `POST /rewrite` → save, 200 JSON `{ ok: true }`, resolve `{ code: 3 }`, close. Nothing is deleted.
+    - Any other route → 404.
+    - No request for `timeoutMs` → resolve `{ code: 4 }`, close. Nothing is deleted.
+  - CLI: `node review.mjs --in <html> --out <pdf> [--cleanup <path>...]`.
+    - No browser (`findBrowser` null) → exit 2 with render-pdf's message.
+    - Otherwise print `Review: <url>` and `open(url)`. Exits:
+      - code 0 → print `PDF: <pdf>`, exit 0.
+      - code 3 → print `REWRITE`, exit 3.
+      - code 4 → print `Timed out — edits are saved in <in>`, exit 4.
+- Review bar: replaces the save bar block in both `build-report.mjs` `assembleHtml`, as an identical snippet in both.
+  - Element and visibility: `id="dt-review-bar"`, same fixed bottom-centre position and tokens as today. Hidden unless `window.DT_REVIEW` exists, so static files and headless renders show nothing. `@media print` hides it.
+  - Contents: status `#dt-review-status`, the existing Theme toggle, `#dt-pdf-btn` "Create PDF", `#dt-rewrite-btn` "Rewrite analysis".
+  - Autosave: on `input` inside the contenteditable findings panels, debounce 800 ms, then `POST /save?t=<token>` with `'<!DOCTYPE html>\n' + document.documentElement.outerHTML`. Status cycles through `Saving…`, `All changes saved`, `Couldn't save — will retry`.
+  - Create PDF: disables both buttons, status `Creating PDF…`, then `POST /finish?t=<token>&theme=<document.documentElement.dataset.theme>` with the HTML.
+    - ok → the bar shows `PDF saved to <pdf> — you can close this tab.`
+    - error → status shows the error and the buttons re-enable.
+  - Rewrite analysis: `confirm("Discard your edits and ask Claude to rewrite the findings?")`, then `POST /rewrite`. Status becomes `Claude is rewriting the analysis — a new tab will open.`
+  - Delete `dtSave`.
+
+- [ ] **Step 1: Write failing tests**
+
+  `test-review.mjs`: injected fake `render` and `open`, global `fetch`, a raw `http.request` for the Host case, temp dirs cleaned up.
+
+```js
+assert.equal((await fetch(base + "/")).status, 403);                       // no token
+assert.equal(await statusWithHost(url, "evil.test"), 403);                  // DNS-rebinding Host
+assert.equal((await fetch(url, { method: "POST", headers: { Origin: "http://evil.test" } })).status, 403);
+assert.match(await (await fetch(url)).text(), /id="dt-review-config"/);
+await post("/save", '<html><head><script id="dt-review-config">x</script></head><body>EDIT</body></html>');
+assert.equal(fs.readFileSync(inHtml, "utf8"), "<html><head></head><body>EDIT</body></html>");
+assert.equal((await post("/save", "x".repeat(26 * 1024 * 1024))).status, 413);
+// finish failure: render → { ok: false, error: "boom" }
+assert.equal(failRes.status, 500); assert.ok(fs.existsSync(workDir)); assert.equal((await fetch(url)).status, 200);
+// finish ok: render writes a non-empty outPdf, returns { ok: true }
+assert.deepEqual(await okRes.json(), { ok: true, pdf: outPdf });
+assert.deepEqual(await review.done, { code: 0, pdf: outPdf }); assert.ok(!fs.existsSync(workDir)); assert.deepEqual(opened, [outPdf]);
+assert.deepEqual(await rewriteReview.done, { code: 3 }); assert.ok(fs.existsSync(workDir2));
+assert.deepEqual(await idleReview.done, { code: 4 });                      // timeoutMs: 100
+```
+
+  `test-build-report.mjs`, both skills: `assembleHtml` output includes `id="dt-review-bar"`, `Create PDF`, `/finish` and `/save`, and does not include `dtSave(`.
+
+  `test-render-pdf.mjs`: delete the `pickSource`/`savedCopies` assertions.
+- [ ] **Step 2: Run, confirm failure** — `node monthly-report/scripts/test-review.mjs` → non-zero.
+- [ ] **Step 3: Implement** per Interfaces. Edit the monthly copies, then `cp` `render-pdf.mjs`, `test-render-pdf.mjs`, `review.mjs` and `test-review.mjs` to trending. Put the same bar snippet in both `build-report.mjs`.
+- [ ] **Step 4: Verify**
+  1. Run all test files in both skills.
+  2. Smoke test (bash):
+     - `node monthly-report/scripts/preview.mjs "$HOME/.dt-reports/rv/r.html"`, then start `node monthly-report/scripts/review.mjs --in "$HOME/.dt-reports/rv/r.html" --out "$HOME/.dt-reports/rv.pdf" --cleanup "$HOME/.dt-reports/rv"` in the background. Read the printed `Review:` URL.
+     - `curl -s -X POST "<url-with-/finish>&theme=dark" --data-binary @"$HOME/.dt-reports/rv/r.html"`.
+  3. Expected: JSON `{"ok":true,…}`, the process exits 0 with `PDF: …rv.pdf`, `rv.pdf` is non-empty, `rv/` is deleted, and a browser tab opened twice (the review page, then the PDF).
+- [ ] **Step 5: Commit** — `feat(reports): local review page with autosave, Create PDF and Rewrite; drop Downloads round trip`
+
+---
+
 ### Task 7: Report SKILL.md rewrites (I1, I13, I14, I15, I16, E5, E6, E7, E8, U1-U3, U6)
 
 **Files:**
@@ -342,15 +417,30 @@ Commit — `feat(reports): cross-platform render-pdf.mjs with Edge/per-user Chro
   6. **Step 2 — Queries:** `node <SKILL_BASE_DIR>/scripts/run-queries.mjs --frontend "<FRONTEND>" --out "$WORK" --context "$CONTEXT"`. Any `FAILED` → show the line, stop. Every query 0 rows → frontend has no data for the period, stop.
   7. **Step 3 — Findings:** follow `references/findings-prompt.md`; write `$WORK/findings.md`.
   8. **Step 4 — Build:** `node <SKILL_BASE_DIR>/scripts/build-report.mjs --frontend "<FRONTEND>" --environment "$CONTEXT" --data "$WORK" --findings "$WORK/findings.md" --out "$WORK/$NAME.html" > /dev/null` (stderr kept). Trending keeps its browser-selection paragraph, corrected to "ranked by latest month's visits".
-  9. **Step 5 — Preview:** `node <SKILL_BASE_DIR>/scripts/render-pdf.mjs --open "$WORK/$NAME.html"`; one `AskUserQuestion`, two questions. Q1 text: "The report is open in your browser. Click into any findings panel to edit, then click **Save changes**. Come back here when done." Options: **Build the PDF** ("uses your latest saved copy automatically"), **Regenerate analysis** (redo steps 3-4, reopen). Q2: **Light** (print-friendly, recommended) / **Dark**. If the user answers Q1 via "Other" with a file path, pass it as `--source`.
-  10. **Step 6 — PDF + cleanup:** `node <SKILL_BASE_DIR>/scripts/render-pdf.mjs --in "$WORK/$NAME.html" --out "$HOME/Downloads/$NAME.pdf" --theme <THEME> [--source "<path>"] --cleanup "$WORK"`. Exit 0 → tell the user the `PDF:` path and which `Source:` was used. Non-zero → show stderr; say edits and data are kept in `$WORK` and `~/Downloads`; stop.
+  9. **Step 5 — Review and PDF** (Task 6b's `review.mjs`; there is no option question and no theme question):
+     - **`--no-preview`:** run `node <SKILL_BASE_DIR>/scripts/render-pdf.mjs --in "$WORK/$NAME.html" --out "$HOME/Downloads/$NAME.pdf" --theme light --cleanup "$WORK"`.
+       - Exit 0 → report the `PDF:` path.
+       - Non-zero → show stderr, say the data is kept in `$WORK`, stop.
+     - **Otherwise:** run `node <SKILL_BASE_DIR>/scripts/review.mjs --in "$WORK/$NAME.html" --out "$HOME/Downloads/$NAME.pdf" --cleanup "$WORK"` as a **background** command.
+       - Tell the user, verbatim: "The report is open in your browser. Click any findings panel to edit — changes save automatically. Use **Theme** to pick light or dark, then click **Create PDF**. Click **Rewrite analysis** if you'd like me to redo the findings."
+       - Then wait for the process to exit; never poll. By exit code:
+         - 0 → give the user the `PDF:` path.
+         - 3 → redo Steps 3-4, then restart this step.
+         - 4 → say "Timed out after an hour without activity; your edits are saved," and offer to run the `--no-preview` command.
+         - 2 → tell the user to run `/tools:setup`.
+         - Anything else → show stderr, say edits and data are kept in `$WORK`, stop.
+       - If the user asks for the PDF while the review is still running (for example, they closed the tab): stop the background command and run the `--no-preview` command. Their edits are already saved.
+     - **Remote sessions:** one line for this case. If Claude Code runs on a remote machine (SSH, container, cloud), the browser can't reach the review page, so use `--no-preview`.
+  10. (Merged into step 9.)
   Delete: the whole `--install` section, the old context check, `grep '^{'` notes, every macOS/Windows split block, the separate step 7 cleanup, `findings.txt`.
 
 - [ ] **Step 2: Verify text**
 Run: `grep -nE 'pwsh|powershell|Start-Process|Remove-Item|/tmp|use-context|render-pdf\.(sh|ps1)|&>/dev/null' monthly-report/SKILL.md trending-report/SKILL.md; grep -nF "grep '^{'" monthly-report/SKILL.md trending-report/SKILL.md`
 Expected: no output from either. `wc -c` each SKILL.md < 7500 bytes (was ~11.5 KB).
 
-- [ ] **Step 3: End-to-end dry run** (mac, `demo live`): run steps 2, 4 (with a stub `findings.md`) and 6 by hand for `www.cloud.easytravel.com` for both skills.
+- [ ] **Step 3: End-to-end dry run** (mac, `demo live`): for `www.cloud.easytravel.com`, run steps 2 and 4 by hand for both skills, with a stub `findings.md`. Then run Step 5:
+  - Monthly: start `review.mjs` and POST `/finish` with curl, as in Task 6b Step 4.
+  - Trending: use `--no-preview`.
 Expected: monthly PDF page 1 KPIs show non-zero Sessions and an LCP tile with a value (was "0" / "—"); trending page 4 shows populated browser panels (was 6 blank); `$WORK` deleted afterwards.
 
 - [ ] **Step 4: Commit** — `refactor(reports): bash-only cross-platform SKILL workflow; drop duplicated install`
@@ -388,10 +478,10 @@ Expected: each check passes without installing; `dtctl skills install … --glob
 
 ---
 
-### Task 9: Templates — consistent footer, save bar, contract comments (U5, U8, E2)
+### Task 9: Templates — consistent footer, contract comments (U5, U8, E2)
 
 **Files:**
-- Modify: `trending-report/assets/report-trending.html.tmpl`, `monthly-report/assets/report-cm.html.tmpl` (comments only), `trending-report/scripts/build-report.mjs`, `monthly-report/scripts/build-report.mjs` (save-bar text)
+- Modify: `trending-report/assets/report-trending.html.tmpl`, `monthly-report/assets/report-cm.html.tmpl` (comments only), `trending-report/scripts/build-report.mjs` (GENERATED_AT)
 - Test: both `scripts/test-build-report.mjs`
 
 **Interfaces:**
@@ -404,16 +494,16 @@ assembleHtml({ data, findings, frontend: "f", environment: "env", dateRangeLabel
 const html = fs.readFileSync(out, "utf8");
 assert.ok(html.includes("Generated 2026-11-03 10:00 UTC"));
 assert.equal(html.slice(html.indexOf("-->")).match(/\{\{[A-Z_]+\}\}/), null);   // no unreplaced placeholder after the contract comment
-assert.ok(html.includes("✓ Saved — check your Downloads"));
 ```
 
 - [ ] **Step 2: Run, confirm failure** (trending) — non-zero.
 - [ ] **Step 3: Implement**
   - Trending page 1 footer left span → `Generated {{GENERATED_AT}}`; pages 2-4 left span → `Confidential — for customer use only` (monthly's wording). Add `{{GENERATED_AT}}` to the trending contract comment.
-  - Trending save bar: replace its `<style>`/markup/script block with monthly's block verbatim. Both: button success text `✓ Saved — check your Downloads`.
+  - Template comments that still mention `render-pdf.sh` (e.g. `report-cm.html.tmpl` ~611, ~1930, and the trending equivalents): say `render-pdf.mjs`.
+  - Monthly `assets/fixtures/sample.json`: drop `cmCwvDistribution` `buckets`/`counts` (p75 only), matching the build output.
   - Monthly contract comment (lines 14-16, 57-60): `cmCwvDistribution: { lcp: { p75 }, inp: { p75 }, cls: { p75 } }` — p75 only; drop bucket wording.
-- [ ] **Step 4: Run tests + visual check** — both test files exit 0; preview + render both skills (Task 6 Step 4 commands); page 1 footer shows `Generated …` in both PDFs; save bar looks identical in both previews.
-- [ ] **Step 5: Commit** — `fix(reports): consistent footer and save bar across monthly and trending`
+- [ ] **Step 4: Run tests + visual check** — both test files exit 0; preview + render both skills (Task 6 Step 4 commands); page 1 footer shows `Generated …` in both PDFs.
+- [ ] **Step 5: Commit** — `fix(reports): consistent footer and contract comments across monthly and trending`
 
 ---
 
@@ -438,7 +528,7 @@ assert.ok(html.includes("✓ Saved — check your Downloads"));
 
 - [ ] **Step 1: Write workflow**
   - Triggers: `push` and `pull_request` on paths `plugins/tools/skills/monthly-report/**`, `plugins/tools/skills/trending-report/**`, the workflow file.
-  - Job `test`: matrix `os: [macos-latest, windows-latest, ubuntu-latest]`; `defaults.run.shell: bash` (Git Bash on Windows, mirroring Claude Code); `actions/setup-node@v4` with `node-version: 20`; for each skill dir: run `test-build-report.mjs`, `test-run-queries.mjs`, `test-render-pdf.mjs`; `node scripts/preview.mjs "$RUNNER_TEMP/<skill>.html"`; `node scripts/render-pdf.mjs --in "$RUNNER_TEMP/<skill>.html" --out "$RUNNER_TEMP/<skill>.pdf" --source "$RUNNER_TEMP/<skill>.html"`; `test -s "$RUNNER_TEMP/<skill>.pdf"`.
+  - Job `test`: matrix `os: [macos-latest, windows-latest, ubuntu-latest]`; `defaults.run.shell: bash` (Git Bash on Windows, mirroring Claude Code); `actions/setup-node@v4` with `node-version: 20`; for each skill dir: run `test-build-report.mjs`, `test-run-queries.mjs`, `test-render-pdf.mjs`, `test-review.mjs`; `node scripts/preview.mjs "$RUNNER_TEMP/<skill>.html"`; `node scripts/render-pdf.mjs --in "$RUNNER_TEMP/<skill>.html" --out "$RUNNER_TEMP/<skill>.pdf"`; `test -s "$RUNNER_TEMP/<skill>.pdf"`.
   - Job `identical` (ubuntu): `cmp` each Global-Constraints identical file between the two skills; fail on first difference.
 - [ ] **Step 2: Verify** — push branch; all 3 OS legs + `identical` green. A Linux "No usable sandbox" failure is a real-user Linux bug: fix it in `chromeArgs` (add `--no-sandbox` only when `process.getuid?.() === 0`), not in CI.
 - [ ] **Step 3: Commit** — `ci(reports): test, preview and render on macOS, Windows, Linux`
@@ -455,8 +545,13 @@ assert.ok(html.includes("✓ Saved — check your Downloads"));
   1. Install the plugin from the branch.
   2. Run `/tools:setup`. Expected: it detects PowerShell, installs Git via winget without prompts, asks for a restart, and stops.
   3. Restart Claude Code and run `/tools:setup` again. Expected: `uname -s` prints `MINGW64_NT…` and setup finishes without hangs or sudo/agreement prompts.
-  4. Restart, then run `/tools:monthly-report www.cloud.easytravel.com` and `/tools:trending-report www.cloud.easytravel.com`. Edit and save a finding twice, then build the PDF.
-  5. Expected: both PDFs land in `%USERPROFILE%\Downloads`; the PDF contains the second edit; `%USERPROFILE%\.dt-reports\` is empty afterwards.
+  4. Restart, then run `/tools:monthly-report www.cloud.easytravel.com` and `/tools:trending-report www.cloud.easytravel.com`. On each review page, edit a finding, switch Theme to Dark, and click **Create PDF**.
+  5. Expected:
+     - The PDF opens automatically from `%USERPROFILE%\Downloads`, dark, with the edit.
+     - Claude reports the path without being prompted.
+     - `%USERPROFILE%\.dt-reports\` is empty afterwards.
+  6. Run monthly again, click **Rewrite analysis**. Expected: Claude rewrites the findings and a fresh review page opens.
+  7. Run trending again, edit a finding, close the tab, then tell Claude "build the PDF". Expected: the PDF contains the edit.
   6. Also run a report skill before setup on a Git-less machine. Expected: the precheck stops with the "run `/tools:setup`" message.
 - [ ] **Step 3: Commit** — `chore(tools): bump to 2.13.0`
 

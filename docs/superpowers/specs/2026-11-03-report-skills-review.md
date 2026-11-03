@@ -110,5 +110,14 @@ macOS, Windows and Linux.
 - **U7** — Bullet budget: monthly ≤3; trending "3-4" with the same clipping cards.
 - **U8** — Drift: save-bar CSS/text, preview prompt text, trending `preview.mjs`
   duplicates template substitution instead of importing `assembleHtml`.
+- **U10** — User feedback: open HTML → edit → click Save (download to `~/Downloads`)
+  → return to Claude → pick the right option is unintuitive and confusing. Root cause:
+  a `file://` page can't write to disk, so edits had to travel through Downloads
+  (introduced 4217e24 as a step up from editing a txt file; no server alternative
+  was considered). Decision (Brandon, 2026-11-03): a local review page served by a
+  small Node server — edits autosave to the work dir, **Create PDF** renders and
+  opens the PDF in place, **Rewrite analysis** hands back to Claude; no Downloads
+  round trip, no option question, no theme question. Supersedes U2. `--no-preview`
+  remains for remote sessions (browser can't reach 127.0.0.1 there).
 - **U9** — Each skill must stay standalone (release workflow zips each skill dir
   alone), so shared files are copies; nothing checks they stay identical.
