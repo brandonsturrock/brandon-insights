@@ -15,6 +15,8 @@ try {
   const ok = fake("ok", `console.log(JSON.stringify({ ok: true, result: { kind: "records", records: [{ argv: process.argv.slice(2) }] } }));`);
   const boom = fake("boom", `console.log(JSON.stringify({ ok: false, error: { message: "boom" } })); process.exit(1);`);
   const garbage = fake("garbage", `console.log("not json");`);
+  // >64 KB of 2-byte chars: a pipe chunk boundary will split one mid-character
+  const bigUtf8 = fake("big", `console.log(JSON.stringify({ ok: true, result: { kind: "records", records: [{ s: "é".repeat(200000) }] } }));`);
   const stderrOnly = fake("stderr", `console.error("first line\\nsecond"); process.exit(1);`);
 
   const queriesDir = path.join(tmp, "queries");
@@ -52,10 +54,16 @@ try {
   assert.equal(missing[0].ok, false);
   assert.match(missing[0].error, /ENOENT/);
 
-  // resolveDtctl
-  const binDir = path.join(tmp, "bin");
-  assert.equal(resolveDtctl({ PATH: binDir }, "darwin", p => p === path.join(binDir, "dtctl")), "dtctl");
-  assert.equal(resolveDtctl({ PATH: `/x${path.delimiter}${binDir}` }, "linux", p => p === path.join(binDir, "dtctl.exe")), "dtctl");
+  // multi-byte UTF-8 survives chunked stdout
+  await run(bigUtf8, "out-utf8");
+  const written = fs.readFileSync(path.join(tmp, "out-utf8", "a.json"), "utf8");
+  assert.ok(written.length > 200000);
+  assert.ok(!written.includes("\uFFFD"));
+
+  // resolveDtctl (literal inputs: platform is injected, host path module must not matter)
+  assert.equal(resolveDtctl({ PATH: "/opt/bin" }, "darwin", p => p === "/opt/bin/dtctl"), "dtctl");
+  assert.equal(resolveDtctl({ PATH: "/x:/opt/bin" }, "linux", p => p === "/opt/bin/dtctl.exe"), "dtctl");
+  assert.equal(resolveDtctl({ PATH: "C:\\Windows;C:\\tools" }, "win32", p => p === "C:\\tools\\dtctl.exe"), "dtctl");
   assert.equal(resolveDtctl({ PATH: "", LOCALAPPDATA: "C:\\Users\\x\\AppData\\Local" }, "win32",
     p => p === "C:\\Users\\x\\AppData\\Local\\dtctl\\dtctl.exe"), "C:\\Users\\x\\AppData\\Local\\dtctl\\dtctl.exe");
   assert.equal(resolveDtctl({ PATH: "" }, "darwin", p => p === "/opt/homebrew/bin/dtctl"), "/opt/homebrew/bin/dtctl");

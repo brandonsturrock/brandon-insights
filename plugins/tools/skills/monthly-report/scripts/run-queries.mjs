@@ -29,6 +29,8 @@ function exec({ cmd, prefixArgs }, args) {
   return new Promise(resolve => {
     let stdout = "", stderr = "";
     const child = spawn(cmd, [...prefixArgs, ...args], { stdio: ["ignore", "pipe", "pipe"] });
+    child.stdout.setEncoding("utf8"); // else multi-byte chars split across pipe chunks become U+FFFD
+    child.stderr.setEncoding("utf8");
     child.stdout.on("data", d => (stdout += d));
     child.stderr.on("data", d => (stderr += d));
     child.on("error", e => resolve({ stdout, stderr: e.message }));
