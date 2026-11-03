@@ -9,7 +9,8 @@ Single owner of every install for the skills in this plugin: Git for Windows (Wi
 
 Rules:
 - Run steps in order. Stop and surface any error immediately; never skip a failing step.
-- Everything runs non-interactively in the Bash tool. Never use `sudo`, never redirect output (`>`, `&>`, `/dev/null`) on install commands — the error text is the diagnosis.
+- Everything runs non-interactively in the Bash tool. Claude never runs `sudo`; never redirect output (`>`, `&>`, `/dev/null`) on install commands — the error text is the diagnosis.
+- Run every install command with the maximum Bash timeout (600000 ms); brew, winget and cask installs often exceed the 120 s default.
 - Windows: the Bash tool must be Git Bash. Step 0 handles the case where it is not.
 - Shell state does not persist between Bash calls; repeat any `export` or full path each time.
 - Windows: `dtctl` and `node` installed during setup are not on PATH until Claude Code restarts. Whenever `dtctl` is only found via the Step 1 fallback, or was just installed, use `"$(cygpath "$LOCALAPPDATA")/dtctl/dtctl.exe"` in place of `dtctl` in every later step (2, 5, 6).
@@ -66,7 +67,7 @@ brew install dynatrace-oss/tap/dtctl || brew upgrade dtctl
 curl -fsSL https://raw.githubusercontent.com/dynatrace-oss/dtctl/main/install.sh | DTCTL_INSTALL_DIR="$HOME/.local/bin" sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
-Repeat the `export` at the start of each later Bash call, or use `"$HOME/.local/bin/dtctl"` in place of `dtctl`. Tell the user to add the `export` line to their shell profile (`~/.zshrc` or `~/.bashrc`).
+Repeat the `export` at the start of each later Bash call, or use `"$HOME/.local/bin/dtctl"` in place of `dtctl`. Note that dtctl lives in `~/.local/bin`; Step 7 tells the user how to make the PATH change permanent.
 
 **Windows:**
 ```bash
@@ -103,7 +104,7 @@ Exit 0 → continue. Command not found or exit 1 → install:
   ```
   Node lands in `C:\Program Files\nodejs`, which is not on PATH until Claude Code restarts. Verify with `"/c/Program Files/nodejs/node.exe" --version`.
 - **macOS without Homebrew:** tell the user to install the LTS from https://nodejs.org, then stop.
-- **Linux without Homebrew:** tell the user to install Node.js LTS with their package manager (e.g. `! sudo apt-get install -y nodejs`) or from https://nodejs.org, then stop.
+- **Linux without Homebrew:** tell the user to install Node.js ≥ 18 LTS in their own terminal (https://nodejs.org, NodeSource, or their package manager; distro default packages are often too old), confirm `node --version` shows ≥ 18, then run `/tools:setup` again. Stop.
 
 ---
 
@@ -177,4 +178,5 @@ Tell the user:
 - browser path (from Step 4)
 - active context name and environment URL
 - Windows only: restart Claude Code so `dtctl` and `node` are on PATH
+- macOS/Linux, if dtctl was installed to `~/.local/bin` in Step 1 (curl path): without a permanent PATH entry, `dtctl` will be "not found" in every new session. Tell the user to add `export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc` (macOS) or `~/.bashrc` (Linux), then restart Claude Code
 - skills ready: `full-page-analysis`, `user-journeys`, `trending-report`, `monthly-report`
