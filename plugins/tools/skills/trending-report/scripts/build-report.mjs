@@ -4,8 +4,10 @@
 // the trending report HTML template (report-trending.html.tmpl).
 //
 // Usage:
-//   node build-report.mjs --type trending --frontend "NAME" --data <dir> --findings <findings.md> --out <report.html>
-//   node build-report.mjs --type trending --demo --out /tmp/demo-trending.html
+//   node build-report.mjs --data <dir> --print-tables
+//   node build-report.mjs --frontend "NAME" --data <dir> --findings <findings.md> --out <report.html>
+//   node build-report.mjs --demo --out <demo.html>
+// (--type is accepted and ignored, for callers that still pass it.)
 
 import fs from "node:fs";
 import path from "node:path";
@@ -16,16 +18,15 @@ const SKILL_ROOT = path.dirname(__dirname);
 
 // ── CLI args ────────────────────────────────────────────────────────────
 function parseArgs(argv) {
-  const out = { demo: false };
+  const out = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--demo") { out.demo = true; continue; }
-    if (a.startsWith("--")) {
-      const key = a.slice(2);
-      const val = argv[i + 1];
-      out[key] = val;
-      i++;
-    }
+    if (!a.startsWith("--")) continue;
+    // A flag whose next token is another flag (or which ends the line) is a
+    // boolean (--demo, --print-tables).
+    const next = argv[i + 1];
+    if (next === undefined || next.startsWith("--")) { out[a.slice(2)] = true; }
+    else { out[a.slice(2)] = argv[++i]; }
   }
   return out;
 }
@@ -33,19 +34,15 @@ function parseArgs(argv) {
 // CLI arg parsing/validation and the renderReport(args.out) call at the
 // bottom of this file only run when the script is invoked directly (`node
 // build-report.mjs ...`) — guarded so `scripts/preview.mjs` and the tests can
-// import from here without tripping the "Missing --type" exit.
+// import from here without tripping the "Missing --out" exit.
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 const args = isMain ? parseArgs(process.argv.slice(2)) : {};
-if (isMain && args.type !== "trending") {
-  console.error('Missing/invalid --type (must be "trending")');
-  process.exit(1);
-}
-if (isMain && !args.out) {
+if (isMain && !args["print-tables"] && !args.out) {
   console.error("Missing --out <report.html>");
   process.exit(1);
 }
-if (isMain && !args.demo && !args.data) {
-  console.error("Missing --data <dir> (or pass --demo)");
+if (isMain && !args.data && (args["print-tables"] || !args.demo)) {
+  console.error("Missing --data <dir>" + (args["print-tables"] ? "" : " (or pass --demo)"));
   process.exit(1);
 }
 // How many browser×device combos to show on the Browser Performance page.
@@ -284,6 +281,33 @@ export function buildTrendingData(dataDir) {
   return { kpis, trafficMonthly, trafficWeekly, cwvMonthly, cwvWeekly, browserPerf };
 }
 
+// ── findings tables ──────────────────────────────────────────────────────
+// Pipe tables with units already converted, for findings-prompt.md: Claude
+// analyses these instead of raw query JSON. "—" = not measured, never zero.
+const NA = "—";
+const fmtWith = (f) => (v) => (v == null || v === "" || Number.isNaN(Number(v)) ? NA : f(Number(v))); // counts can arrive as "295"
+const fmtN = fmtWith((n) => n.toLocaleString("en-US"));
+// 0ms LCP/INP is an absent measurement (INP needs an interaction), not a perfect one.
+const fmtMs = fmtWith((ms) => (ms <= 0 ? NA : ms >= 1000 ? (ms / 1000).toFixed(2) + "s" : Math.round(ms) + "ms"));
+const fmtCls = fmtWith((n) => n.toFixed(3));
+const fmtPct = fmtWith((n) => n.toFixed(1) + "%");
+const table = (title, header, rows) => [`### ${title}`, header.join(" | "), ...rows.map((r) => r.join(" | "))].join("\n");
+
+export function renderTables(data) {
+  const { trafficMonthly: tm, cwvMonthly: cm, cwvWeekly: cw, browserPerf } = data;
+  return [
+    table("Monthly Traffic", ["Month", "Sessions", "XHR Requests", "Navigations", "% Desktop"],
+      tm.labels.map((m, i) => [m, fmtN(tm.sessions[i]), fmtN(tm.userActions[i]), fmtN(tm.pageLoads[i]), fmtPct(tm.pctDesktop[i])])),
+    table("Monthly CWV p75", ["Month", "LCP", "INP", "CLS"],
+      cm.labels.map((m, i) => [m, fmtMs(cm.lcp[i]), fmtMs(cm.inp[i]), fmtCls(cm.cls[i])])),
+    table("Weekly CWV p75", ["Week", "LCP", "INP", "CLS"],
+      cw.labels.map((w, i) => [w, fmtMs(cw.lcp[i]), fmtMs(cw.inp[i]), fmtCls(cw.cls[i])])),
+    table("Browser & Device (shown panels)", ["Panel", "Month", "Visits", "LCP", "INP", "CLS"],
+      browserPerf.panels.filter(Boolean).flatMap((p) =>
+        p.months.map((m) => [p.label, m.label, fmtN(m.visits), fmtMs(m.lcp), fmtMs(m.inp), fmtCls(m.cls)]))),
+  ].join("\n\n");
+}
+
 // ── demo (hardcoded) data ────────────────────────────────────────────────
 function demoTrendingData() {
   const labels = ["Feb 2026", "Mar 2026", "Apr 2026", "May 2026", "Jun 2026", "Jul 2026"];
@@ -447,4 +471,7 @@ function renderReport(outPath) {
   assembleHtml({ data, findings, frontend, environment: args.environment, dateRangeLabel, outPath });
 }
 
-if (isMain) renderReport(args.out);
+if (isMain) {
+  if (args["print-tables"]) console.log(renderTables(buildTrendingData(args.data)));
+  else renderReport(args.out);
+}

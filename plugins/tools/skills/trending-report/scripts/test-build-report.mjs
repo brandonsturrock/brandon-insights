@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildTrendingData, loadRecords } from "./build-report.mjs";
+import { buildTrendingData, loadRecords, renderTables } from "./build-report.mjs";
 
 const FILES = ["metrics-monthly", "cwv-monthly", "cwv-weekly", "browser-perf-monthly", "traffic-weekly"];
 const tmpDirs = [];
@@ -88,6 +88,45 @@ try {
   assert.equal(emptyData.browserPerf.panels.length, 6);
   assert.equal(emptyData.browserPerf.panels[0], null);
   assert.equal(emptyData.kpis[0].value, "—");
+
+  // renderTables: ready-formatted findings input (units converted, null -> em dash, string counts coerced)
+  const tt = renderTables(buildTrendingData(makeDataDir({
+    "metrics-monthly": {
+      records: [
+        { month: ts("2026-09-01"), Sessions: "38472", "XHR Requests": 1285, Navigations: 3261, "% Desktop": 99.93 },
+        { month: ts("2026-10-01"), Sessions: 41828, "XHR Requests": 4052, Navigations: 10363 },
+      ],
+    },
+    "cwv-monthly": {
+      records: [
+        { month: ts("2026-09-01"), "Largest Contentful Paint": 1600, "Interaction to Next Paint": 0, "Cumulative Layout Shift": 0 },
+        { month: ts("2026-10-01"), "Largest Contentful Paint": 1547, "Interaction to Next Paint": 180, "Cumulative Layout Shift": 690 },
+      ],
+    },
+    "cwv-weekly": { records: [{ week: ts("2026-10-04"), lcp: 2600, cls: 0 }] },
+    "browser-perf-monthly": {
+      constant: { "device.type": "desktop" },
+      records: [browserRow("Chrome", "2026-09", 1500), browserRow("Chrome", "2026-10", 90)],
+    },
+  })));
+  assert.match(tt, /^### Monthly Traffic$/m);
+  assert.match(tt, /^Month \| Sessions \| XHR Requests \| Navigations \| % Desktop$/m);
+  assert.match(tt, /^Sep 2026 \| 38,472 \| 1,285 \| 3,261 \| 99\.9%$/m);
+  assert.match(tt, /^Oct 2026 \| 41,828 \| 4,052 \| 10,363 \| —$/m);
+  assert.match(tt, /^### Monthly CWV p75$/m);
+  assert.match(tt, /^Month \| LCP \| INP \| CLS$/m);
+  assert.match(tt, /^Oct 2026 \| 1\.55s \| 180ms \| 0\.069$/m);
+  assert.match(tt, /^Sep 2026 \| 1\.60s \| — \| 0\.000$/m); // INP 0ms = not measured
+  assert.match(tt, /^### Weekly CWV p75$/m);
+  assert.match(tt, /^Week \| LCP \| INP \| CLS$/m);
+  assert.match(tt, /^Oct 4 \| 2\.60s \| — \| 0\.000$/m);
+  assert.match(tt, /^### Browser & Device \(shown panels\)$/m);
+  assert.match(tt, /^Panel \| Month \| Visits \| LCP \| INP \| CLS$/m);
+  assert.match(tt, /^Chrome · Desktop \| Sep 2026 \| 1,500 \| 2\.00s \| 150ms \| 0\.050$/m);
+  assert.match(tt, /^Chrome · Desktop \| Oct 2026 \| 90 \|/m);
+  assert.equal(tt.match(/^Chrome · Desktop/gm).length, 2); // blank slots are not printed
+  assert.doesNotMatch(tt, /NaN|undefined|null/);
+  assert.doesNotMatch(renderTables(emptyData), /NaN|undefined|null/);
 } finally {
   for (const d of tmpDirs) fs.rmSync(d, { recursive: true, force: true });
 }

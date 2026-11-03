@@ -1,148 +1,69 @@
 # Findings Prompt (Analyst Notes)
 
-## 1. Purpose
+## 1. Input
 
-The original dt-app POSTed a data dump to Davis CoPilot
-(`/platform/davis/copilot/v1/skills/conversations:message`) and pasted back
-whatever markdown it returned. There is no CoPilot call here — Claude reads
-the same raw DQL query result JSON and writes the same-shaped analyst-notes
-markdown directly, in this same turn. Follow this doc exactly in place of
-that HTTP round-trip.
+Run:
 
-## 2. Data table construction
+```bash
+node <SKILL_BASE_DIR>/scripts/build-report.mjs --data "$WORK" --print-tables
+```
 
-Build small pipe-delimited tables from the query result JSON before writing
-any prose — same shape as the original app's `buildSupplementary` /
-`buildCmSupplementary` helpers. Format numbers the same way: milliseconds
-under 1000 as `123ms`, 1000+ as `1.23s`; CLS to 3 decimals; counts with
-thousands separators.
+Analyse only that output. Never read the raw query JSON or `queries.md`. Units
+are already converted (`1.55s`, `180ms`, CLS to 3 decimals, thousands
+separators). `—` means not measured — never treat it as zero.
 
-Exact filenames for query outputs are defined in `references/queries.md`
-(owned separately) — resolve by purpose below, don't guess a filename.
-
-### Inputs
-
-- **Daily sessions query output** → sum sessions per day across devices,
-  table `Day | Sessions`
-- **Daily CWV (p75) query output** → table `Day | LCP p75 | INP p75 | CLS p75`
-- **Daily errors query output** → table `Day | JS Error Sessions | Request Error Sessions`
-- **Device comparison query output** → table `Device | Sessions | Page Loads | LCP p75 | INP p75 | CLS p75`
-- **Top pages query output** → table `Page | Visits | LCP p75 | INP p75 | CLS p75 | Avg Exceptions | Avg Req Errors`
-  (use `—` for any null metric — do not treat null as zero)
-
-## 3. Persona and instructions
+## 2. Persona and thresholds
 
 Write as a web performance analyst producing an internal review for a named
-frontend/application. Analyze ONLY the numbers in the data tables built in
-step 2 — no general Dynatrace or product advice, no invented context.
+frontend/application. Analyse ONLY the numbers in the printed tables — no
+general Dynatrace or product advice, no invented context.
 
-Apply these Core Web Vitals thresholds (p75) when flagging violations:
+Thresholds (p75) — LCP: good `<2500ms`, poor `≥4000ms`. INP: good `<200ms`,
+poor `≥500ms`. CLS: good `<0.1`, poor `≥0.25`.
 
-- **LCP**: good `<2500ms`, poor `≥4000ms`
-- **INP**: good `<200ms`, poor `≥500ms`
-- **CLS**: good `<0.1`, poor `≥0.25`
+Call out day-over-day changes, error-rate spikes, and mobile vs desktop
+differences where the tables show them.
 
-- Call out day-over-day changes.
-- Flag error-session spikes (JS or request errors) where the data shows them.
-- Compare mobile vs desktop performance where the device-level data supports it.
+## 3. Rules
 
-## 4. Output format rules
+- Bullets only (`- `). **At most 3 per heading** — each findings card is a
+  fixed-height box that clips overflow mid-sentence (about 5 rendered lines).
+  Fewer is fine.
+- ~15 words per bullet, hard cap 20. Lead with the finding, then the number.
+  No filler ("notably", "significantly", "continues to").
+- The cards' mini-stat chips already print the headline figures (session and
+  page-load totals, the CWV p75s, top pages by visits, error rates). Spend
+  bullets on what a number means, not on repeating it.
+- No preamble, conclusion, advice, or causes not evidenced in the tables.
+- Every number cited must appear in the tables. Simple arithmetic on shown
+  figures (a % change, a sum) is fine; nothing more elaborate.
+- Nothing notable in a section: the heading plus exactly `- No notable changes.`
 
-- Strict markdown, bullets only (`- `), one short sentence per bullet.
-- **Writing style:** clear and direct. Lead with the finding, follow with the supporting number. Cut filler words ("notably", "it is worth noting", "significantly", "continues to"). Avoid restating what the reader can see in the chart — state the implication or the delta, not the raw description. Aim for ~15 words per bullet; hard cap at 20.
-- **3 bullets per heading maximum**, and only if genuinely warranted by the
-  data — fewer bullets (or the fallback in §5) when there's less to say.
-  This is a hard layout budget, not a style preference: each findings card on
-  page 1 is a fixed-height box that now also carries a row of mini-stat chips
-  at its foot, and prose past the budget is silently clipped mid-sentence by
-  the card's `overflow: hidden`. Four bullets, or three that each wrap to two
-  lines, will lose the last one. Count wrapped lines, not bullets: budget
-  roughly 5 rendered lines per card.
-- Those mini-stat chips already print the headline figures for each section
-  (session and page-load totals, the three CWV p75s, the top pages by visits,
-  the error rates). Don't spend a bullet restating a number the chip shows —
-  spend it on what the number means.
-- No preamble, no conclusion, no general advice.
-- Use exactly these headings, in this order:
+## 4. Output
 
-```
-## Traffic
-## Core Web Vitals
-## Top Pages
-## Error Rates
-```
+Use exactly these headings, in this order: `## Traffic`, `## Core Web Vitals`, `## Top Pages`, `## Error Rates`.
 
-After the four rendered sections, append a `## Raw Data` section containing
-the pipe-delimited data tables built in step 2. This section is **not
-rendered** — the report builder only extracts sections matching the four
-heading keywords above. It exists solely as a reference for the analyst
-reviewing the file.
+Then append `## Raw Data` containing the printed tables verbatim, starting with
+`<!-- NOT RENDERED — for analyst reference only -->`. The builder extracts only
+the headings above, so Raw Data is never rendered.
+
+## 5. Worked example
+
+Input (from `### Daily CWV p75 (July 2026)`):
 
 ```
-## Raw Data
-<!-- NOT RENDERED — for analyst reference only -->
-
-### Daily Sessions
-Day | Sessions
-...
-
-### Daily CWV (p75)
-Day | LCP p75 | INP p75 | CLS p75
-...
-
-### Daily Errors
-Day | JS Error Sessions | Request Error Sessions
-...
-
-### Device Comparison
-Device | Sessions | Page Loads | LCP p75 | INP p75 | CLS p75
-...
-
-### Top Pages
-Page | Visits | LCP p75 | INP p75 | CLS p75 | Avg Exceptions | Avg Req Errors
-...
+Day | Device | LCP | INP | CLS
+1 | Desktop | 2.10s | 180ms | 0.050
+2 | Desktop | 2.30s | 210ms | 0.060
+3 | Desktop | 4.50s | 610ms | 0.310
+4 | Desktop | 2.20s | 190ms | 0.055
 ```
 
-## 4a. Sparse data handling
-
-The daily errors query (`cm-errors.json`) only returns rows for days that had
-matching events — days with zero errors produce no row at all. Treat absent
-days as zero when computing trends or ranges; do not cite "no data for days X–Y"
-as a finding unless the gap is itself anomalous.
-
-## 5. Anti-hallucination guardrails
-
-Stricter than the original app: this is Claude's own output now, not a
-disclaimed AI feature.
-
-- Every number cited in a bullet must trace back to a value present in the
-  data tables from step 2. Simple, directly-derivable arithmetic (e.g. %
-  change between two given numbers, a sum already shown) is fine. Do not
-  compute anything more elaborate, and do not speculate about causes not
-  evidenced in the data (no "likely due to a deploy" style guessing).
-- If a section genuinely has nothing notable, emit the heading followed by
-  exactly one bullet: `- No notable changes.` Do not invent a finding to
-  fill the quota.
-- Never reference or fabricate demo/placeholder data. Use only real values
-  from the actual query results for this run.
-
-## 6. Worked example
-
-Input data table (Current-Month, Core Web Vitals):
-
-```
-Day | LCP p75 | INP p75 | CLS p75
-2026-07-01 | 2.10s | 180ms | 0.050
-2026-07-02 | 2.30s | 210ms | 0.060
-2026-07-03 | 4.50s | 610ms | 0.310
-2026-07-04 | 2.20s | 190ms | 0.055
-```
-
-Output markdown:
+Output:
 
 ```
 ## Core Web Vitals
-- LCP and INP both crossed into poor territory on 2026-07-03 (4.50s, 610ms), a sharp one-day regression.
-- CLS also spiked to 0.310 (poor) on 2026-07-03 alongside the LCP/INP jump.
-- All three metrics returned to good on 2026-07-04, back in line with 2026-07-01/02.
+- LCP and INP both crossed into poor on the 3rd (4.50s, 610ms), a sharp one-day regression.
+- CLS also spiked to 0.310 (poor) on the 3rd, alongside the LCP/INP jump.
+- All three metrics were back to good on the 4th (2.20s, 190ms, 0.055).
 ```

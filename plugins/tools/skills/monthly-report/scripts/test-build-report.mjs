@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildCurrentMonthData, loadRecords } from "./build-report.mjs";
+import { buildCurrentMonthData, loadRecords, renderTables } from "./build-report.mjs";
 
 const FILES = [
   "cm-daily-device", "cm-daily-cwv", "cm-top-pages", "cm-top-exceptions",
@@ -73,3 +73,59 @@ const emptyData = buildCurrentMonthData(makeDataDir());
 assert.equal(emptyData.kpis[0].value, "—");
 assert.equal(emptyData.kpis[1].value, "—");
 assert.equal(typeof emptyData.monthLabel, "string");
+
+// renderTables: ready-formatted findings input (units converted, null -> em dash, string counts coerced)
+{
+  const tdir = makeDataDir({
+    "cm-daily-device": {
+      records: [
+        { day: day("2026-10-01"), "device.type": "desktop", sessions: 1303 },
+        { day: day("2026-10-01"), "device.type": "mobile", sessions: 12 },
+      ],
+    },
+    "cm-daily-cwv": { records: [{ day: day("2026-10-01"), "device.type": "desktop", lcp: 1547, inp: 180, cls: 690 }] },
+    "cm-device-compare": {
+      records: [
+        { device_type: "desktop", sessions: 4200, page_loads: 5000, lcp_p75: 1547, inp_p75: 180, cls_p75: 690 },
+        { device_type: "mobile", sessions: 1300, page_loads: 400, lcp_p75: 2300 },
+      ],
+    },
+    "cm-cwv-tier": { records: [{ lcp_good: 80, lcp_ni: 15, lcp_poor: 5, lcp_total: 100 }] },
+    "cm-top-pages": { records: [{ "page.name": "/home", count: "5883", lcp: 1760, inp: 0, cls: 0, exceptions: 0.0123, request_errors: 0 }] },
+    "cm-errors": { records: [{ day: day("2026-10-01"), "device.type": "desktop", total_sessions: "1000", js_error_sessions: "4" }] },
+    "cm-error-count": { records: [{ day: day("2026-10-01"), "error.type": "exception", error_count: 1234 }] },
+    "cm-top-exceptions": { records: [{ count: "295", "exception.type": "Error", "exception.message": "bad | thing\nline2", "error.source": "console" }] },
+    "cm-top-request-errors": { records: [{ count: "295", "http.request.method": "POST", "http.response.status_code": "403", "url.path": "/login" }] },
+  });
+  const t = renderTables(buildCurrentMonthData(tdir));
+  assert.match(t, /^### Device Comparison$/m);
+  assert.match(t, /^Device \| Sessions \| Page Loads \| LCP p75 \| INP p75 \| CLS p75$/m);
+  assert.match(t, /^Desktop \| 4,200 \| 5,000 \| 1\.55s \| 180ms \| 0\.069$/m);
+  assert.match(t, /^Mobile \| 1,300 \| 400 \| 2\.30s \| — \| —$/m);
+  assert.match(t, /\| — \|/);
+  assert.match(t, /^### Daily Sessions \(October 2026\)$/m);
+  assert.match(t, /^Day \| Desktop \| Mobile$/m);
+  assert.match(t, /^Day \| Device \| LCP \| INP \| CLS$/m);
+  assert.match(t, /^1 \| Desktop \| 1\.55s \| 180ms \| 0\.069$/m);
+  assert.match(t, /^LCP \| 80\.0% \| 15\.0% \| 5\.0%$/m);
+  assert.match(t, /^INP \| — \| — \| —$/m);
+  assert.match(t, /^\/home \| 5,883 \| 1\.76s \| — \| 0\.000 \| 0\.012 \| 0\.000$/m);
+  assert.match(t, /^1 \| 0\.4% \| 0\.0%$/m);
+  assert.match(t, /^Day \| JS Error \| Request$/m);
+  assert.match(t, /^295 \| Error \| bad \\\| thing line2 \| console$/m);
+  assert.match(t, /^295 \| POST \| 403 \| — \| \/login$/m);
+  assert.doesNotMatch(t, /NaN|undefined/);
+}
+
+// renderTables: a desktop-only frontend drops the Mobile column and rows; empty data stays clean
+{
+  const t = renderTables(buildCurrentMonthData(makeDataDir({
+    "cm-daily-device": { records: [{ day: day("2026-10-01"), "device.type": "desktop", sessions: 5000 }] },
+    "cm-device-compare": { records: [{ device_type: "desktop", sessions: 5000, page_loads: 1, lcp_p75: 100 }] },
+  })));
+  assert.match(t, /^Day \| Desktop$/m);
+  assert.doesNotMatch(t, /Mobile/);
+  const empty = renderTables(buildCurrentMonthData(makeDataDir()));
+  assert.match(empty, /^### Top Exceptions$/m);
+  assert.doesNotMatch(empty, /NaN|undefined/);
+}

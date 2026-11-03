@@ -4,8 +4,10 @@
 // the current-month report HTML template (report-cm.html.tmpl).
 //
 // Usage:
-//   node build-report.mjs --type current-month --frontend "NAME" --data <dir> --findings <findings.md> --out <report.html>
-//   node build-report.mjs --type current-month --demo --out /tmp/demo-cm.html
+//   node build-report.mjs --data <dir> --print-tables
+//   node build-report.mjs --frontend "NAME" --data <dir> --findings <findings.md> --out <report.html>
+//   node build-report.mjs --demo --out <demo.html>
+// (--type is accepted and ignored, for callers that still pass it.)
 
 import fs from "node:fs";
 import path from "node:path";
@@ -16,16 +18,15 @@ const SKILL_ROOT = path.dirname(__dirname);
 
 // ── CLI args ────────────────────────────────────────────────────────────
 function parseArgs(argv) {
-  const out = { demo: false };
+  const out = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--demo") { out.demo = true; continue; }
-    if (a.startsWith("--")) {
-      const key = a.slice(2);
-      const val = argv[i + 1];
-      out[key] = val;
-      i++;
-    }
+    if (!a.startsWith("--")) continue;
+    // A flag whose next token is another flag (or which ends the line) is a
+    // boolean (--demo, --print-tables).
+    const next = argv[i + 1];
+    if (next === undefined || next.startsWith("--")) { out[a.slice(2)] = true; }
+    else { out[a.slice(2)] = argv[++i]; }
   }
   return out;
 }
@@ -35,19 +36,15 @@ function parseArgs(argv) {
 // build-report.mjs ...`) — guarded so `scripts/preview.mjs` can `import
 // { assembleHtml }` from here (to reuse the placeholder-substitution /
 // Chart.js-inlining / contenteditable logic) without tripping the "Missing
-// --type" exit this file's own CLI entry requires.
+// --out" exit this file's own CLI entry requires.
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 const args = isMain ? parseArgs(process.argv.slice(2)) : {};
-if (isMain && args.type !== "current-month") {
-  console.error('Missing/invalid --type (must be "current-month")');
-  process.exit(1);
-}
-if (isMain && !args.out) {
+if (isMain && !args["print-tables"] && !args.out) {
   console.error("Missing --out <report.html>");
   process.exit(1);
 }
-if (isMain && !args.demo && !args.data) {
-  console.error("Missing --data <dir> (or pass --demo)");
+if (isMain && !args.data && (args["print-tables"] || !args.demo)) {
+  console.error("Missing --data <dir>" + (args["print-tables"] ? "" : " (or pass --demo)"));
   process.exit(1);
 }
 // ── shared formatting helpers ──────────────────────────────────────────────
@@ -377,6 +374,49 @@ export function buildCurrentMonthData(dataDir) {
   };
 }
 
+// ── findings tables ──────────────────────────────────────────────────────
+// Pipe tables with units already converted, for findings-prompt.md: Claude
+// analyses these instead of raw query JSON. "—" = not measured, never zero.
+const NA = "—";
+const fmtWith = (f) => (v) => (v == null || v === "" || Number.isNaN(Number(v)) ? NA : f(Number(v))); // counts can arrive as "295"
+const fmtN = fmtWith((n) => n.toLocaleString("en-US"));
+const fmt3 = fmtWith((n) => n.toFixed(3)); // CLS and per-session averages
+const fmtPct = fmtWith((n) => n.toFixed(1) + "%");
+const fmtDur = (v) => (Number(v) > 0 ? fmtMs(v) : NA); // 0ms LCP/INP is an absent measurement (INP needs an interaction)
+const txt = (v) => (v == null || v === "" ? NA : String(v).replace(/\s+/g, " ").replace(/\|/g, "\\|"));
+const table = (title, header, rows) => [`### ${title}`, header.join(" | "), ...rows.map((r) => r.join(" | "))].join("\n");
+
+export function renderTables(data) {
+  const { monthLabel, cmDailyDevice: dd, cmDailyCwv: cwv, cmCwvTier: tier, cmErrorRates: er, cmErrorCounts: ec } = data;
+  const sessionCols = [["Desktop", dd.desktop], ["Mobile", dd.mobile]].filter(([, s]) => s);
+  const devices = ["desktop", "mobile"].filter((d) => cwv.lcp[d]);
+  const types = Object.keys(ec.byType);
+  return [
+    table(`Daily Sessions (${monthLabel})`, ["Day", ...sessionCols.map(([n]) => n)],
+      dd.labels.map((d, i) => [d, ...sessionCols.map(([, s]) => fmtN(s[i]))])),
+    table(`Daily CWV p75 (${monthLabel})`, ["Day", "Device", "LCP", "INP", "CLS"],
+      cwv.labels.flatMap((d, i) => devices.map((v) =>
+        [d, v[0].toUpperCase() + v.slice(1), fmtDur(cwv.lcp[v][i]), fmtDur(cwv.inp[v][i]), fmt3(cwv.cls[v][i])]))),
+    table("Device Comparison", ["Device", "Sessions", "Page Loads", "LCP p75", "INP p75", "CLS p75"],
+      data.deviceCompareRows.map((r) => [r.deviceType, fmtN(r.sessions), fmtN(r.pageLoads), fmtDur(r.lcpP75), fmtDur(r.inpP75), fmt3(r.clsP75)])),
+    table("CWV Tiers", ["Metric", "Good", "Needs Improvement", "Poor"],
+      ["lcp", "inp", "cls"].map((k) => {
+        const t = tier[k]; // all-zero = no measurements (buckets otherwise sum to ~100)
+        return [k.toUpperCase(), ...(t.good + t.ni + t.poor ? [t.good, t.ni, t.poor].map(fmtPct) : [NA, NA, NA])];
+      })),
+    table("Top Pages", ["Page", "Visits", "LCP p75", "INP p75", "CLS p75", "Avg Exceptions", "Avg Req Errors"],
+      data.topPagesRows.map((r) => [txt(r.name), fmtN(r.count), fmtDur(r.lcp), fmtDur(r.inp), fmt3(r.cls), fmt3(r.exceptions), fmt3(r.requestErrors)])),
+    table("Daily Error Rates (% of sessions)", ["Day", "JS Error %", "Request Error %"],
+      er.labels.map((d, i) => [d, fmtPct(er.jsErrorRate[i]), fmtPct(er.reqErrorRate[i])])),
+    table("Daily Error Counts", ["Day", ...types],
+      ec.labels.map((d, i) => [d, ...types.map((t) => fmtN(ec.byType[t][i]))])),
+    table("Top Exceptions", ["Count", "Type", "Message", "Source"],
+      data.topExceptionRows.map((r) => [fmtN(r.count), txt(r.type), txt(r.message), txt(r.source)])),
+    table("Top Request Errors", ["Count", "Method", "Status", "Host", "Path"],
+      data.topRequestErrorRows.map((r) => [fmtN(r.count), txt(r.method), txt(r.status), txt(r.host), txt(r.path)])),
+  ].join("\n\n");
+}
+
 // ── demo (hardcoded) data ────────────────────────────────────────────────
 function demoCurrentMonthData() {
   const dayLabels = Array.from({ length: 30 }, (_, i) => String(i + 1));
@@ -562,4 +602,7 @@ function renderReport(outPath) {
   assembleHtml({ data, findings, frontend, environment: args.environment, dateRangeLabel, generatedAt, outPath });
 }
 
-if (isMain) renderReport(args.out);
+if (isMain) {
+  if (args["print-tables"]) console.log(renderTables(buildCurrentMonthData(args.data)));
+  else renderReport(args.out);
+}
