@@ -132,13 +132,12 @@ Once in the Claude Code CLI and once in a desktop-app local session, as a fresh 
 5. Monthly again → Rewrite analysis → Claude rewrites the findings and opens a fresh review page.
 6. Trending again → edit, close the tab, tell Claude "build the PDF" → PDF contains the edit.
 7. On a Git-less machine, run a report skill before setup → precheck stops with the "run `/tools:setup`" message.
-Also: push the branch and confirm `.github/workflows/report-skills-ci.yml` is green on all 6 legs (first real Windows/Linux run).
 
 ## Follow-ups (deliberately not done in this branch)
 
 - `full-page-analysis` and `user-journeys` still use the old render-pdf.sh/.ps1 + Downloads save flow — port them to render-pdf.mjs / review.mjs.
 - `--cleanup` only refuses blank paths and ancestors of the PDF; an allow-list rooted at `~/.dt-reports` would stop a mistyped path (needs an injectable root for tests).
-- CI checks whole shared files for identity, not the duplicated `REVIEW_BAR` / `loadRecords` blocks inside the two build scripts.
+- Nothing automatically checks that the files shared by both skills (and the duplicated `REVIEW_BAR` / `loadRecords` blocks) stay identical — `cmp` them by hand before releasing.
 - review.mjs: malformed request-targets get 500 before the auth check and re-arm the idle timer; `render` must stay synchronous (commented); autosave status can briefly overwrite "Creating PDF…".
 - Linux: Ubuntu's `~/.bashrc` returns early for non-interactive shells, so a PATH line appended at the end may not apply; zsh users on Linux are pointed at `~/.bashrc`. `setup/SKILL.md` "run /tools:setup again" lacks the standalone `/setup` hint.
 - Tables: error rates print with 1 decimal (hides <0.05%); weekly sessions aren't printed for findings; long exception messages aren't truncated.
