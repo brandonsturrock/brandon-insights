@@ -42,9 +42,8 @@ differences where the tables show them.
 
 Use exactly these headings, in this order: `## Traffic`, `## Core Web Vitals`, `## Browser & Device`.
 
-Then append `## Raw Data` containing the printed tables verbatim, starting with
-`<!-- NOT RENDERED — for analyst reference only -->`. The builder extracts only
-the headings above, so Raw Data is never rendered.
+Do not write a `## Raw Data` section; the skill appends the printed tables
+after your headings.
 
 ## 5. Worked example
 
