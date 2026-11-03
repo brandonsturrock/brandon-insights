@@ -44,8 +44,8 @@ Dynatrace access — use this when changing the template or the design layer:
 node scripts/preview.mjs
 ```
 
-Reads `assets/fixtures/sample.json` and writes a standalone HTML file; override with
-`--fixture` / `--out`. Render it to PDF with `assets/render-pdf.sh <in.html> <out.pdf>`.
+Reads `assets/fixtures/sample.json` and writes a standalone HTML file; override the
+output with `--out <path>` or a positional path. Render it to PDF with `assets/render-pdf.sh <in.html> <out.pdf>`.
 
 Verify the resulting PDF with `sips` (CoreGraphics), not `pdftoppm` — poppler
 composites Chrome's canvas transparency groups correctly and is blind to a class of

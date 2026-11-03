@@ -26,7 +26,7 @@ const fixture = JSON.parse(fs.readFileSync(path.join(SKILL_ROOT, "assets", "fixt
 
 const argv = process.argv.slice(2);
 const flagIdx = argv.indexOf("--out");
-const outArg = flagIdx >= 0 ? argv[flagIdx + 1] : argv.find((a) => !a.startsWith("-"));
+const outArg = flagIdx >= 0 ? argv[flagIdx + 1] : argv.find((a, i) => !a.startsWith("-") && !argv[i - 1]?.startsWith("--"));
 const outPath = outArg || path.join(process.env.CLAUDE_SCRATCH_DIR || os.tmpdir(), "preview-cm.html");
 
 assembleHtml({
