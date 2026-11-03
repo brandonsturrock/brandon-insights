@@ -62,22 +62,22 @@
         cls: { desktop: [...], mobile: [...] },
       },
 
-      topPagesRows: [                                  // table, page 4 (PagePerfRow shape, top 10 by visits)
+      topPagesRows: [                                  // table, page 2 (PagePerfRow shape, top 10 by visits)
         { name: "/checkout", count: 9200, lcp: 2100, inp: 150, cls: 0.03, exceptions: 4, requestErrors: 2 },
       ],
 
-      cmErrorRates: {                                   // 2 line charts (percent), page 5
+      cmErrorRates: {                                   // 2 line charts (percent), page 4
         labels: ["1", "2", ... "31"],
         jsErrorRate: [0.4, 0.6, ...], reqErrorRate: [1.1, 0.9, ...],
       },
-      cmErrorCounts: {                                   // stacked bar chart, page 5 — folded to top 5 + "Other"
+      cmErrorCounts: {                                   // stacked bar chart, page 4 — folded to top 5 + "Other"
         labels: ["1", "2", ... "31"],                     // by the template's own script (see foldErrorTypes)
         byType: { "JS Error": [3,5,...], "Timeout": [1,0,...] },   // any number of series, keyed by error type
       },
-      topExceptionRows: [                                // table, page 5 (top 5 rendered)
+      topExceptionRows: [                                // table, page 4 (top 5 rendered)
         { count: 120, type: "TypeError", message: "Cannot read properties of undefined", source: "app.bundle.js" },
       ],
-      topRequestErrorRows: [                             // table, page 5 (top 5 rendered)
+      topRequestErrorRows: [                             // table, page 4 (top 5 rendered)
         { count: 80, method: "GET", status: 500, host: "api.acme.com", path: "/v1/cart" },
       ],
     }
@@ -1315,7 +1315,7 @@ function renderTable(elId, columns, rows) {
 
 // Same column-config shape as renderTable, built as `.flex-bars` markup
 // instead of a <table> — for the one panel on a fixed-height page that owns
-// the whole page (Top Pages, page 4), where a <tr> sized to its own content
+// the whole page (Top Pages, page 2), where a <tr> sized to its own content
 // leaves the panel's spare height as dead space below the last row instead
 // of the rows growing to fill it. The first column is always the row label.
 function renderFlexBars(elId, columns, rows) {

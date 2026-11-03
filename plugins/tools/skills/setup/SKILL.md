@@ -13,7 +13,7 @@ Rules:
 - Run every install command with the maximum Bash timeout (600000 ms); brew, winget and cask installs often exceed the 120 s default.
 - Windows: the Bash tool must be Git Bash. Step 0 handles the case where it is not.
 - Shell state does not persist between Bash calls; repeat any `export` or full path each time.
-- Windows: `dtctl` and `node` installed during setup are not on PATH until Claude Code restarts. Whenever `dtctl` is only found via the Step 1 fallback, or was just installed, use `"$(cygpath "$LOCALAPPDATA")/dtctl/dtctl.exe"` in place of `dtctl` in every later step (2, 5, 6).
+- Windows: `dtctl` and `node` installed during setup are not on PATH until a new terminal window is opened. Whenever `dtctl` is only found via the Step 1 fallback, or was just installed, use `"$(cygpath "$LOCALAPPDATA")/dtctl/dtctl.exe"` in place of `dtctl` in every later step (2, 5, 6).
 
 ---
 
@@ -39,7 +39,7 @@ uname -s
 
     If `winget` is not found, tell the user to install Git from https://git-scm.com/download/win instead.
   - One exists → tell the user to set the user environment variable `CLAUDE_CODE_GIT_BASH_PATH` to that `bash.exe` path (Start menu → "Edit environment variables for your account" → New).
-  - Either way, tell the user to fully restart Claude Code (CLI or desktop app) and run `/tools:setup` again. Stop here.
+  - Either way, tell the user to close this terminal window and open a new one before starting Claude Code again (desktop app: quit it fully and reopen; VS Code: close all windows), then run `/tools:setup` again. Stop here.
 
 ---
 
@@ -49,7 +49,7 @@ uname -s
 dtctl version
 ```
 
-Windows fallback (dtctl is not on PATH until Claude Code restarts):
+Windows fallback (dtctl is not on PATH until a new terminal window is opened):
 
 ```bash
 "$(cygpath "$LOCALAPPDATA")/dtctl/dtctl.exe" version
@@ -102,7 +102,7 @@ Exit 0 → continue. Command not found or exit 1 → install:
   ```bash
   winget install --id OpenJS.NodeJS.LTS -e --accept-source-agreements --accept-package-agreements
   ```
-  Node lands in `C:\Program Files\nodejs`, which is not on PATH until Claude Code restarts. Verify with `"/c/Program Files/nodejs/node.exe" --version`.
+  Node lands in `C:\Program Files\nodejs`, which is not on PATH until a new terminal window is opened. Verify with `"/c/Program Files/nodejs/node.exe" --version`.
 - **macOS without Homebrew:** tell the user to install the LTS from https://nodejs.org, then stop.
 - **Linux without Homebrew:** tell the user to install Node.js ≥ 18 LTS in their own terminal (https://nodejs.org, NodeSource, or their package manager; distro default packages are often too old), confirm `node --version` shows ≥ 18, then run `/tools:setup` again. Stop.
 
@@ -177,6 +177,6 @@ Tell the user:
 - Node.js version
 - browser path (from Step 4)
 - active context name and environment URL
-- Windows only: restart Claude Code so `dtctl` and `node` are on PATH
+- Windows only: tell the user to close this terminal window and open a new one before starting Claude Code again (desktop app: quit it fully and reopen; VS Code: close all windows), so `dtctl` and `node` are on PATH
 - macOS/Linux, if dtctl was installed to `~/.local/bin` in Step 1 (curl path): without a permanent PATH entry, `dtctl` will be "not found" in every new session. Tell the user to add `export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc` (macOS) or `~/.bashrc` (Linux), then restart Claude Code
 - skills ready: `full-page-analysis`, `user-journeys`, `trending-report`, `monthly-report`

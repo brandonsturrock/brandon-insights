@@ -19,8 +19,8 @@ One Bash call:
 uname -s && dtctl config current-context && node --version && node <SKILL_BASE_DIR>/scripts/render-pdf.mjs --find-browser
 ```
 
-- Fails with `uname` not recognized, or a `&&` parse error: Claude is running PowerShell (Windows without Git Bash). Tell the user to run `/tools:setup`, which installs Git for Windows, then restart Claude Code. Stop.
-- Any other failure: tell the user to run `/tools:setup` (on Windows, restart Claude Code afterwards). Stop.
+- Fails with `uname` not recognized, or a `&&` parse error: Claude is running PowerShell (Windows without Git Bash). Tell the user to run `/tools:setup` (or `/setup` if you installed the skills standalone), which installs Git for Windows, then close this terminal window and open a new one before starting Claude Code again (desktop app: quit it fully and reopen; VS Code: close all windows). Stop.
+- Any other failure: tell the user to run `/tools:setup` (or `/setup` if you installed the skills standalone) (on Windows, afterwards close this terminal window and open a new one before starting Claude Code again (desktop app: quit it fully and reopen; VS Code: close all windows)). Stop.
 
 ## Context
 
@@ -36,15 +36,15 @@ node <SKILL_BASE_DIR>/scripts/run-queries.mjs --list-frontends --context "$CONTE
 
 It prints `<page_loads>` TAB `<frontend.name>` lines, busiest first (nothing printed or non-zero exit: show the output and stop). Ask one `AskUserQuestion` with the top 4 (label = name, description = "N page loads (7d)"); "Other" lets the user type any name.
 
-Set `FRONTEND`. `SLUG` = FRONTEND lowercased, each run of characters outside `[a-z0-9.-]` replaced by `-`, leading/trailing `-` trimmed. `YYYY-MM` = last complete calendar month (UTC). `NAME` = `<SLUG>-trending-<YYYY-MM>`; `WORK` = `$HOME/.dt-reports/<NAME>` (e.g. `$HOME/.dt-reports/www.cloud.easytravel.com-trending-2026-10`).
+Set `FRONTEND`. In commands, single-quote the name as `'<FRONTEND>'` and write a literal `'` in it as `'\''` (inside double quotes bash would change `"`, `$` and backticks). `SLUG` = FRONTEND lowercased, each run of characters outside `[a-z0-9.-]` replaced by `-`, leading/trailing `-` trimmed. `YYYY-MM` = last complete calendar month (UTC). `NAME` = `<SLUG>-trending-<YYYY-MM>`; `WORK` = `$HOME/.dt-reports/<NAME>` (e.g. `$HOME/.dt-reports/www.cloud.easytravel.com-trending-2026-10`).
 
 ## Step 2 - Queries
 
 ```bash
-node <SKILL_BASE_DIR>/scripts/run-queries.mjs --frontend "<FRONTEND>" --out "$WORK" --context "$CONTEXT"
+node <SKILL_BASE_DIR>/scripts/run-queries.mjs --frontend '<FRONTEND>' --out "$WORK" --context "$CONTEXT"
 ```
 
-Prints `<query>: N rows` or `<query>: FAILED <error>` per query. Any `FAILED` (exit 1): show the line and stop. Exit 2 (dtctl missing): tell the user to run `/tools:setup`. Every query at 0 rows: the frontend has no data for the period; tell the user and stop.
+Prints `<query>: N rows` or `<query>: FAILED <error>` per query. Any `FAILED` (exit 1): show the line and stop. Exit 2 (dtctl missing): tell the user to run `/tools:setup` (or `/setup` if you installed the skills standalone). If the `metrics-monthly` line says `0 rows`: the frontend has no data for the period (usually a mistyped name); tell the user and stop.
 
 ## Step 3 - Findings
 
@@ -57,7 +57,7 @@ Follow `references/findings-prompt.md`; write `$WORK/findings.md` with a quoted 
 ## Step 4 - Build
 
 ```bash
-node <SKILL_BASE_DIR>/scripts/build-report.mjs --frontend "<FRONTEND>" --environment "$CONTEXT" --data "$WORK" --findings "$WORK/findings.md" --out "$WORK/$NAME.html" > /dev/null
+node <SKILL_BASE_DIR>/scripts/build-report.mjs --frontend '<FRONTEND>' --environment "$CONTEXT" --data "$WORK" --findings "$WORK/findings.md" --out "$WORK/$NAME.html" > /dev/null
 ```
 
 Non-zero exit: show stderr, say the data is kept in `$WORK`, stop.
@@ -89,7 +89,7 @@ Then wait for the exit notification; never poll. By exit code:
 - 0: give the user the `PDF:` path.
 - 3 (rewrite): redo Steps 3-4, then restart this step.
 - 4: say "Timed out after an hour without activity; your edits are saved," and offer the `--no-preview` command.
-- 2: no browser found; tell the user to run `/tools:setup`.
+- 2: no browser found; tell the user to run `/tools:setup` (or `/setup` if you installed the skills standalone).
 - Anything else: show stderr, say edits and data are kept in `$WORK`, stop.
 
 If the user asks for the PDF while the review is still running (for example, they closed the tab): stop the background command and run the `--no-preview` command; their edits are already saved.
