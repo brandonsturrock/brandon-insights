@@ -61,16 +61,6 @@ function compact(n) {
   if (Math.abs(n) >= 1e3) return (n / 1e3).toFixed(1) + "K";
   return String(Math.round(n));
 }
-function pctChange(curr, prev) {
-  if (curr == null || prev == null || prev === 0) return null;
-  return ((curr - prev) / prev) * 100;
-}
-function monthLabel(ms) {
-  return new Date(ms).toLocaleString("en-US", { month: "short", timeZone: "UTC" });
-}
-function monthYearLabel(ms) {
-  return new Date(ms).toLocaleString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
-}
 function dayLabel(ms) {
   return String(new Date(ms).getUTCDate());
 }
@@ -80,13 +70,20 @@ function dayLabel(ms) {
 // references/queries.md): rows inline under `result.records` when
 // `result.kind === "records"`. Be defensive about the exact envelope nesting
 // since it isn't pinned down 1:1 anywhere — accept a bare array too.
-function loadRecords(dataDir, filename) {
+//
+// dtctl hoists columns that are identical in every row into `result.constant`
+// and drops null keys from each record — merge the constants back so a
+// desktop-only frontend still has `device.type` on every row.
+export function loadRecords(dataDir, filename) {
   const p = path.join(dataDir, filename);
   const raw = fs.readFileSync(p, "utf8");
   const parsed = JSON.parse(raw);
   if (Array.isArray(parsed)) return parsed;
   const result = parsed.result ?? parsed;
-  if (result && Array.isArray(result.records)) return result.records;
+  if (result && Array.isArray(result.records)) {
+    const constant = result.constant && typeof result.constant === "object" ? result.constant : null;
+    return constant ? result.records.map((r) => ({ ...constant, ...r })) : result.records;
+  }
   if (Array.isArray(result)) return result;
   throw new Error(`Unexpected JSON envelope shape in ${filename} (kind=${result && result.kind})`);
 }
@@ -157,11 +154,10 @@ function loadFindings(findingsPath, sections) {
 }
 
 // ── data transforms: current-month ──────────────────────────────────────
-function buildCurrentMonthData(dataDir) {
+export function buildCurrentMonthData(dataDir) {
   const dailyDeviceRows = loadRecords(dataDir, "cm-daily-device.json");
   const deviceCompareRows = loadRecords(dataDir, "cm-device-compare.json");
   const cwvTierRow = loadRecords(dataDir, "cm-cwv-tier.json")[0] || {};
-  const distRow = loadRecords(dataDir, "cm-cwv-distribution.json")[0] || {};
   const dailyCwvRows = loadRecords(dataDir, "cm-daily-cwv.json");
   const topPagesRows = loadRecords(dataDir, "cm-top-pages.json");
   const errorRows = loadRecords(dataDir, "cm-errors.json");
@@ -169,20 +165,29 @@ function buildCurrentMonthData(dataDir) {
   const topExceptionsRows = loadRecords(dataDir, "cm-top-exceptions.json");
   const topRequestErrorsRows = loadRecords(dataDir, "cm-top-request-errors.json");
 
-  // Strip warm-up days (queries start 2d before month start to avoid timeseries artifacts on day 1)
+  // Strip warm-up days (queries start 2d before month start to avoid timeseries
+  // artifacts on day 1). The report month is the month of the newest day in the
+  // data, not the wall clock — a run that straddles a month boundary would
+  // otherwise filter out every row. ISO day strings sort lexicographically.
+  const newestDay = dailyDeviceRows.map((r) => r.day).sort().pop();
   const now = new Date();
-  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)).toISOString().slice(0, 10);
+  const anchor = newestDay ? new Date(newestDay) : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)); // no data: previous month by clock
+  const monthStartDate = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), 1));
+  const monthStart = monthStartDate.toISOString().slice(0, 10);
+  const monthLabel = monthStartDate.toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
   const inMonth = (r) => r.day.slice(0, 10) >= monthStart;
   const dailyDeviceRowsFiltered = dailyDeviceRows.filter(inMonth);
   const dailyCwvRowsFiltered = dailyCwvRows.filter(inMonth);
   const errorCountRowsFiltered = errorCountRows.filter(inMonth);
 
   // cmDailyDevice
-  const days = [...new Set(dailyDeviceRowsFiltered.map((r) => r.day))].sort((a, b) => a - b);
+  const days = [...new Set(dailyDeviceRowsFiltered.map((r) => r.day))].sort();
   const dayLabels = days.map(dayLabel);
   const byDayDevice = (rows, valueKey, deviceKey = "device.type") => {
-    const desktop = new Array(days.length).fill(0);
-    const mobile = new Array(days.length).fill(0);
+    // null, not 0: a day with no row is "not measured" — 0 would plot as a
+    // perfect "0ms — good" score (or a traffic collapse).
+    const desktop = new Array(days.length).fill(null);
+    const mobile = new Array(days.length).fill(null);
     rows.forEach((r) => {
       const idx = days.indexOf(r.day);
       if (idx === -1) return;
@@ -238,22 +243,11 @@ function buildCurrentMonthData(dataDir) {
     cls: tierPct(cwvTierRow.cls_good, cwvTierRow.cls_ni, cwvTierRow.cls_poor, cwvTierRow.cls_total),
   };
 
-  // cmCwvDistribution
-  const LCP_BUCKETS = ["0-1s", "1-2s", "2-3s", "3-4s", "4-5s", "5-6s", "6-7s", "7-8s", "8-9s", "9-10s", "10s+"];
-  // INP's own scale, not LCP's 1000ms-wide one: good/poor sit at 200ms/500ms,
-  // two orders of magnitude below LCP's thresholds, so LCP's buckets put
-  // essentially every real INP sample in bucket 0 and nothing else — a
-  // histogram that is structurally incapable of showing a distribution. 100ms
-  // steps to 1s (+ a tail) land both thresholds exactly on a bucket edge
-  // (200ms is the b1/b2 edge, 500ms is the b4/b5 edge) — matches the
-  // cm-cwv-distribution.dql bucket boundaries above.
-  const INP_BUCKETS = ["0-100ms", "100-200ms", "200-300ms", "300-400ms", "400-500ms", "500-600ms", "600-700ms", "700-800ms", "800-900ms", "900ms-1s", "1s+"];
-  const CLS_BUCKETS = ["0-0.1", "0.1-0.2", "0.2-0.3", "0.3-0.4", "0.4-0.5", "0.5-0.6", "0.6-0.7", "0.7-0.8", "0.8-0.9", "0.9-1.0", "1.0+"];
-  const bucketCounts = (row, prefix) => Array.from({ length: 11 }, (_, i) => row[`${prefix}_b${i}`] || 0);
+  // cmCwvDistribution: p75 only (the template's metric-tiles read nothing else)
   const cmCwvDistribution = {
-    lcp: { buckets: LCP_BUCKETS, counts: bucketCounts(distRow, "lcp"), p75: blended("lcp_p75") },
-    inp: { buckets: INP_BUCKETS, counts: bucketCounts(distRow, "inp"), p75: blended("inp_p75") },
-    cls: { buckets: CLS_BUCKETS, counts: bucketCounts(distRow, "cls"), p75: blended("cls_p75") == null ? null : blended("cls_p75") / 10000 },
+    lcp: { p75: blended("lcp_p75") },
+    inp: { p75: blended("inp_p75") },
+    cls: { p75: blended("cls_p75") == null ? null : blended("cls_p75") / 10000 },
   };
 
   // cmDailyCwv
@@ -302,9 +296,10 @@ function buildCurrentMonthData(dataDir) {
   const errByDay = new Map();
   errorRows.forEach((r) => {
     const cur = errByDay.get(r.day) || { total: 0, js: 0, req: 0 };
-    cur.total += r.total_sessions || 0;
-    cur.js += r.js_error_sessions || 0;
-    cur.req += r.req_error_sessions || 0;
+    // dtctl returns these counts as strings; `+=` on a string concatenates.
+    cur.total += Number(r.total_sessions) || 0;
+    cur.js += Number(r.js_error_sessions) || 0;
+    cur.req += Number(r.req_error_sessions) || 0;
     errByDay.set(r.day, cur);
   });
   // Plotted across the WHOLE month (the same `days` axis every other daily
@@ -331,7 +326,7 @@ function buildCurrentMonthData(dataDir) {
   // summed across device. Other types (csp, ...) are dropped — the stacked
   // chart has no room for a long tail of series.
   const ERROR_SERIES = { exception: "JS Error", request: "Request" };
-  const errCountDays = [...new Set(errorCountRowsFiltered.map((r) => r.day))].sort((a, b) => a - b);
+  const errCountDays = [...new Set(errorCountRowsFiltered.map((r) => r.day))].sort();
   const byType = Object.fromEntries(Object.values(ERROR_SERIES).map((n) => [n, new Array(errCountDays.length).fill(0)]));
   errorCountRowsFiltered.forEach((r) => {
     const name = ERROR_SERIES[r["error.type"]];
@@ -360,12 +355,14 @@ function buildCurrentMonthData(dataDir) {
   // three vitals as rated metric-tiles read straight off cmCwvDistribution's
   // p75 (see renderKpis). Per-KPI `color` is gone with them — it was a raw
   // hex assigned per metric rather than per state, so it said nothing.
+  const hasDeviceData = deviceCompareRows.length > 0;
   const kpis = [
-    { label: "Sessions", value: compact(totalSessions), change: null, lowerIsBetter: false },
-    { label: "Page Loads", value: compact(totalPageLoads), change: null, lowerIsBetter: false },
+    { label: "Sessions", value: hasDeviceData ? compact(totalSessions) : "—", change: null, lowerIsBetter: false },
+    { label: "Page Loads", value: hasDeviceData ? compact(totalPageLoads) : "—", change: null, lowerIsBetter: false },
   ];
 
   return {
+    monthLabel,
     kpis,
     cmDailyDevice,
     deviceCompareRows: deviceCompare,
@@ -403,9 +400,9 @@ function demoCurrentMonthData() {
       cls: { good: 90, ni: 7, poor: 3 },
     },
     cmCwvDistribution: {
-      lcp: { buckets: ["0-1s", "1-2s", "2-3s", "3-4s", "4-5s", "5-6s", "6-7s", "7-8s", "8-9s", "9-10s", "10s+"], counts: [500, 4200, 5100, 2300, 900, 400, 200, 100, 50, 30, 20], p75: 2600 },
-      inp: { buckets: ["0-100ms", "100-200ms", "200-300ms", "300-400ms", "400-500ms", "500-600ms", "600-700ms", "700-800ms", "800-900ms", "900ms-1s", "1s+"], counts: [500, 4200, 5100, 2300, 900, 400, 200, 100, 50, 30, 20], p75: 210 },
-      cls: { buckets: ["0-0.1", "0.1-0.2", "0.2-0.3", "0.3-0.4", "0.4-0.5", "0.5-0.6", "0.6-0.7", "0.7-0.8", "0.8-0.9", "0.9-1.0", "1.0+"], counts: [8000, 900, 300, 100, 50, 20, 10, 5, 3, 1, 0], p75: 0.06 },
+      lcp: { p75: 2600 },
+      inp: { p75: 210 },
+      cls: { p75: 0.06 },
     },
     cmDailyCwv: {
       labels: dayLabels,
@@ -440,7 +437,7 @@ function demoFindings(sections) {
 }
 
 // ── render ───────────────────────────────────────────────────────────────
-// 5-page layout: Page 1 = Executive Summary (all findings), Pages 2-5 = chart detail pages (no findings panels)
+// 4-page layout: Page 1 = Executive Summary (all findings), Pages 2-4 = chart detail pages (no findings panels)
 const CM_SECTIONS = { FINDINGS_TRAFFIC_HTML: "Traffic", FINDINGS_CWV_HTML: "Core Web Vitals", FINDINGS_PAGES_HTML: "Pages", FINDINGS_ERRORS_HTML: "Error" };
 
 // Placeholder substitution + Chart.js inlining + contenteditable/save-bar
@@ -559,7 +556,8 @@ function renderReport(outPath) {
   // is exactly why fixture-only verification never caught it.
   const generatedAt = `${now.toISOString().slice(0, 16).replace("T", " ")} UTC`;
   const prevMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
-  const dateRangeLabel = prevMonth.toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+  // A real run labels the report with the month its data covers; the demo has no data, so it keeps the clock.
+  const dateRangeLabel = args.demo ? prevMonth.toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" }) : data.monthLabel;
 
   assembleHtml({ data, findings, frontend, environment: args.environment, dateRangeLabel, generatedAt, outPath });
 }
