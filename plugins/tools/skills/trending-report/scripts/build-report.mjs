@@ -194,17 +194,19 @@ export function buildTrendingData(dataDir) {
     pctDesktop: metricsRows.map((r) => (r["% Desktop"] == null ? null : r["% Desktop"])),
   };
 
+  // A 0 LCP/INP is "not measured" (INP needs an interaction), never a perfect score; CLS 0 is real.
+  const absentIfZero = (v) => (v == null || v <= 0 ? null : v);
   const cwvMonthly = {
     labels: cwvRows.map((r) => monthYearLabel(r.month)),
-    lcp: cwvRows.map((r) => r["Largest Contentful Paint"]),
-    inp: cwvRows.map((r) => r["Interaction to Next Paint"]),
+    lcp: cwvRows.map((r) => absentIfZero(r["Largest Contentful Paint"])),
+    inp: cwvRows.map((r) => absentIfZero(r["Interaction to Next Paint"])),
     cls: cwvRows.map((r) => r["Cumulative Layout Shift"] / 10000),
   };
 
   const cwvWeekly = {
     labels: weeklyRows.map((r) => new Date(r.week).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })),
-    lcp: weeklyRows.map((r) => r.lcp),
-    inp: weeklyRows.map((r) => r.inp),
+    lcp: weeklyRows.map((r) => absentIfZero(r.lcp)),
+    inp: weeklyRows.map((r) => absentIfZero(r.inp)),
     cls: weeklyRows.map((r) => (r.cls == null ? null : r.cls / 10000)),
   };
 
@@ -258,8 +260,8 @@ export function buildTrendingData(dataDir) {
         return {
           label: monthYearLabel(m),
           visits: r ? r.Visits : null,
-          lcp: r ? r["Largest Contentful Paint"] : null,
-          inp: r ? r["Interaction to Next Paint"] : null,
+          lcp: r ? absentIfZero(r["Largest Contentful Paint"]) : null,
+          inp: r ? absentIfZero(r["Interaction to Next Paint"]) : null,
           cls: r && r["Cumulative Layout Shift"] != null ? r["Cumulative Layout Shift"] / 10000 : null,
         };
       }),

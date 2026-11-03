@@ -150,3 +150,28 @@ assert.equal(typeof emptyData.monthLabel, "string");
   assert.match(html, /@media print\{#dt-review-bar\{display:none!important\}\}/);
   assert.match(html, /class="notes-body" contenteditable="true" spellcheck="false"/);
 }
+
+// LCP/INP of 0 = not measured (null), never "0ms good"; CLS 0 is a real value; blended p75 skips null rows
+{
+  const d = buildCurrentMonthData(makeDataDir({
+    "cm-daily-device": { records: [{ day: day("2026-10-01"), "device.type": "desktop", sessions: 5000 }] },
+    "cm-daily-cwv": { records: [
+      { day: day("2026-10-01"), "device.type": "desktop", lcp: 1763, inp: 0, cls: 0 },
+      { day: day("2026-10-01"), "device.type": "mobile", lcp: 0, inp: 0, cls: 0 },
+    ] },
+    "cm-device-compare": { records: [
+      { device_type: "desktop", sessions: 4000, page_loads: 3000, lcp_p75: 1763, inp_p75: 0, cls_p75: 0 },
+      { device_type: "mobile", sessions: 1000, page_loads: 1000, lcp_p75: 0, inp_p75: 0, cls_p75: 0 },
+    ] },
+  }));
+  assert.equal(d.deviceCompareRows[0].lcpP75, 1763);
+  assert.equal(d.deviceCompareRows[0].inpP75, null);
+  assert.equal(d.deviceCompareRows[1].lcpP75, null);
+  assert.equal(d.cmCwvDistribution.lcp.p75, 1763); // mobile's 0 is skipped, not averaged in
+  assert.equal(d.cmCwvDistribution.inp.p75, null); // all rows absent
+  assert.equal(d.cmCwvDistribution.cls.p75, 0);
+  assert.deepEqual([d.cmDailyCwv.lcp.desktop[0], d.cmDailyCwv.lcp.mobile[0]], [1763, null]);
+  assert.deepEqual([d.cmDailyCwv.inp.desktop[0], d.cmDailyCwv.inp.mobile[0]], [null, null]);
+  assert.equal(d.cmDailyCwv.cls.desktop[0], 0);
+  assert.match(renderTables(d), /^Desktop \| 4,000 \| 3,000 \| 1\.76s \| — \| 0\.000$/m);
+}

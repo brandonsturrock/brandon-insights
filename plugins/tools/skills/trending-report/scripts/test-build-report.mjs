@@ -151,3 +151,30 @@ try {
   assert.match(html, /@media print\{#dt-review-bar\{display:none!important\}\}/);
   assert.match(html, /class="findings-body" contenteditable="true" spellcheck="false"/);
 }
+
+// LCP/INP of 0 = not measured (null), never "0ms good"; CLS 0 is a real value
+{
+  const dir = makeDataDir({
+    "metrics-monthly": { records: [{ month: ts("2026-10-01"), Sessions: 1000, "XHR Requests": 1, Navigations: 1 }] },
+    "cwv-monthly": { records: [
+      { month: ts("2026-10-01"), "Largest Contentful Paint": 1754, "Interaction to Next Paint": 0, "Cumulative Layout Shift": 0 },
+    ] },
+    "cwv-weekly": { records: [{ week: ts("2026-10-04"), lcp: 0, inp: 0, cls: 0 }, { week: ts("2026-10-11"), lcp: 1800, inp: 0, cls: 0 }] },
+    "browser-perf-monthly": { records: [
+      { "browser.name": "Chrome", "device.type": "desktop", month: ts("2026-10-01"), Visits: 90, "Largest Contentful Paint": 0, "Interaction to Next Paint": 0, "Cumulative Layout Shift": 0 },
+    ] },
+  });
+  try {
+    const d = buildTrendingData(dir);
+    assert.equal(d.cwvMonthly.inp.at(-1), null);
+    assert.equal(d.cwvMonthly.lcp.at(-1), 1754);
+    assert.equal(d.cwvMonthly.cls.at(-1), 0);
+    assert.deepEqual(d.cwvWeekly.lcp, [null, 1800]);
+    assert.deepEqual(d.cwvWeekly.inp, [null, null]);
+    assert.equal(d.cwvWeekly.cls[0], 0);
+    const m = d.browserPerf.panels[0].months.at(-1);
+    assert.deepEqual([m.lcp, m.inp, m.cls], [null, null, 0]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}

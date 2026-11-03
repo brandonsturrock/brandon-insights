@@ -211,8 +211,18 @@ export function buildCurrentMonthData(dataDir) {
 
   const cmDailyDevice = { labels: dayLabels, ...splitByDevice(dailyDeviceRowsFiltered, "sessions") };
 
-  // deviceCompareRows
-  const deviceCompare = deviceCompareRows.map((r) => ({
+  // A 0 for LCP or INP is an ABSENT measurement, not a perfect one. INP only
+  // exists once a page has been interacted with, so crawler and asset paths
+  // (/robots.txt, /sitemap.xml) come back as 0 — and rendered as a figure
+  // those grade "good" green, i.e. the report claiming a flawless score for a
+  // page that was never measured. Map them to null so the template's own
+  // null handling (msRating -> "none", the em-dash) takes over.
+  //
+  // CLS is deliberately NOT included: zero layout shift is a real, achievable
+  // measurement, so 0 there is a value rather than a gap.
+  const absentIfZero = (v) => (v == null || v <= 0 ? null : v);
+  const dcRows = deviceCompareRows.map((r) => ({ ...r, lcp_p75: absentIfZero(r.lcp_p75), inp_p75: absentIfZero(r.inp_p75) }));
+  const deviceCompare = dcRows.map((r) => ({
     deviceType: r.device_type ? r.device_type[0].toUpperCase() + r.device_type.slice(1) : "—",
     sessions: r.sessions,
     pageLoads: r.page_loads,
@@ -221,12 +231,15 @@ export function buildCurrentMonthData(dataDir) {
     clsP75: r.cls_p75 == null ? null : r.cls_p75 / 10000,
   }));
 
-  // blended p75s (weighted by page_loads) for KPIs + distribution p75 labels
+  // blended p75s (weighted by page_loads) for KPIs + distribution p75 labels.
+  // Rows with no measurement (null/0 LCP/INP) are skipped, not averaged in as 0;
+  // no measured row at all -> null.
   const totalPageLoads = deviceCompareRows.reduce((s, r) => s + (r.page_loads || 0), 0);
-  const blended = (key) =>
-    totalPageLoads > 0
-      ? deviceCompareRows.reduce((s, r) => s + (r[key] || 0) * (r.page_loads || 0), 0) / totalPageLoads
-      : null;
+  const blended = (key) => {
+    const rows = dcRows.filter((r) => r[key] != null && r.page_loads > 0);
+    const w = rows.reduce((s, r) => s + r.page_loads, 0);
+    return w > 0 ? rows.reduce((s, r) => s + r[key] * r.page_loads, 0) / w : null;
+  };
   const totalSessions = deviceCompareRows.reduce((s, r) => s + (r.sessions || 0), 0);
 
   // cmCwvTier (percentages)
@@ -248,29 +261,19 @@ export function buildCurrentMonthData(dataDir) {
   };
 
   // cmDailyCwv
+  const dailyCwv = dailyCwvRowsFiltered.map((r) => ({ ...r, lcp: absentIfZero(r.lcp), inp: absentIfZero(r.inp) }));
   const cmDailyCwv = {
     labels: dayLabels,
-    lcp: splitByDevice(dailyCwvRowsFiltered, "lcp"),
-    inp: splitByDevice(dailyCwvRowsFiltered, "inp"),
+    lcp: splitByDevice(dailyCwv, "lcp"),
+    inp: splitByDevice(dailyCwv, "inp"),
     cls: (() => {
-      const c = splitByDevice(dailyCwvRowsFiltered, "cls");
+      const c = splitByDevice(dailyCwv, "cls");
       const scale = (arr) => (arr == null ? null : arr.map((v) => (v == null ? null : v / 10000)));
       return { desktop: scale(c.desktop), mobile: scale(c.mobile) };
     })(),
   };
 
-  // topPagesRows
-  //
-  // A 0 for LCP or INP is an ABSENT measurement, not a perfect one. INP only
-  // exists once a page has been interacted with, so crawler and asset paths
-  // (/robots.txt, /sitemap.xml) come back as 0 — and rendered as a figure
-  // those grade "good" green, i.e. the report claiming a flawless score for a
-  // page that was never measured. Map them to null so the template's own
-  // null handling (msRating -> "none", the em-dash) takes over.
-  //
-  // CLS is deliberately NOT included: zero layout shift is a real, achievable
-  // measurement, so 0 there is a value rather than a gap.
-  const absentIfZero = (v) => (v == null || v <= 0 ? null : v);
+  // topPagesRows (absentIfZero: see above)
   const topPagesAll = topPagesRows.map((r) => ({
     name: r["page.name"],
     count: Number(r.count) || 0,
