@@ -65,11 +65,28 @@ export function pickSource(generatedHtml, downloadsDir) {
 }
 
 // Deletes only after a non-empty PDF exists, so a failed render never costs the user their work dir.
+// A path that cannot be deleted (e.g. locked on Windows) is a warning, not a failure of the render.
 export function finalize(pdfPath, cleanupPaths) {
   let ok = false;
   try { ok = fs.statSync(pdfPath).size > 0; } catch { /* missing */ }
-  if (ok) for (const p of cleanupPaths) fs.rmSync(p, { recursive: true, force: true });
+  if (ok) {
+    for (const p of cleanupPaths) {
+      try { fs.rmSync(p, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); }
+      catch (e) { console.error(`Warning: could not delete ${p}: ${e.message}`); }
+    }
+  }
   return ok;
+}
+
+// finalize() trusts any non-empty PDF at the (deterministic, per-month) path, so a failed re-render
+// must not be mistaken for success by the previous run's file: require it to be rewritten.
+export function pdfIsFresh(pdfPath, beforeMtimeMs) {
+  try {
+    const st = fs.statSync(pdfPath);
+    return st.size > 0 && st.mtimeMs > beforeMtimeMs;
+  } catch {
+    return false;
+  }
 }
 
 export function openCommand(platform, file) {
@@ -80,6 +97,22 @@ export function openCommand(platform, file) {
 
 export function expandHome(p) {
   return /^~([\\/]|$)/.test(p) ? path.join(os.homedir(), p.slice(1)) : p;
+}
+
+// Resolves --cleanup args. Blank args (path.resolve("") is the cwd) and anything that is, or contains,
+// the output PDF are dropped so a bad argument can never delete the deliverable or the working directory.
+export function cleanupTargets(paths, outPdf, warn = console.error) {
+  const out = path.resolve(outPdf);
+  const targets = [];
+  for (const raw of paths) {
+    if (!raw.trim()) continue;
+    const p = path.resolve(expandHome(raw));
+    const rel = path.relative(p, out);
+    if (rel === "" || (rel !== ".." && !rel.startsWith(".." + path.sep) && !path.isAbsolute(rel))) {
+      warn(`Warning: not deleting ${p} (it is or contains the output PDF)`);
+    } else targets.push(p);
+  }
+  return targets;
 }
 
 function main() {
@@ -124,19 +157,20 @@ function main() {
   if (!fs.existsSync(source)) { console.error(`Source not found: ${source}`); process.exit(1); }
   console.log(`Source: ${source}`);
 
+  let before = 0; // mtime of the previous deliverable, kept on failure
+  try { before = fs.statSync(outPdf).mtimeMs; } catch { /* first render */ }
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), "dt-pdf-"));
   let run;
   try {
     run = spawnSync(browser, chromeArgs(source, outPdf, theme, profile), { timeout: 120000, encoding: "utf8" });
   } finally {
-    fs.rmSync(profile, { recursive: true, force: true });
+    // Chrome helpers can briefly hold the profile (EBUSY/EPERM on Windows); a leftover temp dir is harmless
+    try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* ignore */ }
   }
 
-  const cleanup = [
-    ...(ci < 0 ? [] : argv.slice(ci + 1).map(abs)),
-    ...savedCopies(path.basename(inHtml, ".html"), downloads),
-  ];
-  if (finalize(outPdf, cleanup)) {
+  const cleanup = cleanupTargets(
+    [...(ci < 0 ? [] : argv.slice(ci + 1)), ...savedCopies(path.basename(inHtml, ".html"), downloads)], outPdf);
+  if (pdfIsFresh(outPdf, before) && finalize(outPdf, cleanup)) {
     console.log(`PDF: ${outPdf}`);
     return;
   }

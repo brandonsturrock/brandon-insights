@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { chromeArgs, expandHome, findBrowser, finalize, openCommand, pickSource, savedCopies } from "./render-pdf.mjs";
+import { chromeArgs, cleanupTargets, expandHome, findBrowser, finalize, openCommand, pdfIsFresh, pickSource, savedCopies } from "./render-pdf.mjs";
 
 // findBrowser (literal inputs: platform is injected, host path module must not matter)
 const H = "/Users/x";
@@ -79,6 +79,25 @@ try {
   assert.equal(finalize(realPdf, [keep, path.join(tmp, "already-gone")]), true);
   assert.ok(!fs.existsSync(keep));
   assert.ok(fs.existsSync(realPdf));
+
+  // pdfIsFresh: an old PDF at the same path must not pass for a new render
+  assert.equal(pdfIsFresh(path.join(tmp, "absent.pdf"), 0), false);
+  assert.equal(pdfIsFresh(emptyPdf, 0), false); // empty is never fresh
+  const t0 = new Date(1_700_000_000_000);
+  fs.utimesSync(realPdf, t0, t0);
+  assert.equal(pdfIsFresh(realPdf, t0.getTime()), false); // unchanged mtime
+  assert.equal(pdfIsFresh(realPdf, t0.getTime() + 1000), false); // older than before
+  assert.equal(pdfIsFresh(realPdf, t0.getTime() - 1000), true);
+  assert.equal(pdfIsFresh(realPdf, 0), true); // first render
+
+  // cleanupTargets: blank args, the output PDF and its ancestors are never targets
+  const root = path.resolve(tmp, "ct"), outPdf = path.join(root, "dl", "x.pdf");
+  const warned = [];
+  assert.deepEqual(
+    cleanupTargets(["", "  ", path.join(root, "work"), path.join(root, "dl"), outPdf, root, path.join(root, "dl2"), path.join(root, "dl", "x.pdf.bak"), path.join(root, "dl", "..", "dl")], outPdf, w => warned.push(w)),
+    [path.join(root, "work"), path.join(root, "dl2"), path.join(root, "dl", "x.pdf.bak")]);
+  assert.equal(warned.length, 4); // dl, outPdf, root, dl/../dl
+  assert.deepEqual(cleanupTargets(["~/x"], outPdf, () => {}), [path.join(os.homedir(), "x")]);
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
 }
