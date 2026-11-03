@@ -246,7 +246,7 @@ export function buildCurrentMonthData(dataDir) {
   const tierPct = (good, ni, poor, total) =>
     total > 0
       ? { good: Math.round((good / total) * 100), ni: Math.round((ni / total) * 100), poor: Math.round((poor / total) * 100) }
-      : { good: 0, ni: 0, poor: 0 };
+      : null; // no measurements: null (no tier bar), not 0/0/0
   const cmCwvTier = {
     lcp: tierPct(cwvTierRow.lcp_good, cwvTierRow.lcp_ni, cwvTierRow.lcp_poor, cwvTierRow.lcp_total),
     inp: tierPct(cwvTierRow.inp_good, cwvTierRow.inp_ni, cwvTierRow.inp_poor, cwvTierRow.inp_total),
@@ -404,8 +404,8 @@ export function renderTables(data) {
       data.deviceCompareRows.map((r) => [r.deviceType, fmtN(r.sessions), fmtN(r.pageLoads), fmtDur(r.lcpP75), fmtDur(r.inpP75), fmt3(r.clsP75)])),
     table("CWV Tiers", ["Metric", "Good", "Needs Improvement", "Poor"],
       ["lcp", "inp", "cls"].map((k) => {
-        const t = tier[k]; // all-zero = no measurements (buckets otherwise sum to ~100)
-        return [k.toUpperCase(), ...(t.good + t.ni + t.poor ? [t.good, t.ni, t.poor].map(fmtPct) : [NA, NA, NA])];
+        const t = tier[k]; // null = no measurements
+        return [k.toUpperCase(), ...(t && t.good + t.ni + t.poor ? [t.good, t.ni, t.poor].map(fmtPct) : [NA, NA, NA])];
       })),
     table("Top Pages", ["Page", "Visits", "LCP p75", "INP p75", "CLS p75", "Avg Exceptions", "Avg Req Errors"],
       data.topPagesRows.map((r) => [txt(r.name), fmtN(r.count), fmtDur(r.lcp), fmtDur(r.inp), fmt3(r.cls), fmt3(r.exceptions), fmt3(r.requestErrors)])),

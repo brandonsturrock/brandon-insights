@@ -446,8 +446,6 @@ document.addEventListener('DOMContentLoaded',function(){document.getElementById(
 // dir + findings.txt for a real run, or a fixture for scripts/preview.mjs).
 // Exported so preview.mjs reuses it instead of keeping a second copy of the
 // template's placeholder contract.
-// generatedAt is accepted for signature parity with monthly-report; the
-// template doesn't carry a {{GENERATED_AT}} placeholder yet.
 export function assembleHtml({ data, findings, frontend, environment, dateRangeLabel, generatedAt, outPath }) {
   const template = fs.readFileSync(path.join(SKILL_ROOT, "assets", "report-trending.html.tmpl"), "utf8");
 
@@ -456,6 +454,7 @@ export function assembleHtml({ data, findings, frontend, environment, dateRangeL
     "{{FRONTEND_NAME}}": frontend || "",
     "{{ENVIRONMENT_NAME}}": environment || "",
     "{{DATE_RANGE_LABEL}}": dateRangeLabel,
+    "{{GENERATED_AT}}": generatedAt,
   };
   for (const [key, value] of Object.entries(findings)) {
     replacements[`{{${key}}}`] = value;
@@ -508,7 +507,10 @@ function renderReport(outPath) {
   const labels = data.trafficMonthly.labels;
   const dateRangeLabel = labels.length ? `${labels[0]} – ${labels[labels.length - 1]}` : "";
 
-  assembleHtml({ data, findings, frontend, environment: args.environment, dateRangeLabel, outPath });
+  // Bare timestamp: the template's footer supplies the word "Generated".
+  const generatedAt = `${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC`;
+
+  assembleHtml({ data, findings, frontend, environment: args.environment, dateRangeLabel, generatedAt, outPath });
 }
 
 if (isMain) {

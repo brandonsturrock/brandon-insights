@@ -151,6 +151,34 @@ assert.equal(typeof emptyData.monthLabel, "string");
   assert.match(html, /class="notes-body" contenteditable="true" spellcheck="false"/);
 }
 
+// Footer: page 1 carries the generation timestamp; no placeholder survives outside the contract comment
+{
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "cm-footer-"));
+  const outPath = path.join(outDir, "r.html");
+  const log = console.log;
+  console.log = () => {};
+  try {
+    const findings = Object.fromEntries(["TRAFFIC", "CWV", "PAGES", "ERRORS"].map((k) => [`FINDINGS_${k}_HTML`, "<p>x</p>"]));
+    assembleHtml({ data: SAMPLE.data, findings, frontend: "f", environment: "env", dateRangeLabel: "x", generatedAt: "2026-11-03 10:00 UTC", outPath });
+  } finally {
+    console.log = log;
+  }
+  const html = fs.readFileSync(outPath, "utf8");
+  fs.rmSync(outDir, { recursive: true, force: true });
+  assert.ok(html.includes("Generated 2026-11-03 10:00 UTC"));
+  assert.equal(html.slice(html.indexOf("-->")).match(/\{\{[A-Z_]+\}\}/), null);
+}
+
+// A metric with no tier measurements is null (no tier bar), not 0/0/0
+{
+  const d = buildCurrentMonthData(makeDataDir({
+    "cm-cwv-tier": { records: [{ lcp_good: 80, lcp_ni: 15, lcp_poor: 5, lcp_total: 100, inp_total: 0 }] },
+  }));
+  assert.deepEqual(d.cmCwvTier.lcp, { good: 80, ni: 15, poor: 5 });
+  assert.equal(d.cmCwvTier.inp, null);
+  assert.match(renderTables(d), /^INP \| — \| — \| —$/m);
+}
+
 // LCP/INP of 0 = not measured (null), never "0ms good"; CLS 0 is a real value; blended p75 skips null rows
 {
   const d = buildCurrentMonthData(makeDataDir({

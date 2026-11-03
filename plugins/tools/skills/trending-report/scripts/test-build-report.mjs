@@ -152,6 +152,24 @@ try {
   assert.match(html, /class="findings-body" contenteditable="true" spellcheck="false"/);
 }
 
+// Footer: page 1 carries the generation timestamp; no placeholder survives outside the contract comment
+{
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "trend-footer-"));
+  const outPath = path.join(outDir, "r.html");
+  const log = console.log;
+  console.log = () => {};
+  try {
+    const findings = Object.fromEntries(["TRAFFIC", "CWV", "BROWSER"].map((k) => [`FINDINGS_${k}_HTML`, "<p>x</p>"]));
+    assembleHtml({ data: SAMPLE, findings, frontend: "f", environment: "env", dateRangeLabel: "x", generatedAt: "2026-11-03 10:00 UTC", outPath });
+  } finally {
+    console.log = log;
+  }
+  const html = fs.readFileSync(outPath, "utf8");
+  fs.rmSync(outDir, { recursive: true, force: true });
+  assert.ok(html.includes("Generated 2026-11-03 10:00 UTC"));
+  assert.equal(html.slice(html.indexOf("-->")).match(/\{\{[A-Z_]+\}\}/), null);
+}
+
 // LCP/INP of 0 = not measured (null), never "0ms good"; CLS 0 is a real value
 {
   const dir = makeDataDir({

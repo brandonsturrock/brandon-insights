@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Renders assets/fixtures/sample.json through report-trending.html.tmpl without
 // a Dynatrace tenant — reuses build-report.mjs's own assembleHtml() (template
-// substitution, Chart.js inlining, contenteditable + save-bar injection) so
+// substitution, Chart.js inlining, contenteditable + review-bar injection) so
 // there is exactly one place that knows the template's placeholder contract.
 //
 // Usage:
@@ -58,5 +58,6 @@ assembleHtml({
   frontend: "sample-frontend",
   environment: "Production",
   dateRangeLabel: `${labels[0]} – ${labels[labels.length - 1]}`,
+  generatedAt: `${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC`,
   outPath,
 });

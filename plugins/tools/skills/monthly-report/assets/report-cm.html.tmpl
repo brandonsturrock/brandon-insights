@@ -11,10 +11,6 @@
     Page 3: Core Web Vitals (3 metric-tile summaries + 3 daily trend charts)
     Page 4: Errors (JS/request rate charts + error count chart + exception/request-error tables)
 
-  cmCwvDistribution's `buckets`/`counts` are still accepted (and still carry the p75 each
-  metric-tile reads) but are no longer plotted: the distribution histograms were dropped so the
-  daily trends could have legible height. See the page-3 CSS comment for the trade.
-
   Its sibling report-trending.html.tmpl is the 4-page "Trending" layout — pick ONE per render,
   they are two separate template files (not one file with a REPORT_TYPE switch).
 
@@ -52,13 +48,13 @@
       cmCwvTier: {                                    // good/NI/poor % breakdown, folded into the page-3
         lcp: { good: 72, ni: 18, poor: 10 },           // metric-tile's mt-tail line (units: % 0-100) instead of
         inp: { good: 81, ni: 12, poor: 7 },            // a standalone 100%-stacked bar — see the page-3 CSS
-        cls: { good: 90, ni: 7,  poor: 3 },            // comment for why.
+        cls: { good: 90, ni: 7,  poor: 3 },            // comment for why. A metric with no measurements is
+      },                                                // null (the tile shows no tier line).
+      cmCwvDistribution: {                             // p75 only (null = not measured), page 3: drives each
+        lcp: { p75: 2200 },                             // metric-tile's value + marker. The distribution
+        inp: { p75: 180 },                              // histograms were dropped so the daily trends could
+        cls: { p75: 0.04 },                             // have legible height (see the page-3 CSS comment).
       },
-      cmCwvDistribution: {                             // 3 small histograms, 11 buckets each, page 3
-        lcp: { buckets: ["0-1s","1-2s",...,"10s+"], counts: [.. 11 numbers ..], p75: 2200 },
-        inp: { buckets: [...11 labels...],           counts: [...11...],        p75: 180 },
-        cls: { buckets: ["0-0.1",...,"1.0+"],        counts: [...11...],        p75: 0.04 },
-      },                                                // p75 also drives the page-3 metric-tile value + marker.
       cmDailyCwv: {                                     // 3 line charts (device-split + threshold lines), page 3
         labels: ["1", "2", ... "31"],
         lcp: { desktop: [...], mobile: [...] },
@@ -608,7 +604,7 @@
      Chart colours are read from the computed style at build time, so the
      template's script must resolve them AFTER this override applies — see
      buildEverything()/`beforeprint` in the <script> block below. */
-  /* Light theme: chosen in the preview (toggle) or by render-pdf.sh (#theme=light).
+  /* Light theme: chosen in the preview (toggle) or by render-pdf.mjs (#theme=light).
      Print follows whichever theme is active — there is no automatic light swap. */
   :root[data-theme="light"] {
     --dt-bg-base:             #f9f9fa; /* Colors.Background.Base.Default (light) */
@@ -1927,7 +1923,7 @@ function buildEverything(printing) {
 // reader who opens the system print dialog and cancels it is not left
 // looking at a light-inked chart on the dark screen copy.
 // Theme: dark (default) or light. Set by the preview toggle (dtSetTheme), by a
-// `#theme=light|dark` URL hash (render-pdf.sh), or carried in a saved copy's
+// `#theme=light|dark` URL hash (render-pdf.mjs), or carried in a saved copy's
 // <html data-theme>. Print follows the active theme.
 const isLight = () => document.documentElement.dataset.theme === "light";
 window.dtSetTheme = (t) => {

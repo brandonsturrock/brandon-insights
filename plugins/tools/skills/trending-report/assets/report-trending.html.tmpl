@@ -14,6 +14,7 @@
     {{FRONTEND_NAME}}        - shown top-right of every page header
     {{ENVIRONMENT_NAME}}     - shown under frontend name; pass "" to omit (CSS :empty hides it)
     {{DATE_RANGE_LABEL}}     - shown top-right under the frontend name, e.g. "Jan – Jun 2026"
+    {{GENERATED_AT}}         - footer timestamp on page 1, e.g. "2026-07-01 09:00 UTC"
     {{FINDINGS_TRAFFIC_HTML}}  - pre-rendered HTML (glue script runs markdown -> HTML, e.g. via `marked`)
                                  for the "## Traffic" section of the analyst notes. "" hides the panel.
     {{FINDINGS_CWV_HTML}}      - same, for the "## Core Web Vitals" section.
@@ -407,7 +408,7 @@
   .finding-title { font-weight: 600; color: var(--text-default); }
   .finding-evidence { color: var(--text-subdued); font-size: var(--rp-text-small); line-height: 1.5; overflow-wrap: anywhere; }
 
-  /* Light theme: chosen in the preview (toggle) or by render-pdf.sh (#theme=light).
+  /* Light theme: chosen in the preview (toggle) or by render-pdf.mjs (#theme=light).
      Print follows whichever theme is active. */
   :root[data-theme="light"] {
     --dt-bg-base:             #f9f9fa;
@@ -747,7 +748,7 @@
       </div>
     </div>
     <footer class="ftr">
-      <span>CONFIDENTIAL · FOR CUSTOMER USE ONLY</span>
+      <span>Generated {{GENERATED_AT}}</span>
       <span>Page 1 of 4 · Powered by <span class="brand-name">Dynatrace</span></span>
     </footer>
   </section>
@@ -785,7 +786,7 @@
       </div>
     </div>
     <footer class="ftr">
-      <span>CONFIDENTIAL · FOR CUSTOMER USE ONLY</span>
+      <span>Confidential — for customer use only</span>
       <span>Page 2 of 4 · Powered by <span class="brand-name">Dynatrace</span></span>
     </footer>
   </section>
@@ -830,7 +831,7 @@
       </div>
     </div>
     <footer class="ftr">
-      <span>CONFIDENTIAL · FOR CUSTOMER USE ONLY</span>
+      <span>Confidential — for customer use only</span>
       <span>Page 3 of 4 · Powered by <span class="brand-name">Dynatrace</span></span>
     </footer>
   </section>
@@ -858,7 +859,7 @@
       <div class="browser-perf-grid" id="browser-perf-grid"></div>
     </div>
     <footer class="ftr">
-      <span>CONFIDENTIAL · FOR CUSTOMER USE ONLY</span>
+      <span>Confidential — for customer use only</span>
       <span>Page 4 of 4 · Powered by <span class="brand-name">Dynatrace</span></span>
     </footer>
   </section>
@@ -1523,7 +1524,7 @@ function renderAll(printing) {
 }
 
 // Theme: dark (default) or light. Set by the preview toggle (dtSetTheme), by a
-// `#theme=light|dark` URL hash (render-pdf.sh), or carried in a saved copy's
+// `#theme=light|dark` URL hash (render-pdf.mjs), or carried in a saved copy's
 // <html data-theme>. Print follows the active theme.
 const isLight = () => document.documentElement.dataset.theme === "light";
 window.dtSetTheme = (t) => {
