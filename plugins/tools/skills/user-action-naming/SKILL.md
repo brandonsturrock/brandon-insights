@@ -51,6 +51,8 @@ node <SKILL_BASE_DIR>/scripts/group.mjs "$OUT/raw.csv" --ph /p/=product --ph /c/
 ```
 Read every group; iterate placeholders if groups still fragment.
 
+**Placeholders must only swallow data, not structure.** A prefix placeholder (`/casino/*` → `:game:`) also matches sibling pages that are not data: template/launcher/landing pages (`game.html`, `index.html`), section roots, or any literal that is a distinct page, not one of the many values. Before building rows, check every placeholder prefix for such literals — high-volume or non-slug-looking tails are the tell. Carve each one out of the placeholder rule (`and view.name != "<prefix><literal>"`) and leave it as its own unchanged name. Decide this during the run; never ship the merge and caveat it afterward.
+
 ## Step 4 - Name and review files
 
 Name each group (rules below), then write `$OUT/review.csv` and `$OUT/findings.md` with quoted heredocs (`cat > "$OUT/review.csv" <<'EOF'`), not the Write tool.
