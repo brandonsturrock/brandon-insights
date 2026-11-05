@@ -13,6 +13,10 @@ Claude Code skills for Dynatrace RUM analysis workflows.
 | [user-action-naming](skills/user-action-naming/README.md) | User action naming cleanup — proposed names plus one OpenPipeline processor per rule, as CSV and PDF |
 | [setup](skills/setup/SKILL.md) | One-time dependency setup — installs dtctl, registers skills, authenticates environment |
 
+## Changes
+
+See [CHANGELOG.md](CHANGELOG.md) for what changed in each version. Releasing: bump `version` in `.claude-plugin/plugin.json` and add a CHANGELOG entry in the same commit.
+
 ## Installation
 
 From a shell:
