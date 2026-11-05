@@ -2,6 +2,10 @@
 
 Every version bump in `.claude-plugin/plugin.json` gets an entry here, newest first.
 
+## 2.14.1 — 2026-11-05
+
+- **full-page-analysis, user-journeys, monthly-report, trending-report:** removed the `--install` flag; dependency installs are owned by `/tools:setup` only.
+
 ## 2.14.0 — 2026-11-05
 
 - **New skill: `user-action-naming`.** Proposes cleaned RUM user action names for a frontend (`Load /p/:product:`, `Navigate to /cart`, `Add to Cart`) and writes one OpenPipeline processor per new name — matching condition, processor definition, and dry-run `old → new` examples with captured `event_properties` — as markdown and PDF.

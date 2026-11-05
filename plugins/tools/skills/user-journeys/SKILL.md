@@ -7,78 +7,7 @@ description: Generate a self-contained interactive HTML Sankey diagram from comp
 
 Generate a self-contained interactive HTML Sankey diagram from Dynatrace RUM session data.
 
-## --install flag
-
-If the user invokes this skill with `--install`, run the following checks and fixes **before** proceeding to Step 0. Skip this section entirely on normal runs.
-
-### 1. Check dtctl binary
-
-```bash
-dtctl version
-```
-
-If the command fails (not found or exits non-zero), install using the first applicable method:
-
-**Homebrew (Mac/Linux — check first):**
-```bash
-brew install dynatrace-oss/tap/dtctl
-```
-
-**Mac/Linux (no Homebrew):**
-```bash
-curl -fsSL https://raw.githubusercontent.com/dynatrace-oss/dtctl/main/install.sh | sh
-```
-
-**Windows (PowerShell):**
-```powershell
-irm https://raw.githubusercontent.com/dynatrace-oss/dtctl/main/install.ps1 | iex
-```
-
-After install, verify with `dtctl version`. On Windows, if not found, open a new PowerShell session first — the installer may need a fresh session for PATH to take effect. If it still fails, tell the user and stop.
-
-### 2. Install Claude skills
-
-```bash
-dtctl skills install --for claude
-```
-
-This registers dtctl's built-in Claude skills. Run unconditionally on `--install`.
-
-### 3. Add environment context
-
-Check if any contexts already exist:
-
-```bash
-dtctl config get-contexts
-```
-
-If contexts exist, skip this step — setup is complete.
-
-If no contexts exist, ask the user for:
-- A **context name** for this environment (e.g. `production`, `my-env`)
-- Their **Dynatrace environment URL** (e.g. `https://abc12345.live.dynatrace.com`)
-
-Then run:
-
-```bash
-dtctl auth login --environment "ENV_URL" --context "CONTEXT_NAME"
-```
-
-This opens the browser-based OAuth login flow. Tell the user to complete it and confirm when done.
-
-### 4. Run doctor
-
-```bash
-dtctl doctor
-```
-
-Show the output. If any check fails, surface the error and tell the user to resolve it before proceeding. Do not continue to Step 0 until `dtctl doctor` passes cleanly.
-
-### 5. Report
-
-Tell the user: `dtctl` version installed, context name, and environment URL. Then continue to Step 0.
-
----
+**Prerequisites:** dtctl with a configured context. Missing dependencies: run `/tools:setup` (or `/setup` if installed standalone) and stop.
 
 ## OAuth failure handling
 

@@ -9,7 +9,7 @@ Last full calendar month deep-dive (4 pages): executive summary, traffic and top
 
 **Shell:** every command is bash. On Windows it runs in Claude Code's Git Bash; never translate to PowerShell (if the shell is PowerShell, Step 0 stops the run). Shell state does not persist between Bash calls, so substitute literal values for `$CONTEXT`, `$WORK`, `$NAME` and `<SKILL_BASE_DIR>` in every command (`$HOME` stays as is). Write `<SKILL_BASE_DIR>` (this skill's base directory) with forward slashes (`C:/Users/...` on Windows) and quote the whole script path if it contains spaces.
 
-**Flags:** `--no-preview` skips the browser review in Step 5 (light theme). `--install`: run the `setup` skill (`/tools:setup`) and stop.
+**Flags:** `--no-preview` skips the browser review in Step 5 (light theme).
 
 ## Step 0 - Precheck
 

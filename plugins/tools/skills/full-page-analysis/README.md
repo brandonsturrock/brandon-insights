@@ -24,7 +24,7 @@ End-to-end RUM page performance diagnosis for a single Dynatrace-monitored page.
 - Node.js (bare `node`, no npm install required)
 - Google Chrome (for PDF rendering)
 
-Run `/tools:full-page-analysis --install` to set up all dependencies and authenticate.
+Run `/tools:setup` (or `/setup` if installed standalone) to set up all dependencies and authenticate.
 
 ## Usage
 

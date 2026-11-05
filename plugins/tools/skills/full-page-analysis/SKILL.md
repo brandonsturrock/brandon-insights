@@ -14,113 +14,8 @@ Uses `dtctl query` for all data access.
 
 **Precondition:** `dtctl` must be configured with an active context. On every
 normal run, check the current context and offer the user a chance to switch or
-add one before proceeding (see **Context check** below).
-
----
-
-## --install flag
-
-If the user invokes this skill with `--install`, run the following checks and
-fixes **before** proceeding to Step 0. Skip this section entirely on normal runs.
-
-### 1. Check dtctl binary
-
-```bash
-dtctl version
-```
-
-If the command fails (not found or exits non-zero), install using the first
-applicable method:
-
-**Homebrew (Mac/Linux — check first):**
-```bash
-brew install dynatrace-oss/tap/dtctl
-```
-
-**Mac/Linux (no Homebrew):**
-```bash
-curl -fsSL https://raw.githubusercontent.com/dynatrace-oss/dtctl/main/install.sh | sh
-```
-
-**Windows (PowerShell):**
-```powershell
-irm https://raw.githubusercontent.com/dynatrace-oss/dtctl/main/install.ps1 | iex
-```
-
-After install, verify with `dtctl version`. On Windows, if not found, open a new PowerShell session first — the installer may need a fresh session for PATH to take effect. If it still fails, tell the user
-and stop.
-
-### 2. Install Claude skills
-
-```bash
-dtctl skills install --for claude
-```
-
-This registers dtctl's built-in Claude skills. Run unconditionally on `--install`.
-
-### 3. Add environment context
-
-Check if any contexts already exist:
-
-```bash
-dtctl config get-contexts
-```
-
-If contexts exist, skip this step — setup is complete.
-
-If no contexts exist, ask the user for:
-- A **context name** for this environment (e.g. `production`, `my-env`)
-- Their **Dynatrace environment URL** (e.g. `https://abc12345.live.dynatrace.com`)
-
-Then run:
-
-```bash
-dtctl auth login --environment "ENV_URL" --context "CONTEXT_NAME"
-```
-
-This opens the browser-based OAuth login flow. Tell the user to complete it and
-confirm when done.
-
-### 4. Check Node.js
-
-```bash
-node --version 2>/dev/null
-```
-
-If Node.js is not found, install it:
-
-**Mac/Linux (Homebrew):**
-```bash
-brew install node
-```
-
-**Mac/Linux (no Homebrew):**
-```bash
-curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && apt-get install -y nodejs
-```
-
-**Windows:**
-```powershell
-winget install OpenJS.NodeJS
-```
-
-After install, verify with `node --version`. If it still fails, direct the user
-to https://nodejs.org and stop.
-
-### 5. Run doctor
-
-```bash
-dtctl doctor
-```
-
-Show the output. If any check fails, surface the error and tell the user to
-resolve it before proceeding. Do not continue to Step 0 until `dtctl doctor`
-passes cleanly.
-
-### 6. Report
-
-Tell the user: `dtctl` version installed, Node.js version, context name, and
-environment URL. Then continue to Step 0.
+add one before proceeding (see **Context check** below). Dependencies are
+installed by the `setup` skill: `/tools:setup` (or `/setup` if installed standalone).
 
 ---
 
@@ -155,7 +50,7 @@ dtctl config current-context
 ```
 
 If the command fails or returns empty, tell the user no context is configured
-and stop — they should run with `--install` first.
+and stop — they should run `/tools:setup` (or `/setup` if installed standalone) first.
 
 Otherwise, tell the user the current context name and ask what they'd like to do
 using `AskUserQuestion` with three options:
