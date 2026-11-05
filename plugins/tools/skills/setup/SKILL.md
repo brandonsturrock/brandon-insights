@@ -179,4 +179,4 @@ Tell the user:
 - active context name and environment URL
 - Windows only: tell the user to close this terminal window and open a new one before starting Claude Code again (desktop app: quit it fully and reopen; VS Code: close all windows), so `dtctl` and `node` are on PATH
 - macOS/Linux, if dtctl was installed to `~/.local/bin` in Step 1 (curl path): without a permanent PATH entry, `dtctl` will be "not found" in every new session. Tell the user to add `export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc` (macOS) or `~/.bashrc` (Linux), then restart Claude Code
-- skills ready: `full-page-analysis`, `user-journeys`, `trending-report`, `monthly-report`
+- skills ready: `full-page-analysis`, `user-journeys`, `trending-report`, `monthly-report`, `user-action-naming`

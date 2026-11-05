@@ -10,6 +10,7 @@ Claude Code skills for Dynatrace RUM analysis workflows.
 | [monthly-report](skills/monthly-report/README.md) | Current-month RUM review PDF — daily traffic, Core Web Vitals, top pages, top errors |
 | [trending-report](skills/trending-report/README.md) | 6-month RUM trending PDF — traffic trends, Core Web Vitals over time, device/browser breakdown |
 | [user-journeys](skills/user-journeys/README.md) | Interactive Sankey diagram of session paths from Dynatrace RUM |
+| [user-action-naming](skills/user-action-naming/README.md) | User action naming cleanup — proposed names plus one OpenPipeline processor per rule, as CSV and PDF |
 | [setup](skills/setup/SKILL.md) | One-time dependency setup — installs dtctl, registers skills, authenticates environment |
 
 ## Installation
