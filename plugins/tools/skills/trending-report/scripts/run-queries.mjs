@@ -41,27 +41,66 @@ function exec({ cmd, prefixArgs }, args) {
 const queryArgs = (file, context, set = []) =>
   ["query", "-f", file, ...set, "-o", "json", "--agent", "--spill=never", ...(context ? ["--context", context] : [])];
 
-// Parses a dtctl envelope; returns { ok, records, error }.
+// Grail stops a fetch at its scan limit and returns only the newest data it
+// reached, as an ok result. dtctl flags it in context.warnings; treat it as a
+// failure so a month report never silently shows one day.
+const PARTIAL = /scan limit|execution was stopped after/i;
+
+// Parses a dtctl envelope; returns { ok, records, error, scannedBytes }.
 function parseEnvelope({ stdout, stderr }) {
   let env;
   try { env = JSON.parse(stdout); } catch { env = null; }
   if (env?.ok === true && env.result?.kind === "records") {
-    return { ok: true, records: env.result.records ?? [], error: null };
+    const partial = (env.context?.warnings ?? []).find(w => PARTIAL.test(w));
+    if (partial) return { ok: false, records: [], error: `PARTIAL result (scan limit reached): ${partial}` };
+    return { ok: true, records: env.result.records ?? [], error: null, scannedBytes: Number(env.metadata?.scannedBytes) || 0 };
   }
   const error = env ? env.error?.message : null;
   return { ok: false, records: [], error: error ?? (stderr.split("\n")[0].trim() || TOO_OLD) };
 }
 
+// Raw-event queries (fetch user.events / user.sessions) are sampled when a full
+// scan would exceed SCAN_BUDGET_BYTES. A probe reads the query's own fetch +
+// frontend filter (its first two lines) at 1:PROBE_RATIO; scannedBytes x
+// PROBE_RATIO estimates the full scan (overestimates ~1.5x at small volumes,
+// the safe side). Grail only accepts powers of 10. Queries must scale counts
+// with sum(dt.system.sampling_ratio); ratios of counts need no change.
+export const SCAN_BUDGET_BYTES = 100e9;
+const PROBE_RATIO = 1000;
+const RATIOS = [1, 10, 100, 1000];
+export const pickRatio = estimatedBytes => RATIOS.find(r => estimatedBytes / r <= SCAN_BUDGET_BYTES) ?? RATIOS.at(-1);
+
+function probeText(dql) {
+  const lines = dql.split(/\r?\n/).filter(l => l.trim());
+  return /^fetch\s+user\./.test(lines[0] ?? "") ? `${lines.slice(0, 2).join("\n")}\n| summarize c = count()` : null;
+}
+
 export async function runQueries({ frontend, outDir, context, dtctl, queriesDir }) {
   fs.mkdirSync(outDir, { recursive: true });
   const names = fs.readdirSync(queriesDir).filter(f => f.endsWith(".dql")).sort().map(f => f.slice(0, -4));
-  return Promise.all(names.map(async name => {
+  const set = ["--set", `frontend=${frontend}`];
+  const probes = new Map(); // probe text -> Promise<ratio>, shared by queries with the same fetch + filter
+  const ratioFor = text => {
+    if (!probes.has(text)) {
+      const file = path.join(outDir, `probe-${probes.size}.dql`);
+      fs.writeFileSync(file, text);
+      probes.set(text, exec(dtctl, queryArgs(file, context, [...set, "--default-sampling-ratio", String(PROBE_RATIO)]))
+        .then(out => { fs.rmSync(file, { force: true }); const p = parseEnvelope(out); return p.ok ? pickRatio(p.scannedBytes * PROBE_RATIO) : 1; }));
+    }
+    return probes.get(text);
+  };
+  const results = await Promise.all(names.map(async name => {
     const file = path.join(queriesDir, `${name}.dql`);
-    const out = await exec(dtctl, queryArgs(file, context, ["--set", `frontend=${frontend}`]));
+    const probe = probeText(fs.readFileSync(file, "utf8"));
+    const ratio = probe ? await ratioFor(probe) : 1;
+    const sampling = ratio > 1 ? ["--default-sampling-ratio", String(ratio)] : [];
+    const out = await exec(dtctl, queryArgs(file, context, [...set, ...sampling]));
     fs.writeFileSync(path.join(outDir, `${name}.json`), out.stdout);
     const { ok, records, error } = parseEnvelope(out);
-    return { name, ok, rows: records.length, error };
+    return { name, ok, rows: records.length, error, ratio };
   }));
+  fs.writeFileSync(path.join(outDir, "sampling.json"), JSON.stringify(Object.fromEntries(results.map(r => [r.name, r.ratio]))));
+  return results;
 }
 
 async function main() {
@@ -91,7 +130,7 @@ async function main() {
     frontend: values.frontend, outDir: values.out, context: values.context,
     dtctl, queriesDir: path.join(HERE, "..", "references", "queries"),
   });
-  for (const r of results) console.log(r.ok ? `${r.name}: ${r.rows} rows` : `${r.name}: FAILED ${r.error}`);
+  for (const r of results) console.log(r.ok ? `${r.name}: ${r.rows} rows${r.ratio > 1 ? ` (sampled 1:${r.ratio})` : ""}` : `${r.name}: FAILED ${r.error}`);
   if (results.some(r => !r.ok)) process.exit(1);
 }
 

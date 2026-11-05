@@ -889,6 +889,7 @@
      without asking the analyst to write to a budget that moves. */
   .findings-grid .notes-body { font-size: var(--rp-text-small); line-height: 1.45; }
   .findings-grid .mini-stats { margin-top: 9px; padding-top: 7px; }
+  @media screen { .notes-body.notes-overflow { outline: 2px dashed var(--critical, #c62239); outline-offset: 4px; } }
 
   /* Page 3: three metrics side by side under one panel roof (the daily
      trends). A bare chart-body has no way to say which of the three columns
@@ -1933,8 +1934,25 @@ window.dtSetTheme = (t) => {
 };
 const hashTheme = /[#&]theme=(light|dark)/.exec(location.hash);
 if (hashTheme) document.documentElement.dataset.theme = hashTheme[1];
-document.addEventListener("DOMContentLoaded", () => buildEverything(isLight()));
-window.addEventListener("beforeprint", () => buildEverything(isLight()));
+// Analyst notes sit in fixed-height boxes that clip overflow. Shrink each box's
+// text in 0.5px steps until it fits, down to NOTES_MIN_PX; text that still does
+// not fit keeps clipping and gets .notes-overflow (outlined on screen only) so
+// the review page shows which card needs shorter text.
+const NOTES_MIN_PX = 10;
+function fitNotes() {
+  document.querySelectorAll(".notes-body").forEach((el) => {
+    el.style.fontSize = "";
+    let size = parseFloat(getComputedStyle(el).fontSize);
+    while (el.scrollHeight > el.clientHeight + 1 && size > NOTES_MIN_PX) {
+      size = Math.max(NOTES_MIN_PX, size - 0.5);
+      el.style.fontSize = size + "px";
+    }
+    el.classList.toggle("notes-overflow", el.scrollHeight > el.clientHeight + 1);
+  });
+}
+document.addEventListener("DOMContentLoaded", () => { buildEverything(isLight()); fitNotes(); document.fonts?.ready.then(fitNotes); });
+document.addEventListener("input", (e) => { if (e.target.closest?.(".notes-body")) fitNotes(); });
+window.addEventListener("beforeprint", () => { buildEverything(isLight()); fitNotes(); });
 window.addEventListener("afterprint", () => buildEverything(isLight()));
 </script>
 </body>

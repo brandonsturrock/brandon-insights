@@ -304,11 +304,10 @@ export function buildCurrentMonthData(dataDir) {
   });
   // Plotted across the WHOLE month (the same `days` axis every other daily
   // chart uses), not just the days this query happened to return. cm-errors
-  // reads user.events, whose retention is shorter than the metrics the other
-  // daily charts read, so on a real tenant it comes back covering only the
-  // tail of the month — Aug 13-31 against Aug 1-31 when this was written.
-  // Rendered on its own axis that silently became a different date range from
-  // the error-count chart directly beneath it on the same page. Days with no
+  // reads user.sessions (raw user.events hit the scan limit on large tenants and
+  // returned only the newest day); any day it still misses would otherwise
+  // become a different date range from the error-count chart directly beneath
+  // it on the same page. Days with no
   // data are null (a gap in the line), which reads as "not measured" rather
   // than as a zero error rate.
   const rateOn = (day, pick) => {
@@ -634,7 +633,10 @@ function renderReport(outPath) {
   // and the fixture's own generatedAt is bare for the same reason. Prefixing
   // here too rendered "Generated Generated ..." on the live path only, which
   // is exactly why fixture-only verification never caught it.
-  const generatedAt = `${now.toISOString().slice(0, 16).replace("T", " ")} UTC`;
+  // run-queries writes sampling.json ({ query: ratio }); note the coarsest ratio used.
+  let maxRatio = 1;
+  try { maxRatio = Math.max(1, ...Object.values(JSON.parse(fs.readFileSync(path.join(args.data, "sampling.json"), "utf8")))); } catch { /* demo or older data dir */ }
+  const generatedAt = `${now.toISOString().slice(0, 16).replace("T", " ")} UTC${maxRatio > 1 ? ` · event data sampled 1:${maxRatio}` : ""}`;
   const prevMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
   // A real run labels the report with the month its data covers; the demo has no data, so it keeps the clock.
   const dateRangeLabel = args.demo ? prevMonth.toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" }) : data.monthLabel;

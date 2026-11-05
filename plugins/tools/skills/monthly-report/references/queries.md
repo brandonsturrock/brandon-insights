@@ -35,8 +35,12 @@ Runs every `references/queries/*.dql` concurrently through `dtctl query -f <file
 - `cm-top-exceptions` — top 10 exceptions (page 4 table). Columns: `count`, `exception.type`, `exception.message`, `error.source`.
 - `cm-top-request-errors` — top 10 failed requests (page 4 table). Columns: `count`, `http.request.method`, `http.response.status_code`, `url.host`, `url.path`.
 - `cm-error-count` — daily error counts by device and error type (page 4 stacked chart; JS = `exception`, Request = `request`). Columns: `day`, `error_count`, `device.type`, `error.type`.
-- `cm-errors` — daily session-level error rates by device (page 4 error-rate chart; counts arrive as strings). Columns: `day`, `device.type`, `total_sessions`, `js_error_sessions`, `req_error_sessions`.
+- `cm-errors` — daily session-level error rates by device from `user.sessions` (page 4 error-rate chart; counts arrive as strings; `frontend.name` is an array there, hence `in()`). Columns: `day`, `device.type`, `total_sessions`, `js_error_sessions`, `req_error_sessions`.
 
 ## `union: true`
 
 Multi-metric `timeseries` queries (`cm-daily-cwv`, `cm-device-compare`) set `union: true`. Without it the metrics are inner-joined on dimensions, so when one metric (e.g. INP) has no `device.type` split the query returns 0 rows and the report shows "0 sessions / 0 page loads" and blank CWV tiles. Keep it on any new multi-metric `timeseries`.
+
+## Sampling
+
+`run-queries.mjs` probes each `fetch user.*` query (its fetch + frontend filter lines, at 1:1000) and runs it with `--default-sampling-ratio` 1/10/100/1000 so the estimated scan stays under 100 GB. Displayed counts therefore use `sum(dt.system.sampling_ratio)`, never `count()`; ratios of counts (CWV tiers, error rates) need no scaling. Pages or exceptions with only a handful of events can drop out when sampled. A scan-limit warning fails the query instead of returning a partial month.

@@ -3,6 +3,6 @@ fetch user.events, from: (now()-1M)@M, to: now()@M
 | filter dt.rum.user_type == "real_user"
 | filter characteristics.has_exception == true
 | filterOut isNull(exception.type)
-| summarize count = count(), by: {exception.type, exception.message, error.source}
+| summarize count = sum(dt.system.sampling_ratio), by: {exception.type, exception.message, error.source}
 | sort count desc
 | limit 10

@@ -44,7 +44,7 @@ Set `FRONTEND`. In commands, single-quote the name as `'<FRONTEND>'` and write a
 node <SKILL_BASE_DIR>/scripts/run-queries.mjs --frontend '<FRONTEND>' --out "$WORK" --context "$CONTEXT"
 ```
 
-Prints `<query>: N rows` or `<query>: FAILED <error>` per query. Any `FAILED` (exit 1): show the line and stop. Exit 2 (dtctl missing): tell the user to run `/tools:setup` (or `/setup` if you installed the skills standalone). If the `cm-daily-device` line says `0 rows`: the frontend has no data for the period (usually a mistyped name); tell the user and stop.
+Prints `<query>: N rows` (plus `(sampled 1:N)` when a raw-event query was sampled to stay under the 100 GB scan budget) or `<query>: FAILED <error>` per query. A `FAILED PARTIAL result` means Grail's scan limit was still hit — show it and stop. Any `FAILED` (exit 1): show the line and stop. Exit 2 (dtctl missing): tell the user to run `/tools:setup` (or `/setup` if you installed the skills standalone). If the `cm-daily-device` line says `0 rows`: the frontend has no data for the period (usually a mistyped name); tell the user and stop.
 
 ## Step 3 - Findings
 

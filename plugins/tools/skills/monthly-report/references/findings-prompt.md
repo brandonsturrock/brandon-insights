@@ -26,10 +26,11 @@ differences where the tables show them.
 
 ## 3. Rules
 
-- Bullets only (`- `). **At most 3 per heading** — each findings card is a
-  fixed-height box that clips overflow mid-sentence (about 5 rendered lines).
-  Fewer is fine.
-- ~15 words per bullet, hard cap 20. Lead with the finding, then the number.
+- Bullets only (`- `). **At most 3 per heading, at most 45 words per heading
+  in total.** Each findings card is a fixed-height box: text shrinks to fit
+  down to a minimum size, then clips mid-sentence. Fewer is fine.
+- ~15 words per bullet, hard cap 20. Inline code (`/path`) takes more room
+  than prose — count it double. Lead with the finding, then the number.
   No filler ("notably", "significantly", "continues to").
 - The cards' mini-stat chips already print the headline figures (session and
   page-load totals, the CWV p75s, top pages by visits, error rates). Spend
