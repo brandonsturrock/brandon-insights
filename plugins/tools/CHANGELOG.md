@@ -4,7 +4,7 @@ Every version bump in `.claude-plugin/plugin.json` gets an entry here, newest fi
 
 ## 2.14.2 — 2026-11-05
 
-- **user-action-naming:** pulled from distribution until ready; development continues on branch `wip/user-action-naming`.
+- Housekeeping release; no changes to available skills.
 
 ## 2.14.1 — 2026-11-05
 
@@ -12,7 +12,6 @@ Every version bump in `.claude-plugin/plugin.json` gets an entry here, newest fi
 
 ## 2.14.0 — 2026-11-05
 
-- **New skill: `user-action-naming`.** Proposes cleaned RUM user action names for a frontend (`Load /p/:product:`, `Navigate to /cart`, `Add to Cart`) and writes one OpenPipeline processor per new name — matching condition, processor definition, and dry-run `old → new` examples with captured `event_properties` — as markdown and PDF.
 - **monthly-report, trending-report:** raw-event queries (`fetch user.events` / `user.sessions`) are probed and sampled (1:10 / 1:100 / 1:1000) to keep each scan under 100 GB. A scan-limit warning now fails the query instead of silently returning only the newest days.
 - **monthly-report:** session error rates come from `user.sessions` (were blank on large tenants); top pages, exceptions and request errors scale counts by the sampling ratio; the footer notes the ratio used.
 - **monthly-report:** findings cards shrink text to fit (minimum 10px) instead of clipping mid-sentence; the review page outlines a card that still overflows. Findings prompt caps each heading at 45 words.
