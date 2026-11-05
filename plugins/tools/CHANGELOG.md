@@ -2,6 +2,10 @@
 
 Every version bump in `.claude-plugin/plugin.json` gets an entry here, newest first.
 
+## 2.14.2 — 2026-11-05
+
+- **user-action-naming:** pulled from distribution until ready; development continues on branch `wip/user-action-naming`.
+
 ## 2.14.1 — 2026-11-05
 
 - **full-page-analysis, user-journeys, monthly-report, trending-report:** removed the `--install` flag; dependency installs are owned by `/tools:setup` only.
