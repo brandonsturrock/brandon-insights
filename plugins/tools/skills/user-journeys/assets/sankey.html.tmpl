@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>__TITLE__</title>
+  <script>__D3_LIBS__</script>
+  <script>__CORE_JS__</script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #1a1f2e; color: #c8d0d8; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; padding: 32px; }
+    h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+    .subtitle { font-size: 13px; color: #8a9ab0; margin-bottom: 16px; }
+    .notice { font-size: 12px; color: #f0c674; background: rgba(240,198,116,0.08); border: 1px solid rgba(240,198,116,0.3); border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; }
+    .controls { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; font-size: 12px; color: #8a9ab0; margin-bottom: 8px; }
+    .controls select { margin-left: 6px; background: #242a3b; color: #c8d0d8; border: 1px solid rgba(255,255,255,0.15); border-radius: 4px; padding: 3px 6px; font-size: 12px; }
+    .legend { font-size: 12px; color: #8a9ab0; line-height: 1.6; margin-bottom: 16px; max-width: 1100px; }
+    .legend b { color: #c8d0d8; font-weight: 600; }
+    .chart-container { overflow-x: auto; }
+    svg { display: block; overflow: visible; }
+    svg text { font-size: 13px; cursor: pointer; paint-order: stroke; stroke: #1a1f2e; stroke-width: 4px; stroke-linejoin: round; }
+    svg text.col { fill: #8a9ab0; font-size: 12px; font-weight: 600; cursor: default; }
+    svg path, svg rect, svg text { transition: opacity 0.12s, stroke-opacity 0.12s; }
+    svg rect, svg path.link { cursor: pointer; }
+    .breakdown { margin-top: 32px; }
+    .breakdown h2 { font-size: 13px; color: #8a9ab0; margin-bottom: 12px; font-weight: 500; }
+    .steps { display: flex; gap: 1px; align-items: flex-start; overflow-x: auto; }
+    .step { flex: 1 1 0; min-width: 150px; }
+    .step-head { font-size: 11px; font-weight: 600; color: #8a9ab0; padding: 6px 10px 4px; }
+    .step-bar { height: 4px; background: #3a4258; }
+    .step-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); background: rgba(255,255,255,0.02); gap: 8px; cursor: pointer; }
+    .step-row:hover { background: rgba(255,255,255,0.06); }
+    .step-label { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+    .step-pct { font-size: 11px; font-weight: 600; flex-shrink: 0; }
+    .meta { margin-top: 24px; font-size: 12px; color: #666; line-height: 1.6; }
+    #hover-info { display: none; position: fixed; top: 24px; right: 32px; width: 320px; background: rgba(20,24,38,0.95); border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 12px 16px; font-size: 12px; color: #c8d0d8; z-index: 10; pointer-events: none; }
+    #hover-info .k { font-size: 11px; color: #8a9ab0; }
+    #hover-info .t { font-weight: 600; word-break: break-all; margin: 2px 0 6px; }
+    #hover-info .n { font-size: 20px; font-weight: 700; color: #fff; }
+    #hover-info ul { list-style: none; margin-top: 4px; }
+    #hover-info li { display: flex; justify-content: space-between; gap: 8px; padding: 1px 0; }
+    #hover-info li span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #hover-info .sec { margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h1 id="title"></h1>
+  <div class="subtitle" id="subtitle"></div>
+  <div class="notice" id="notice" hidden></div>
+  <div class="controls" id="controls"></div>
+  <div class="legend" id="legend"></div>
+  <div class="chart-container"><svg id="sankey"></svg></div>
+  <div class="breakdown"><h2>Step breakdown</h2><div class="steps" id="breakdown"></div></div>
+  <div class="meta" id="meta"></div>
+  <div id="hover-info"></div>
+  <script>
+  (function () {
+  const D = __DATA_JSON__;
+  const $ = (id) => document.getElementById(id);
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs = {}, text) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; };
+  const html = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  const fmt = (n) => Number(n).toLocaleString();
+  const pct = (n, d) => (d ? ((100 * n) / d).toFixed(1) : "0.0") + "%";
+  // URL-like names keep their tail (the specific part), cut at a "/" boundary; other names keep their head.
+  const short = (s, k = 26) => s.length <= k ? s
+    : /^(\/|https?:)/.test(s) ? "…" + s.slice(1 - k).replace(/^[^/]*(?=\/)/, "") : s.slice(0, k - 1) + "…";
+  const PALETTE = ["#6E6CD8", "#2A9BC7", "#22A884", "#C99A1E", "#D07A2D", "#C9466A", "#3E9E5F", "#3D73C9", "#9A5CC6", "#5FA8A0"];
+  const FIXED = { other: "#6b7280", exit: "#4b5563", cont: "#a3acb9", drop: "#8a5a5a", tail: "#8795b0" };
+  const RANK = { view: 0, other: 1, drop: 2, exit: 3, cont: 4 };
+  const common = D.mode === "common";
+  const S = D.stats;
+  const state = { depth: D.maxDepth, top: D.top, strict: D.funnelMatch === "strict", multi: false };
+  const bounces = D.paths.reduce((t, [n, p]) => t + (p.length === 1 ? n : 0), 0);
+  let G, pinned = null, viewColor = new Map(), nodeById = new Map(), linkEls = [], nodeEls = new Map(), traceG;
+
+  $("title").textContent = common ? "Session Path Analysis" : "Journey Analysis";
+  $("subtitle").textContent = [D.app, D.timeRange].filter(Boolean).join(" · ") + (common ? "" : " · " + D.funnelSteps.join(" → "));
+  $("meta").textContent =
+    `${fmt(S.sessions)} sessions with navigation · ${fmt(S.navigations)} page views (${S.sessions ? (S.navigations / S.sessions).toFixed(1) : 0} per session) · ` +
+    `${fmt(S.collapsed)} immediate repeat views collapsed · longest path ${fmt(S.longest)} pages · ` +
+    `${fmt(S.distinct)} distinct pages` + (S.normalized && S.distinctRaw !== S.distinct ? ` (${fmt(S.distinctRaw)} before grouping IDs)` : "") +
+    ` · Generated ${D.generatedAt}`;
+
+  const notices = [];
+  if (S.capped) notices.push(`The query hit its ${fmt(S.cap)}-session limit` + (S.eligible ? `: ${fmt(S.sessions)} of ${fmt(S.eligible)} completed sessions are included` : "") + ". Treat these paths as a partial sample, not the full population. Choose a shorter window for complete coverage.");
+  else if (S.eligible && S.eligible > S.sessions) notices.push(`${fmt(S.eligible - S.sessions)} of ${fmt(S.eligible)} completed sessions had no navigation events and are not shown.`);
+  if (!common) { const missing = D.funnelSteps.filter((s) => !D.views.includes(s)); if (missing.length) notices.push(`Not found in any included session: ${missing.join(", ")}.`); }
+  if (notices.length) { $("notice").textContent = notices.join(" "); $("notice").hidden = false; }
+
+  function select(label, options, value, onChange) {
+    const l = html("label", null, label), s = document.createElement("select");
+    for (const [v, t] of options) { const o = new Option(t, v); o.selected = String(v) === String(value); s.append(o); }
+    s.onchange = () => { onChange(s.value); render(); };
+    l.append(s); return l;
+  }
+  const controls = $("controls");
+  if (common) {
+    controls.append(
+      select("Pages per step", [3, 4, 5, 6, 8, 10, 12, 15].map((n) => [n, n]), state.top, (v) => (state.top = +v)),
+      select("Steps", [3, 4, 5, 6, 7, 8, 9, 10].map((n) => [n, n]), state.depth, (v) => (state.depth = +v))
+    );
+    if (bounces) {
+      const l = html("label"), c = document.createElement("input");
+      c.type = "checkbox";
+      c.onchange = () => { state.multi = c.checked; render(); };
+      l.append(c, ` Hide single-page sessions (${fmt(bounces)}, ${pct(bounces, S.sessions)})`);
+      controls.append(l);
+    }
+  } else {
+    controls.append(select("Step matching", [["ordered", "In order, detours allowed"], ["strict", "Each step immediately next"]], D.funnelMatch, (v) => (state.strict = v === "strict")));
+  }
+  controls.append(html("span", null, "Hover to trace sessions · click to pin · Esc to clear"));
+
+  function legend() {
+    const L = $("legend");
+    L.innerHTML = "";
+    const add = (b, t) => { L.append(html("b", null, b), document.createTextNode(" " + t + " ")); };
+    if (common) {
+      add("Columns:", `the 1st, 2nd, … distinct page of each session (an immediate repeat of the same page is one step).`);
+      add("Percentages:", state.multi ? `share of the ${fmt(G.total)} sessions with 2+ pages (${fmt(bounces)} single-page sessions hidden).` : `share of all ${fmt(G.total)} sessions.`);
+      add("Other:", `pages outside the top ${state.top} for that step.`);
+      add("Exit:", "session ended after the previous page.");
+      add("Continues:", `session had more than ${state.depth} pages.`);
+      if (S.normalized) add("{id}:", "ID-like URL segments, query strings and trailing slashes are grouped.");
+      add("Highlight:", "shows only the sessions that pass through the hovered node or link, at their true width.");
+    } else {
+      add("Entry:", `${fmt(G.total)} of ${fmt(S.sessions)} sessions (${pct(G.total, S.sessions)}) visited ${D.funnelSteps[0]}.`);
+      add("Percentages:", "share of entering sessions.");
+      add("Matching:", state.strict ? "each step must be the very next page." : "steps must happen in order; other pages may come between.");
+      add("Went elsewhere:", state.strict ? "next page was not the next step (they may reach it later)." : "kept browsing but never reached the next step.");
+      add("Exited:", "session ended right after the last step reached.");
+    }
+  }
+
+  function colorOf(n) {
+    if (n.kind !== "view") return FIXED[n.kind];
+    return common ? viewColor.get(n.label) || FIXED.tail : PALETTE[n.step % PALETTE.length];
+  }
+  const nodeName = (n) => (n.kind === "other" ? `Other (${fmt(n.members.size)} pages)` : n.label);
+  function colName(i) {
+    if (!common) return `Step ${i + 1}`;
+    return i < state.depth ? `Page ${i + 1}` : `After page ${state.depth}`;
+  }
+
+  function render() {
+    G = common ? SankeyCore.buildCommon(state.multi ? D.paths.filter(([, p]) => p.length > 1) : D.paths, D.views, state.depth, state.top) : SankeyCore.buildFunnel(D.paths, D.views, D.funnelSteps, state.strict);
+    pinned = null;
+    $("hover-info").style.display = "none";
+    legend();
+    if (!G.total) {
+      $("sankey").replaceChildren();
+      $("breakdown").replaceChildren(html("div", "step-head", common ? "No session data returned." : `No sessions visited ${D.funnelSteps[0]}.`));
+      return;
+    }
+    const totals = new Map();
+    for (const n of G.nodes) if (n.kind === "view") totals.set(n.label, (totals.get(n.label) || 0) + n.value);
+    viewColor = new Map(SankeyCore.topEntries(totals, PALETTE.length).map(([label], i) => [label, PALETTE[i]]));
+    nodeById = new Map(G.nodes.map((n) => [n.id, n]));
+    drawChart();
+    drawBreakdown();
+  }
+
+  function drawChart() {
+    const svg = $("sankey");
+    svg.replaceChildren();
+    const cols = Math.max(...G.nodes.map((n) => n.step)) + 1;
+    const perCol = Math.max(...Array.from({ length: cols }, (_, i) => G.nodes.filter((n) => n.step === i).length));
+    const W = Math.max(900, (cols - 1) * 230), H = Math.max(520, perCol * 46), R = 250, T = 34;
+    svg.setAttribute("viewBox", `0 ${-T} ${W + R} ${H + T + 10}`);
+    svg.style.width = "100%";
+    svg.style.minWidth = W + R + "px"; // never shrink text below its set size; wide charts scroll instead
+    const layout = d3.sankey().nodeId((d) => d.id).nodeAlign(d3.sankeyLeft).nodeWidth(14).nodePadding(26)
+      .nodeSort((a, b) => RANK[a.kind] - RANK[b.kind] || b.value - a.value)
+      .extent([[0, 0], [W, H]]);
+    const { nodes, links } = layout({ nodes: G.nodes.map((n) => ({ ...n })), links: G.links.map((l) => ({ ...l })) });
+    const linkPath = d3.sankeyLinkHorizontal();
+    const gLinks = el("g"), gNodes = el("g"), gLabels = el("g");
+    traceG = el("g", { "pointer-events": "none" });
+    for (let i = 0; i < cols; i++) gLabels.append(el("text", { class: "col", x: cols > 1 ? (i * (W - 14)) / (cols - 1) : 0, y: -16 }, colName(i)));
+    linkEls = [];
+    nodeEls = new Map();
+    for (const l of links) {
+      const color = l.target.kind === "exit" || l.target.kind === "drop" ? FIXED[l.target.kind] : colorOf(l.source);
+      // Flows under 0.5% of sessions recede so the main routes stand out; they are still drawn and hoverable.
+      const base = l.value / G.total < 0.005 ? 0.12 : 0.35;
+      const p = el("path", { class: "link", d: linkPath(l), fill: "none", stroke: color, "stroke-opacity": base, "stroke-width": Math.max(1, l.width) });
+      const target = { key: l.source.id + ">" + l.target.id, link: l };
+      bind(p, target);
+      gLinks.append(p);
+      linkEls.push({ el: p, l, key: target.key, base });
+    }
+    for (const n of nodes) {
+      const h = Math.max(1, n.y1 - n.y0);
+      const rect = el("rect", { x: n.x0, y: n.y0, width: n.x1 - n.x0, height: h, fill: colorOf(n) });
+      const target = { key: n.id, node: n };
+      bind(rect, target);
+      gNodes.append(rect);
+      let text = null;
+      if (h >= 10) {
+        text = el("text", { x: n.x1 + 6, y: n.y0 + h / 2, dy: "0.35em", fill: colorOf(n) });
+        text.append(el("tspan", { "font-weight": 700 }, pct(n.value, G.total)), el("tspan", { fill: "#ffffff" }, " " + short(nodeName(n))));
+        bind(text, target);
+        gLabels.append(text);
+      }
+      nodeEls.set(n.id, { rect, text });
+    }
+    svg.append(gLinks, traceG, gNodes, gLabels);
+    svg.onclick = unpin;
+  }
+
+  function bind(e, target) {
+    e.addEventListener("mouseenter", () => { if (!pinned) show(target); });
+    e.addEventListener("mouseleave", () => { if (!pinned) clear(); });
+    e.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      if (pinned && pinned.key === target.key) return unpin();
+      pinned = target; show(target);
+    });
+  }
+  function unpin() { pinned = null; clear(); }
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") unpin(); });
+
+  function show(target) {
+    const hit = target.node
+      ? (ids) => ids.includes(target.node.id)
+      : (ids) => ids.some((x, i) => i > 0 && ids[i - 1] === target.link.source.id && x === target.link.target.id);
+    const T = SankeyCore.trace(G.traces, hit);
+    traceG.replaceChildren();
+    for (const { el: p, l, key } of linkEls) {
+      p.setAttribute("stroke-opacity", 0.07);
+      const c = T.links.get(key);
+      if (c) traceG.append(el("path", { d: p.getAttribute("d"), fill: "none", stroke: p.getAttribute("stroke"), "stroke-opacity": 0.85, "stroke-width": Math.max(1, (l.width * c) / l.value) }));
+    }
+    for (const [id, { rect, text }] of nodeEls) {
+      const o = T.nodes.has(id) ? "1" : "0.2";
+      rect.style.opacity = o;
+      if (text) text.style.opacity = o;
+    }
+    info(target, T);
+  }
+  function clear() {
+    if (traceG) traceG.replaceChildren();
+    for (const { el: p, base } of linkEls) p.setAttribute("stroke-opacity", base);
+    for (const [, { rect, text }] of nodeEls) { rect.style.opacity = ""; if (text) text.style.opacity = ""; }
+    $("hover-info").style.display = "none";
+  }
+
+  function list(title, entries, denom, more) {
+    const sec = html("div", "sec"), ul = html("ul");
+    sec.append(html("div", "k", title));
+    for (const [label, n] of entries) { const li = html("li"); li.append(html("span", null, label), html("span", null, pct(n, denom))); li.title = label; ul.append(li); }
+    if (more > 0) ul.append(html("li", "k", `+ ${fmt(more)} more`));
+    sec.append(ul);
+    return sec;
+  }
+  function info(target, T) {
+    const box = $("hover-info");
+    box.replaceChildren();
+    const base = !common ? "of entering sessions" : state.multi ? "of sessions with 2+ pages" : "of all sessions";
+    if (target.node) {
+      const n = nodeById.get(target.node.id);
+      box.append(html("div", "k", colName(n.step)), html("div", "t", nodeName(n)), html("div", "n", fmt(T.n)), html("div", "k", `sessions · ${pct(T.n, G.total)} ${base}`));
+      if (!common && n.kind === "view" && n.step > 0) box.append(html("div", "k", `${pct(G.reached[n.step], G.reached[n.step - 1])} of sessions at step ${n.step}`));
+      if (n.members.size) {
+        const top = SankeyCore.topEntries(n.members, 6);
+        box.append(list(n.kind === "drop" ? "Next page instead" : "Includes", top, n.value, n.members.size - top.length));
+      }
+      const next = new Map();
+      for (const [key, c] of T.links) if (key.startsWith(n.id + ">")) next.set(nodeName(nodeById.get(key.slice(n.id.length + 1))), c);
+      if (next.size) box.append(list("Went next", SankeyCore.topEntries(next, 6), T.n, next.size - 6));
+    } else {
+      const { source: s, target: t } = target.link;
+      box.append(html("div", "k", `${colName(s.step)} → ${colName(t.step)}`), html("div", "t", `${nodeName(s)} → ${nodeName(t)}`), html("div", "n", fmt(T.n)),
+        html("div", "k", `sessions · ${pct(T.n, G.total)} ${base} · ${pct(T.n, s.value)} of ${short(nodeName(s), 28)}`));
+    }
+    box.style.display = "block";
+  }
+
+  function drawBreakdown() {
+    const byStep = new Map();
+    for (const n of G.nodes) { if (!byStep.has(n.step)) byStep.set(n.step, []); byStep.get(n.step).push(n); }
+    if (!common) D.funnelSteps.forEach((s, i) => { if (!nodeById.has(`${i}:step`)) { if (!byStep.has(i)) byStep.set(i, []); byStep.get(i).push({ id: null, label: s, step: i, kind: "view", value: 0, members: new Map() }); } });
+    const container = $("breakdown");
+    container.replaceChildren();
+    [...byStep.entries()].sort(([a], [b]) => a - b).forEach(([step, entries]) => {
+      const col = html("div", "step");
+      col.append(html("div", "step-head", colName(step)), html("div", "step-bar"));
+      entries.sort((a, b) => RANK[a.kind] - RANK[b.kind] || b.value - a.value).forEach((n) => {
+        const row = html("div", "step-row");
+        const lbl = html("span", "step-label", short(nodeName(n)));
+        lbl.style.color = n.kind === "view" ? "#c8d0d8" : "#8a8f99";
+        const p = html("span", "step-pct", pct(n.value, G.total));
+        p.style.color = colorOf(n);
+        row.title = `${nodeName(n)}\n${fmt(n.value)} sessions`;
+        row.append(lbl, p);
+        if (n.id) {
+          const target = { key: n.id, node: n };
+          row.addEventListener("mouseenter", () => { if (!pinned) show(target); });
+          row.addEventListener("mouseleave", () => { if (!pinned) clear(); });
+          row.addEventListener("click", () => { if (pinned && pinned.key === n.id) return unpin(); pinned = target; show(target); });
+        }
+        col.append(row);
+      });
+      container.append(col);
+    });
+  }
+
+  render();
+  })();
+  </script>
+</body>
+</html>

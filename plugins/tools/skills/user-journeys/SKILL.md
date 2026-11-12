@@ -25,7 +25,7 @@ Collect before starting:
 2. **Time range** — picked interactively in Step 0b (default: yesterday's 12–2 PM Eastern peak window)
 3. **Mode** — picked interactively in Step 1b (Common User Journeys or Pick a Journey)
 4. **Output path** — default: `~/Downloads/session-sankey-<appname>-<date>.html`
-5. **Max depth** — Common User Journeys only, default: 6 steps. Accept 3–10.
+5. **Max depth** — Common User Journeys only, default: 6 steps. Accept 3–10. The HTML also lets the viewer change steps (3–10) and pages per step (3–15) live.
 
 ## Steps
 
@@ -93,6 +93,8 @@ Pass `--timezone "America/New_York"` to every `dtctl query` command so calendar-
 - 24-hour window yesterday → `TF_FROM=-1d@d`, `TF_TO=@d`
 - 7-day window ending yesterday → `TF_FROM=-7d@d`, `TF_TO=@d`
 
+Also set `TIME_RANGE_LABEL` to the concrete window in plain words, e.g. `Nov 11, 2026 12:00–14:00 ET` or `Nov 4–10, 2026 ET`. It is printed on the report so readers know what period they are looking at.
+
 Use `from: TF_FROM, to: TF_TO` in all subsequent queries. Step 2 selects only sessions whose `start_time` and `end_time` both fall inside these bounds, so active and boundary-crossing sessions are excluded.
 
 ### Step 1 — Pick a frontend
@@ -107,7 +109,7 @@ Show the first 10 results as a numbered list with session counts. Use `AskUserQu
 
 If the user picks **Show more**, show the next 10 (offset 10), again with a Show more option at the bottom. Repeat until the list is exhausted or the user picks an app.
 
-Once an app is selected, set `APP_NAME`.
+Once an app is selected, set `APP_NAME` and `ELIGIBLE_SESSIONS` to its session count from this list. The report uses it to show how many sessions are covered.
 
 ### Step 1b — Pick a mode
 
@@ -124,22 +126,24 @@ If **Pick a Journey** → continue to Step 1c.
 
 ### Step 1c — Collect journey steps (Pick a Journey only)
 
-**Ask the user to provide their funnel steps** — between 2 and 8 `view.name` values in order, one per message or all at once. Collect them into `FUNNEL_STEPS = ["step0", "step1", ...]`.
+**Ask the user to provide their funnel steps** — between 2 and 8 page names in order, one per message or all at once. Collect them into `FUNNEL_STEPS = ["step0", "step1", ...]`. Page names are the `page` values defined in Step 2. Steps match exact raw page names (no ID grouping in this mode). Two identical consecutive steps can never match, because repeat views of the same page collapse into one step.
 
-**Silently fetch the top 100 view names** for validation (do not display this list):
+By default a session progresses when it reaches the steps **in order, with other pages allowed between** (`--funnel-match ordered`). Use `--funnel-match strict` only if the user asks for each step to be the very next page. The HTML can switch between the two either way.
+
+**Silently fetch the top 100 page names** for validation (do not display this list):
 
 ```bash
-dtctl query "fetch user.events, from: TF_FROM, to: TF_TO | filter frontend.name == \"<APP_NAME>\" | filter characteristics.has_navigation == true | filter dt.rum.session.id in [fetch user.sessions, from: TF_FROM, to: TF_TO | filter in(frontend.name, \"<APP_NAME>\") | filter start_time >= TF_FROM and end_time <= TF_TO | fields dt.rum.session.id] | summarize count=count(), by: {view.name} | filterOut isNull(view.name) | sort count desc | limit 100" --timezone "America/New_York" -o json --plain
+dtctl query "fetch user.events, from: TF_FROM, to: TF_TO | filter frontend.name == \"<APP_NAME>\" | filter in(user_action.type, array(\"hard_navigation\", \"soft_navigation\")) | filter dt.rum.session.id in [fetch user.sessions, from: TF_FROM, to: TF_TO | filter in(frontend.name, \"<APP_NAME>\") | filter start_time >= TF_FROM and end_time <= TF_TO | fields dt.rum.session.id] | fieldsAdd page = if(user_action.type == \"hard_navigation\", coalesce(page.name, view.name), else: view.name) | filterOut isNull(page) | summarize count=count(), by: {page} | sort count desc | limit 100" --timezone "America/New_York" -o json --plain
 ```
 
 **Validate each step against the top 100:**
 - If it appears in the top 100 list → confirmed silently, continue.
 - If it does not appear → run a targeted spot-check:
   ```bash
-  dtctl query "fetch user.events, from: TF_FROM, to: TF_TO | filter frontend.name == \"<APP_NAME>\" | filter view.name == \"<STEP>\" | filter dt.rum.session.id in [fetch user.sessions, from: TF_FROM, to: TF_TO | filter in(frontend.name, \"<APP_NAME>\") | filter start_time >= TF_FROM and end_time <= TF_TO | fields dt.rum.session.id] | limit 1 | fields view.name" --timezone "America/New_York" -o json --plain
+  dtctl query "fetch user.events, from: TF_FROM, to: TF_TO | filter frontend.name == \"<APP_NAME>\" | filter in(user_action.type, array(\"hard_navigation\", \"soft_navigation\")) | filter dt.rum.session.id in [fetch user.sessions, from: TF_FROM, to: TF_TO | filter in(frontend.name, \"<APP_NAME>\") | filter start_time >= TF_FROM and end_time <= TF_TO | fields dt.rum.session.id] | fieldsAdd page = if(user_action.type == \"hard_navigation\", coalesce(page.name, view.name), else: view.name) | filter page == \"<STEP>\" | limit 1 | fields page" --timezone "America/New_York" -o json --plain
   ```
-  If this returns a record → confirmed (niche view, low volume), continue silently.
-  If this returns empty → warn the user that this view name wasn't found in the data, and ask whether to correct it or proceed anyway.
+  If this returns a record → confirmed (niche page, low volume), continue silently.
+  If this returns empty → warn the user that this page name wasn't found in the data, and ask whether to correct it or proceed anyway.
 
 Once all steps are validated, set `FUNNEL_STEPS` and continue to Step 2.
 
@@ -147,26 +151,19 @@ Once all steps are validated, set `FUNNEL_STEPS` and continue to Step 2.
 
 Same query regardless of mode. Escape any double quotes in the app name with `\"`. Select only completed sessions that both started and ended in the chosen window, then fetch their paths from that same window. `frontend.name` is an array on `user.sessions`, so use `in(frontend.name, "<APP_NAME>")` in the subquery. The result has one record per session: `session_id` and an unordered `views` array of `{view.name, timestamp}` records.
 
-```bash
-dtctl query "fetch user.events, from: TF_FROM, to: TF_TO | filter frontend.name == \"<APP_NAME>\" | filter characteristics.has_navigation == true | filter dt.rum.session.id in [fetch user.sessions, from: TF_FROM, to: TF_TO | filter in(frontend.name, \"<APP_NAME>\") | filter start_time >= TF_FROM and end_time <= TF_TO | fields dt.rum.session.id] | fields dt.rum.session.id, start_time, view.name | sort dt.rum.session.id asc, start_time asc | fieldsAdd view_time = record(view.name = view.name, timestamp = start_time) | summarize views = collectArray(view_time), by: {session_id = dt.rum.session.id}" --timezone "America/New_York" -o json --plain --max-result-records 50000 > /tmp/uj_sessions.json
-```
+Paths are built from **navigation user actions**: `hard_navigation` (full page load) and `soft_navigation` (SPA route change). Apps without soft navigations simply have none, and the query works the same. Each step is labelled with `page`:
+- **Hard navigations:** `page.name`, falling back to `view.name` when it is null.
+- **Soft navigations:** `view.name`. On a soft navigation, `page.name` stays on the document that loaded the app (often `/` for every route), so `view.name` is the route the user landed on.
 
-`collectArray` order is not guaranteed. The builder sorts each session's `views` array by `timestamp` and converts it to the existing event-record format before rendering. The Sankey displays the chosen depth (eight by default) and marks paths that extend beyond it as continuing. Because the result is aggregated first, `--max-result-records 50000` caps session rows rather than individual navigation events.
+`user_action.name` is not used: for soft navigations it names the triggering click and the page it came from (e.g. `click on button on /cart`), not the destination. The `view.name` key inside the record carries `page`, which is the shape the builder expects.
 
-Check if the result spilled to an external file:
-
-```bash
-node -e "const r=JSON.parse(require('fs').readFileSync('/tmp/uj_sessions.json','utf8')); console.log(r.result&&r.result.kind||'records')"
-```
-
-**If output is `result-file`:** overwrite with the spilled session rows:
+`--no-agent` is required: in agent mode dtctl spills large results to a side file, clips long strings and can restructure the JSON. With it, the full result is written straight to the file.
 
 ```bash
-RESULT_PATH=$(node -e "const r=JSON.parse(require('fs').readFileSync('/tmp/uj_sessions.json','utf8')); console.log(r.result.path)")
-dtctl inspect "$RESULT_PATH" --head 50000 --fields "session_id,views" > /tmp/uj_sessions.json
+dtctl query "fetch user.events, from: TF_FROM, to: TF_TO | filter frontend.name == \"<APP_NAME>\" | filter in(user_action.type, array(\"hard_navigation\", \"soft_navigation\")) | filter dt.rum.session.id in [fetch user.sessions, from: TF_FROM, to: TF_TO | filter in(frontend.name, \"<APP_NAME>\") | filter start_time >= TF_FROM and end_time <= TF_TO | fields dt.rum.session.id] | fieldsAdd page = if(user_action.type == \"hard_navigation\", coalesce(page.name, view.name), else: view.name) | fields dt.rum.session.id, start_time, page | fieldsAdd view_time = record(view.name = page, timestamp = start_time) | summarize views = collectArray(view_time), by: {session_id = dt.rum.session.id}" --timezone "America/New_York" -o json --plain --no-agent --max-result-records 50000 > /tmp/uj_sessions.json
 ```
 
-If the result reaches 50,000 session rows, report that it may be truncated.
+`collectArray` order is not guaranteed, so the builder sorts each session's views by timestamp. Because the result is aggregated first, `--max-result-records 50000` caps session rows rather than individual user actions. When the cap is hit, the builder reports `"capped": true` and the HTML shows a partial-sample warning. Suggest a shorter window if the user needs full coverage.
 
 Then go to Step 3 (Common User Journeys) or Step 3b (Pick a Journey).
 
@@ -174,7 +171,7 @@ Then go to Step 3 (Common User Journeys) or Step 3b (Pick a Journey).
 
 _Skip this step if mode is Pick a Journey — go to Step 3b._
 
-Replace `SKILL_ROOT` with the absolute path to this skill's directory (the folder containing `scripts/` and `assets/`), `APP_NAME` with the selected app name, `MAX_DEPTH` with the chosen max depth (default 8), and `OUTPUT_PATH` with the output file path.
+Replace `SKILL_ROOT` with the absolute path to this skill's directory (the folder containing `scripts/` and `assets/`), `APP_NAME` with the selected app name, `MAX_DEPTH` with the chosen max depth (default 6), and `OUTPUT_PATH` with the output file path.
 
 ```bash
 node SKILL_ROOT/scripts/build-sankey.mjs \
@@ -182,10 +179,14 @@ node SKILL_ROOT/scripts/build-sankey.mjs \
   --records /tmp/uj_sessions.json \
   --app "APP_NAME" \
   --max-depth MAX_DEPTH \
+  --time-range "TIME_RANGE_LABEL" \
+  --eligible-sessions ELIGIBLE_SESSIONS \
   --out OUTPUT_PATH
 ```
 
-The default `MAX_DEPTH` is 6. The script downloads and caches d3 libs to `/tmp/brandon-insights-d3/` on first run. Template source: `assets/sankey-common.html.tmpl`.
+URL-like view names are grouped by default: query strings, fragments and trailing slashes are dropped, and ID-like path segments (numbers, UUIDs, long hex or tokens, 4+ digit runs) become `{id}`, so `/product/123` and `/product/456` are one page. Add `--raw-views` only if the user wants exact view names. `--top N` (3–15, default 6) sets the starting pages per step.
+
+The script downloads and caches d3 libs to `/tmp/brandon-insights-d3/` on first run, then prints a JSON summary of what was included. Template source: `assets/sankey.html.tmpl`; graph logic: `assets/sankey-core.js`.
 
 ### Step 3b — Generate the HTML file (Pick a Journey)
 
@@ -199,17 +200,20 @@ node SKILL_ROOT/scripts/build-sankey.mjs \
   --records /tmp/uj_sessions.json \
   --app "APP_NAME" \
   --funnel-steps 'FUNNEL_STEPS_JSON' \
+  --time-range "TIME_RANGE_LABEL" \
+  --eligible-sessions ELIGIBLE_SESSIONS \
   --out OUTPUT_PATH
 ```
 
-Template source: `assets/sankey-journey.html.tmpl`.
+If the summary lists `missingSteps`, tell the user those views never appeared in the included sessions.
 
 ### Step 4 — Report
 
-Tell the user:
-- Path to the generated HTML file
-- Mode used (Common User Journeys or Pick a Journey)
-- Total sessions included (Pick a Journey: sessions that entered the funnel)
-- Total navigations and average navigations per included session
+Use the builder's JSON summary. Do not compute these numbers yourself. Tell the user:
+- Path to the generated HTML file (`out`)
+- Mode used (Common User Journeys or Pick a Journey, and `funnelMatch` for journeys)
+- Sessions included (`sessions`, out of `ELIGIBLE_SESSIONS`). For Pick a Journey also give `enteredFunnel` and `reachedPerStep`
+- Navigations (`navigations`) and average per session (`avgNavigations`)
+- Distinct pages (`distinct`, and `distinctRaw` before ID grouping if they differ)
 - Time range used
-- Whether data was truncated at the 50,000-session result limit
+- Whether the result was capped at the 50,000-session limit (`capped`)
