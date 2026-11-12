@@ -16,7 +16,7 @@ Runs every `references/queries/*.dql` concurrently through `dtctl query -f <file
 
 `build-report.mjs --data <dir>` reads these exact names (`<query>.dql` -> `<query>.json`):
 
-`cm-daily-device`, `cm-daily-cwv`, `cm-device-compare`, `cm-cwv-tier`, `cm-top-pages`, `cm-top-exceptions`, `cm-top-request-errors`, `cm-error-count`, `cm-errors`.
+`cm-daily-device`, `cm-daily-cwv`, `cm-device-compare`, `cm-cwv-tier`, `cm-top-pages`, `cm-top-exceptions`, `cm-top-request-errors`, `cm-error-count`, `cm-errors`, `cm-prev-month` (optional: a data dir without it builds with no month-over-month figures).
 
 ## Unit conversions
 
@@ -31,6 +31,7 @@ Runs every `references/queries/*.dql` concurrently through `dtctl query -f <file
 - `cm-daily-cwv` — daily LCP/INP/CLS p75 by device (page 3 trend charts). Columns: `day`, `lcp`, `inp`, `cls` (x10000), `device.type`.
 - `cm-device-compare` — one row per device (page 2 device table; page-load-weighted blend feeds the KPIs and p75 tiles). Columns: `device_type`, `sessions`, `page_loads`, `lcp_p75`, `inp_p75`, `cls_p75` (x10000).
 - `cm-cwv-tier` — single row of good / needs-improvement / poor counts (foot of each page 3 tile). Columns: `lcp_good`, `lcp_ni`, `lcp_poor`, `lcp_total`, and the same four for `inp_` and `cls_`.
+- `cm-prev-month` — the same per-device rollup as `cm-device-compare` for the month before (`from: (now()-2M)@M, to: (now()-1M)@M`). Feeds the Sessions / Page Loads MoM badges and the `Month over Month` findings table (blended p75s, mobile share). Columns as `cm-device-compare`.
 - `cm-top-pages` — top 10 pages by page loads (page 2 scorecard). Columns: `page.name`, `count`, `lcp`, `inp`, `cls`, `exceptions` (avg per load), `request_errors` (avg 4xx+5xx per load).
 - `cm-top-exceptions` — top 10 exceptions (page 4 table). Columns: `count`, `exception.type`, `exception.message`, `error.source`.
 - `cm-top-request-errors` — top 10 failed requests (page 4 table). Columns: `count`, `http.request.method`, `http.response.status_code`, `url.host`, `url.path`.

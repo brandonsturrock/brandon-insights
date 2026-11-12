@@ -128,6 +128,22 @@ try {
   assert.equal(tt.match(/^Chrome · Desktop/gm).length, 2); // blank slots are not printed
   assert.doesNotMatch(tt, /NaN|undefined|null/);
   assert.doesNotMatch(renderTables(emptyData), /NaN|undefined|null/);
+  assert.doesNotMatch(tt, /by Device/); // no cwv-weekly-device.json: table omitted
+
+  // cwv-weekly-device.json (optional): per-device weekly rows for the findings tables
+  {
+    const ddir = makeDataDir({
+      "metrics-monthly": { records: [{ month: ts("2026-10-01"), Sessions: 100 }] },
+    });
+    fs.writeFileSync(path.join(ddir, "cwv-weekly-device.json"), JSON.stringify({ ok: true, result: { kind: "records", records: [
+      { week: ts("2026-10-04"), "device.type": "mobile", lcp: 4100, inp: 0, cls: 900 },
+      { week: ts("2026-10-04"), "device.type": "desktop", lcp: 2100, inp: 150, cls: 400 },
+    ] } }));
+    const dt = renderTables(buildTrendingData(ddir));
+    assert.match(dt, /^### Weekly CWV p75 by Device$/m);
+    assert.match(dt, /^Oct 4 \| Mobile \| 4\.10s \| — \| 0\.090$/m);
+    assert.match(dt, /^Oct 4 \| Desktop \| 2\.10s \| 150ms \| 0\.040$/m);
+  }
 } finally {
   for (const d of tmpDirs) fs.rmSync(d, { recursive: true, force: true });
 }

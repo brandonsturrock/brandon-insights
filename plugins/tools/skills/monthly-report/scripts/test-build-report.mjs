@@ -131,6 +131,30 @@ assert.equal(typeof emptyData.monthLabel, "string");
   assert.doesNotMatch(empty, /NaN|undefined/);
 }
 
+// cm-prev-month.json (optional): month-over-month KPIs and table
+{
+  const mdir = makeDataDir({
+    "cm-daily-device": { records: [{ day: day("2026-10-01"), "device.type": "desktop", sessions: 1100 }] },
+    "cm-device-compare": { records: [
+      { device_type: "desktop", sessions: 800, page_loads: 1000, lcp_p75: 2200, inp_p75: 150, cls_p75: 500 },
+      { device_type: "mobile", sessions: 300, page_loads: 1000, lcp_p75: 3000, inp_p75: 250, cls_p75: 900 },
+    ] },
+  });
+  assert.equal(buildCurrentMonthData(mdir).kpis[0].change, null); // no previous month: no badge
+  assert.doesNotMatch(renderTables(buildCurrentMonthData(mdir)), /Month over Month/);
+  fs.writeFileSync(path.join(mdir, "cm-prev-month.json"), JSON.stringify({ ok: true, result: { kind: "records", records: [
+    { device_type: "desktop", sessions: 900, page_loads: 1000, lcp_p75: 2000, inp_p75: 140, cls_p75: 400 },
+    { device_type: "mobile", sessions: 100, page_loads: 1000, lcp_p75: 2400, inp_p75: 200, cls_p75: 600 },
+  ] } }));
+  const m = buildCurrentMonthData(mdir);
+  assert.equal(m.kpis[0].change, 10); // sessions 1,000 -> 1,100
+  const mt = renderTables(m);
+  assert.match(mt, /^### Month over Month \(September 2026 → October 2026\)$/m);
+  assert.match(mt, /^Sessions \| 1,000 \| 1,100 \| \+10\.0%$/m);
+  assert.match(mt, /^LCP p75 \| 2\.20s \| 2\.60s \| \+18\.2%$/m); // page-load-weighted blend
+  assert.match(mt, /^Mobile share \| 10\.0% \| 27\.3% \| \+17\.3 pts$/m);
+}
+
 // The review bar (autosave / Create PDF / Rewrite) replaces the old Downloads "Save changes" bar
 {
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "cm-html-"));
