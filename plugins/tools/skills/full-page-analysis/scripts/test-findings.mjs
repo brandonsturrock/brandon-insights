@@ -71,6 +71,14 @@ assert.ok(!ids({
 // LCP over 2500ms fires
 assert.ok(ids({ ...base, cwv: { ...base.cwv, lcpP75: 3000 } }).includes("slow-lcp"));
 
+// slow-lcp names the largest LCP part at p75; a null part is skipped, not read as 0
+{
+  const f = computeFindings({ ...base, cwv: { ...base.cwv, lcpP75: 3000 },
+    lcpParts: { ttfbP75: 450, loadDelayP75: 2546, loadDurationP75: null, renderDelayP75: 450 } })
+    .find((x) => x.id === "slow-lcp");
+  assert.match(f.evidence, /Largest LCP part at p75: resource load delay \(2546ms\)\./);
+}
+
 // INP over 200ms fires
 assert.ok(ids({ ...base, cwv: { ...base.cwv, inpP75: 300 } }).includes("slow-inp"));
 
@@ -124,6 +132,15 @@ assert.ok(ids({
               exceptionTotal: 90, http4xxTotal: 9, http5xxTotal: 1 },
   }).find((x) => x.id === "errors");
   assert.equal(e.severity, "medium");
+}
+
+// a stylesheet blocking on every Chromium request fires even when non-Chromium
+// requests (null render_blocking_status) are the majority of all requests
+{
+  const r = { path: "/a.css", domain: "example.com", initiatorType: "link",
+              loads: 900, requests: 900, durationP75: 60, transferP75: 20000, blocking: 300, failures: 0 };
+  assert.ok(ids({ ...base, resources: [{ ...r, blockingKnown: 300 }] }).includes("render-blocking"));
+  assert.ok(!ids({ ...base, resources: [r] }).includes("render-blocking")); // stale data dir: old denominator
 }
 
 console.log("test-findings: all assertions passed");

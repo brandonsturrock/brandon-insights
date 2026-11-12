@@ -7,10 +7,16 @@ fetch user.events, from: {{.timeframe}}
     loads = count(),
     loads_with_any_error = countIf(toLong(error.exception_count) > 0
                                 or toLong(error.http_4xx_count) > 0
-                                or toLong(error.http_5xx_count) > 0),
+                                or toLong(error.http_5xx_count) > 0
+                                or toLong(error.http_other_count) > 0
+                                or toLong(error.csp_violation_count) > 0),
     loads_with_exception = countIf(toLong(error.exception_count) > 0),
     loads_with_4xx = countIf(toLong(error.http_4xx_count) > 0),
     loads_with_5xx = countIf(toLong(error.http_5xx_count) > 0),
+    loads_with_http_other = countIf(toLong(error.http_other_count) > 0),
+    loads_with_csp = countIf(toLong(error.csp_violation_count) > 0),
     exception_total = sum(toLong(error.exception_count)),
     http_4xx_total = sum(toLong(error.http_4xx_count)),
-    http_5xx_total = sum(toLong(error.http_5xx_count))
+    http_5xx_total = sum(toLong(error.http_5xx_count)),
+    http_other_total = sum(toLong(error.http_other_count)),
+    csp_total = sum(toLong(error.csp_violation_count))

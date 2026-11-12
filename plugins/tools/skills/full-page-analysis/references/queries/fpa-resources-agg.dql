@@ -11,14 +11,19 @@ fetch user.events, from: {{.timeframe}}
     | filter page.detected_name == "{{.page}}"
     | summarize count(), by: {user_action.instance_id}
   ], on: {user_action.instance_id}, prefix: "nav."
+// A navigation entry's duration runs to loadEventEnd; the document itself is done at responseEnd.
+| fieldsAdd dur = if(performance.initiator_type == "navigation" and isNotNull(performance.response_end),
+                     toLong(performance.response_end) - coalesce(toLong(performance.start_time), 0),
+                     else: toLong(duration))
 | summarize
     loads = countDistinctExact(user_action.instance_id),
     requests = count(),
-    duration_p50 = percentile(toLong(duration), 50) / 1000000,
-    duration_p75 = percentile(toLong(duration), 75) / 1000000,
-    duration_p95 = percentile(toLong(duration), 95) / 1000000,
+    duration_p50 = percentile(dur, 50) / 1000000,
+    duration_p75 = percentile(dur, 75) / 1000000,
+    duration_p95 = percentile(dur, 95) / 1000000,
     transfer_p75 = percentile(toLong(performance.transfer_size), 75),
     blocking = countIf(performance.render_blocking_status == "blocking"),
+    blocking_known = countIf(isNotNull(performance.render_blocking_status)),
     failures = countIf(characteristics.has_failed_request == true),
     by: {url.path, url.domain, performance.initiator_type}
 | sort loads desc

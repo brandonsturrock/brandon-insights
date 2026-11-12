@@ -293,6 +293,17 @@
   .legend-line { width: 2px; height: 10px; }
 
   .lcp-status { margin-top: var(--dt-space-16); display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+  .lcp-bar { display: flex; height: 20px; border-radius: 3px; overflow: hidden; margin: 4px 0 8px; }
+  .lcp-bar span { display: block; min-width: 2px; }
+  .lcp-key { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: var(--wf-text-small); color: var(--text-subdued); margin-bottom: var(--dt-space-16); }
+  .lcp-key i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  .lcp-key b { color: var(--text-default); font-weight: 600; }
+  .lcp-sub { font-size: var(--wf-text-micro); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--text-subdued); margin: var(--dt-space-16) 0 8px; }
+  .xpath { font-family: var(--dt-font-mono); font-size: var(--wf-text-small); word-break: break-all; }
+  .print-only { display: none; }
+  .agg-table .path.lcp-el { display: inline-block; min-width: 240px; white-space: normal; word-break: break-all; }
+  /* The example action's resource URL is too long for a grid cell; give it the row. */
+  #lcp-sample-slot .report-context > div:nth-child(3) { grid-column: 1 / -1; }
   .lcp-url { font-family: var(--dt-font-mono); word-break: break-all; color: var(--text-subdued); }
 
   .warn-banner {
@@ -543,26 +554,25 @@
   .exec-body[contenteditable="true"]:focus { outline: 1px dashed var(--dt-primary); outline-offset: 4px; }
 
   /* ── Print ─────────────────────────────────────────────────────────
-     The HTML report is for exploring; the PDF is what a stakeholder gets.
-     The screen canvas is already light (Strato light theme), so print
-     needs no colour inversion — what it needs is: no panel split across a
-     page boundary, no horizontally-scrolling container silently clipping
-     instead of reflowing, and the waterfall (single-load supporting
-     evidence, not the report's headline) kept short enough to not run to
-     several pages.
-
-     The screen canvas is dark. Browsers do not print background colours by
-     default but they do print text colour, so a dark report printed as-is
-     would put #ebecff body text on white paper — and forcing the dark
-     backgrounds through with print-color-adjust would flood the page with
-     ink instead. Neither is acceptable, so print re-declares the same Strato
-     roles at their LIGHT values. That is one block at the top of the ramp;
-     every semantic alias and color-mix below it re-derives automatically,
-     because nothing under :root holds a raw colour of its own. Values are
-     the light variants of the identical roles, read from the same package
-     (styles/variables.css). */
+     The PDF carries everything the HTML shows, in the same dark theme, so
+     the HTML structure is untouched and print only reformats:
+     - backgrounds are forced on (print-color-adjust), and page margins are 0
+       with the spacing on body instead, cloned onto every page, because
+       Chrome paints @page margins white whatever the root background;
+     - the full waterfall moves to the end of the document (body becomes a
+       flex column so `order` can move it without touching the DOM);
+     - text the screen shortens with "…" prints in full from the title
+       attribute that already holds it;
+     - hover-only controls and tooltips are dropped.
+     `build-report.mjs --print-theme light` sets data-print-theme="light" on
+     <html>, which swaps the Strato roles to their light values below. */
   @media print {
-    :root {
+    @page { margin: 0; }
+    html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background: var(--bg-page); }
+    body { padding: 8mm; box-decoration-break: clone; -webkit-box-decoration-break: clone;
+           display: flex; flex-direction: column; }
+    body > * { flex-shrink: 0; }
+    :root[data-print-theme="light"] {
       --dt-bg-base:             #f9f9fa; /* Colors.Background.Base.Default (light) */
       --dt-bg-container:        #f2f2f5; /* Colors.Background.Container.Neutral.Default (light) */
       --dt-bg-container-subtle: #f9f9fa; /* Colors.Background.Container.Neutral.Subdued (light) */
@@ -574,67 +584,116 @@
       --dt-success:             #2d6761; /* Colors.Text.Success.Default (light) */
       --dt-primary:             #464cce; /* Colors.Text.Primary.Default (light) */
     }
-    body { padding: 0; }
-    .panel { break-inside: avoid; page-break-inside: avoid; }
-    /* `break-inside: avoid` on .panel only holds while the whole panel fits
-       on one page. The resource tables run to 20 rows with multi-line
-       wrapped domains/paths (see the .agg-table .path rule below) and are
-       routinely taller than a page, so the panel itself still splits — but
-       without this rule the browser was free to split *inside* a table row,
-       cutting a cell's text at the page edge rather than between rows. */
-    .agg-table tr { break-inside: avoid; page-break-inside: avoid; }
-    /* A tile split across a page break loses either its verdict or its scale,
-       and each is small enough to always fit whole. */
-    .metric-tile { break-inside: avoid; page-break-inside: avoid; }
-
-    /* overflow-x:auto clips rather than reflows when printed. Every
-       .table-scroll wrapper (Core Web Vitals, slowest/heaviest resources,
-       third-party, browser/device) must be allowed to reflow instead. */
+    /* ── Condensed PDF ──
+       The PDF is a summary a stakeholder reads in a few pages, with the full
+       waterfall as an appendix. Print keeps every section but trims each:
+       fewer table rows and columns, truncated paths and findings evidence
+       clamped to two lines, so each section fits whole on a page. The HTML
+       stays the full report. */
+    .print-only { display: inline; }
+    .scr-only { display: none; }
+    .report-header { padding-bottom: 8px; margin-bottom: 12px; }
+    .doc-title { margin-bottom: 12px; }
+    /* No section splits across pages; the waterfall appendix is the only exception. */
+    .panel { padding: 12px 14px; margin-bottom: 10px; break-inside: avoid; page-break-inside: avoid; }
+    #waterfall-panel { break-inside: auto; page-break-inside: auto; }
+    .panel h2 { font-size: 16px; margin-bottom: 8px; break-after: avoid; page-break-after: avoid; }
+    .panel-note { margin: -4px 0 8px; }
+    /* Headings, notes and sub-labels travel with what follows them. */
+    .panel > h2, .panel-note, .lcp-sub { break-inside: avoid; break-after: avoid; page-break-after: avoid; }
+    .agg-table thead { break-after: avoid; }
+    .panel-pair { margin-bottom: 10px; }
+    .panel-pair .panel { margin-bottom: 0; }
+    .agg-table tr, .metric-tile, .finding-row, .exec-body li { break-inside: avoid; page-break-inside: avoid; }
     .table-scroll { overflow-x: visible; }
-    /* Long resource/domain paths are nowrap on screen so the column stays
-       scannable; on paper that is exactly what would run past the page
-       edge and get cut. Let paths wrap instead of overflowing. */
-    .agg-table .path { white-space: normal; word-break: break-all; }
+    .finding-evidence, .exec-body { max-width: none; }
 
-    /* Coverage column: `.cov`'s 190px min-width (driven by `.cov-track`,
-       the bar) is the widest thing inside `.table-scroll` and the most
-       likely to force horizontal overflow. The bar is decoration — the
-       percentage, the "N of M loads" text and the "rare" chip are the
-       actual coverage information and all live in `.cov-text`/`.chip`,
-       neither of which is touched here. Drop the bar, let the column
-       shrink to its text, and the signal survives to paper. */
-    .cov { min-width: 0; gap: 4px; }
-    .cov-track { display: none; }
+    /* Experience metrics: all five tiles in one row. */
+    .metric-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+    .metric-grid .metric-tile { padding: 10px; }
+    .metric-grid .mt-value { font-size: 22px; white-space: nowrap; }
+    .metric-grid .mt-bounds, .metric-grid .mt-tail { font-size: 9px; white-space: nowrap; gap: 4px; }
+
+    /* LCP: the example action's URL on one line, no element path, top 5 resources. */
+    #lcp-sample-slot > .xpath { display: none; }
+    #lcp-sample-slot .report-context { margin-bottom: 8px; }
+    #lcp-sample-slot .report-context dd .xpath { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* The most-common-resources table stays in the HTML; the PDF keeps the
+       LCP section to page one. */
+    #lcp-elements-slot { display: none; }
+    /* One row of facts: LCP, element, size, updates, then the URL. */
+    #lcp-sample-slot .report-context { grid-template-columns: repeat(4, max-content) minmax(0, 1fr); gap: 4px 24px; }
+    #lcp-sample-slot .report-context > div:nth-child(3) { grid-column: 5; grid-row: 1; min-width: 0; }
+    #lcp-panel .metrics-row .metric-tile { padding: 8px 10px; }
+
+    /* Findings: title plus two lines of evidence; the HTML has the rest. */
+    .finding-evidence { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+    .finding-row { padding-top: 6px; padding-bottom: 6px; }
+    /* Page layout. Each page's sections are stretched to the page height
+       (Letter, 279.4mm, less 8mm body padding top and bottom, with 3mm
+       slack so rounding never spills onto a blank page) and their rows are
+       spread evenly, so pages end flush instead of trailing off. min-height,
+       not height: a longer report grows rather than clips. */
+    #notes-panel .exec-body { font-size: 12px; line-height: 1.45; }
+
+    /* Page 2: findings and analyst notes. The grid stretches both rows to fill. */
+    .panel-pair { break-before: page; min-height: calc(260mm - 10px); }
+    #findings-panel, #notes-panel { display: flex; flex-direction: column; }
+    #computed-findings { flex: 1; display: flex; flex-direction: column; justify-content: space-evenly; }
+    #notes-panel .exec-body { flex: 1; display: flex; flex-direction: column; }
+    #notes-panel .exec-body ul { flex: 1; display: flex; flex-direction: column; justify-content: space-evenly; margin: 0; }
+    #notes-panel .exec-body li { margin: 0; }
+
+    /* Page 3: slowest and heaviest resources, half a page each; the tables
+       share out the extra height across their rows. */
+    #slowest-panel { break-before: page; }
+    #slowest-panel, #heaviest-panel { min-height: calc((260mm - 20px) / 2); display: flex; flex-direction: column; }
+    #slowest-slot, #heaviest-slot { flex: 1; display: flex; flex-direction: column; }
+    #slowest-slot .agg-table, #heaviest-slot .agg-table { flex: 1; }
+
+    /* Page 4: third parties, long tasks and errors, browsers. */
+    #thirdparty-panel { break-before: page; }
+
+    /* Supporting tables: 8 rows, one-line truncated paths, fewer columns. */
+    .agg-table td { padding: 3px 5px; }
+    .agg-table th { padding: 0 5px 4px; }
+    .agg-table th, .agg-table th.num { white-space: normal; }
+    .agg-table .path { display: inline-block; max-width: 230px; white-space: nowrap; overflow: hidden;
+                       text-overflow: ellipsis; vertical-align: bottom; }
+    .agg-table .chip { white-space: nowrap; }
+    .cov { min-width: 0; gap: 6px; }
+    .cov-track { min-width: 48px; }
     .cov-label { flex: 0 1 auto; }
+    #slowest-slot tbody tr:nth-child(n+9), #heaviest-slot tbody tr:nth-child(n+9),
+    #browserdevice-slot tbody tr:nth-child(n+7) { display: none; }
+    /* p50 and p95: the p75 column carries the verdict. */
+    #slowest-slot :is(th, td):is(:nth-child(5), :nth-child(7)),
+    #heaviest-slot :is(th, td):is(:nth-child(5), :nth-child(7)) { display: none; }
+    /* Third parties: drop the rare rows, keep 8, drop the raw request count. */
+    #thirdparty-slot tbody tr:has(.chip.rare) { display: none; }
+    #thirdparty-slot tbody tr:not(:has(.chip.rare)) ~ tr:not(:has(.chip.rare)) ~ tr:not(:has(.chip.rare)) ~ tr:not(:has(.chip.rare)) ~ tr:not(:has(.chip.rare)) ~ tr:not(:has(.chip.rare)) ~ tr:not(:has(.chip.rare)) ~ tr:not(:has(.chip.rare)) ~ tr { display: none; }
+    #thirdparty-slot :is(th, td):nth-child(3) { display: none; }
+    /* Errors: the rates, not the raw totals; the top 5 exceptions. */
+    #errors-slot > .metrics-row > :nth-child(n+7) { display: none; }
+    #errors-slot tbody tr:nth-child(n+4) { display: none; }
+    .metrics-row { gap: 6px; margin-bottom: 6px; }
+    #mainthread-panel .metric-tile { padding: 6px 10px; }
+    #mainthread-panel .metric-tile .value { font-size: 15px; }
 
-    /* The waterfall's controls, tooltips and sticky phase-pill overlay are
-       interactive-only (hover state, scroll-relative positioning) and
-       carry nothing on a fixed printed page. */
+    /* Hover-only: controls, tooltips and the sticky phase-pill overlay. */
     #controls-slot, #tooltip, #line-tooltip, #ex-tooltip, .sticky-pills { display: none !important; }
-    /* Each row is marked wf-row-print-clip by the row builder itself for
-       rows past the first 20 in the order the viewer had selected
-       (chronological or grouped-by-type) — not an nth-child guess, since
-       #waterfall-slot's children mix section headers and overlay divs in
-       with the actual rows and a positional selector can't tell them apart
-       reliably. #waterfall-panel.wf-clipped is set by the same script only
-       when there are more than 20 rows, so the note below is silent when
-       the full waterfall already fits. */
-    .wf-row-print-clip { display: none; }
-    /* Long-task duration labels are absolutely positioned by percent of the
-       timeline and can center past the 100% mark for a task near the very
-       end of the load. On screen the page background just absorbs the
-       overhang; on paper the page edge cuts a label mid-digit, and
-       `overflow: hidden` on the slot does not help — the label's own
-       positioned ancestor (ltLabelWrap) is what needs clipping, and giving
-       that a hard width would fight the same percent-based layout that
-       causes the overhang. The pink long-task highlight bands inside the
-       waterfall itself (`.waterfall` already clips via `overflow: hidden`)
-       carry the same information visually; drop only the redundant ms text. */
+
+    /* The full waterfall, every row, as the appendix on its own pages. */
+    #waterfall-panel { order: 1; break-before: page; }
+    .wf-row, .wf-section-header { break-inside: avoid; page-break-inside: avoid; }
+    /* Long-task labels can centre past the timeline's end, where the page
+       edge cuts them; the pink bands carry the same information. */
     #longtask-labels-slot { display: none; }
-    #waterfall-panel.wf-clipped::after {
-      content: "Waterfall clipped to the first 20 rows (in the order shown) for print. See the HTML report for the full interactive view.";
-      display: block; margin-top: 8px; font-size: var(--wf-text-small); color: var(--text-subdued);
-    }
+    /* Marker lines and long-task bands are positioned over the whole
+       waterfall. Across pages Chrome sizes them without the per-page body
+       padding, so they stop short; overshoot, and .waterfall's
+       overflow:hidden trims them at its real bottom. */
+    .waterfall .wf-overlay { bottom: -60mm; }
   }
 </style>
 </head>
@@ -674,6 +733,13 @@
      a single real timeline to ground it, then the recommendations, and only
      then the per-resource tables. Every figure here is cross-session except the
      waterfall panel, which is a single load and says so in its own note. -->
+<!-- Written by the analyst alongside the notes (## Executive summary). The
+     build drops this whole panel when the section is absent. -->
+<section class="panel" id="summary-panel">
+  <h2>Executive summary</h2>
+  <div class="exec-body">{{EXEC_SUMMARY}}</div>
+</section>
+
 <section class="panel" id="experience-panel">
   <!-- "Page experience metrics", not "Core Web Vitals": three of the five
        (LCP, INP, CLS) are Core Web Vitals, but FCP and TTFB are not, and
@@ -682,6 +748,14 @@
   <h2>Page experience metrics</h2>
   <p class="panel-note" id="experience-note"></p>
   <div id="experience-slot"></div>
+</section>
+
+<section class="panel" id="lcp-panel">
+  <h2>Largest contentful paint</h2>
+  <p class="panel-note" id="lcp-note"></p>
+  <div id="lcp-parts-slot"></div>
+  <div id="lcp-sample-slot"></div>
+  <div class="table-scroll" id="lcp-elements-slot"></div>
 </section>
 
 <section class="panel" id="waterfall-panel">
@@ -842,9 +916,25 @@ const resourceLabel = (req) => {
   const t = resolveType(req);
   return RESOURCE_LABELS[t] || (t.slice(0, 4) || "Other");
 };
-const isCacheLike = (r) => r.incompleteReason === "local_cache" ||
-  (r.transferSize !== null && r.transferSize === 0) ||
-  (r.deliveryType != null && r.deliveryType.toLowerCase().includes("cache"));
+// transferSize 0 means either a cache hit or a cross-origin response without
+// Timing-Allow-Origin, which zeroes the sizes too. A cache hit still exposes its
+// body size; a restricted response does not — that is what tells them apart.
+// "cache" | "restricted" | "network"
+const transferKind = (r) => {
+  if (r.incompleteReason === "local_cache" || (r.deliveryType || "").toLowerCase() === "cache") return "cache";
+  if (r.transferSize === 0) return r.decodedBodySize > 0 ? "cache" : "restricted";
+  if (r.incompleteReason === "cache_or_cors") return "restricted";
+  return "network";
+};
+const isCacheLike = (r) => transferKind(r) !== "network";
+// Reasons that make a request's timings untrustworthy, as the warning says it.
+// cache_or_cors / local_cache are not here: those are covered by transferKind.
+const TIMING_WARNINGS = {
+  invalid_timings: "Invalid timings",
+  late_aborted: "Aborted late — timings incomplete",
+  page_dismissal: "Page left before the request finished",
+};
+const timingWarning = (r) => (r.incompleteReason && TIMING_WARNINGS[r.incompleteReason]) || null;
 
 // ─── Phase markers ────────────────────────────────────────────────────
 const ttfbPositionMs = summary.ttfbMs ?? null;
@@ -955,8 +1045,8 @@ document.getElementById("page-title").textContent = summary.pageTitle || summary
 document.getElementById("page-subtitle").textContent = summary.pageUrl || "";
 
 const navRequest = requests.find((r) => r.performanceInitiatorType === "navigation" || resolveType(r) === "navigation" || resolveType(r) === "document");
-if (navRequest && navRequest.incompleteReason && !isCacheLike(navRequest)) {
-  document.getElementById("warn-banner-slot").appendChild(el("div", "warn-banner", "Invalid Timings"));
+if (navRequest && timingWarning(navRequest)) {
+  document.getElementById("warn-banner-slot").appendChild(el("div", "warn-banner", escHtml(timingWarning(navRequest))));
 }
 
 // ─── Metrics panel (static) ─────────────────────────────────────────────
@@ -1092,7 +1182,11 @@ function buildResourceTooltipHtml(req, relativeStartMs) {
 
   html += `<tr><td colspan="3" style="padding-top:2px"></td></tr>`;
   html += sectionHd("Transfer");
-  html += `<tr class="tt-row"><td class="tt-swatch-cell"></td><td class="k">Cached</td><td class="v" style="color:${cached ? "var(--good)" : "var(--critical)"}">${cached ? (req.incompleteReason === "local_cache" ? "local cache" : "yes") : "no"}</td></tr>`;
+  const kind = transferKind(req);
+  const cachedText = kind === "restricted" ? "unknown — cross-origin, sizes hidden"
+    : kind === "cache" ? (req.incompleteReason === "local_cache" ? "local cache" : "yes") : "no";
+  const cachedColor = kind === "restricted" ? "var(--text-disabled)" : cached ? "var(--good)" : "var(--critical)";
+  html += `<tr class="tt-row"><td class="tt-swatch-cell"></td><td class="k">Cached</td><td class="v" style="color:${cachedColor}">${escHtml(cachedText)}</td></tr>`;
   if (isCompressed && req.encodedBodySize != null && req.decodedBodySize != null) {
     html += row("Compression", `${Math.round((1 - req.encodedBodySize / req.decodedBodySize) * 100)}%`);
   }
@@ -1226,9 +1320,11 @@ function renderWaterfall() {
     ? (action.endAbsoluteMs ?? action.startAbsoluteMs + action.durationMs) - resourceOriginMs
     : 0;
 
+  // Phase markers count toward the axis too: an LCP that lands after the last
+  // request and the action end would otherwise be filtered out below, silently.
   const maxMs = Math.max(
     ...requests.map((r) => r.endAbsoluteMs - resourceOriginMs),
-    ttfbPositionMs ?? 0,
+    ...buildPhaseMarkers().map((m) => m.valueMs),
     actionEndRelMs,
     500
   ) * 1.02;
@@ -1332,7 +1428,7 @@ function renderWaterfall() {
     const exOverlay = el("div", "wf-overlay");
     exOverlay.style.left = LEFT_OFFSET + "px";
     exOverlay.style.top = "0";
-    exOverlay.style.zIndex = "8";
+    exOverlay.style.zIndex = "11"; // above .col-timeline-hd (10) so the header X is hoverable
     exOverlay.style.pointerEvents = "none";
     for (const ex of visibleExceptions) {
       const leftPct = (ex.relativeMs / maxMs) * 100;
@@ -1406,10 +1502,10 @@ function renderWaterfall() {
 
     const labelCell = el("div", "cell-label");
     labelCell.title = `${req.urlDomain}${url}`;
-    if (req.incompleteReason && !isCacheLike(req)) {
+    if (timingWarning(req)) {
       const warnIcon = el("span", "small", "⚠");
       warnIcon.style.color = "var(--warning)";
-      warnIcon.title = "Invalid timings";
+      warnIcon.title = timingWarning(req);
       labelCell.appendChild(warnIcon);
     }
     labelCell.appendChild(el("span", "url" + (isErrored ? " err" : ""), escHtml(url)));
@@ -1582,7 +1678,7 @@ function renderWaterfall() {
     lcpStatus.appendChild(el("span", "lcp-url small", lcpUrl));
   } else {
     const msg = summary.lcpMs != null
-      ? (summary.lcpElementType ? `no URL — element type is "${summary.lcpElementType}" (likely a text node)` : "lcp.element.url not populated in page summary")
+      ? (summary.lcpElementType ? `no URL — element type is "${summary.lcpElementType}" (likely a text node)` : "lcp.url not reported for this load")
       : "no LCP recorded for this page instance";
     const s = el("span", "small", msg);
     s.style.color = "var(--text-disabled)";
@@ -1819,6 +1915,9 @@ function metricTile(row, c) {
       `<span>poor &gt; ${escHtml(row.fmt(t.poor))}</span></div>` +
     `<div class="mt-tail"><span>p50 <b>${fmt(p50, row.fmt)}</b></span>` +
       `<span>p95 <b>${fmt(p95, row.fmt)}</b></span></div>` +
+    // Each metric has its own sample: not every load reports every metric, and
+    // INP comes from a different event type than the other four.
+    (c[row.key + "N"] != null ? `<div class="mt-tail"><span>n <b>${fmtInt(c[row.key + "N"])}</b></span></div>` : "") +
     `</article>`;
 }
 
@@ -1826,7 +1925,9 @@ function renderCwv() {
   const c = DATA.cwv;
   document.getElementById("experience-note").innerHTML = c.loads == null
     ? "No page summaries returned for this page."
-    : `Percentiles across <strong>${Math.round(c.loads).toLocaleString()}</strong> page loads. ` +
+    : `Percentiles over <strong>${Math.round(c.loads).toLocaleString()}</strong> page loads. ` +
+      `LCP, FCP, CLS and TTFB are as reported by the page-load user action; INP is from the page summary, ` +
+      `which covers the whole visit. <strong>n</strong> is the loads that reported each metric. ` +
       `Each tile is scaled to its own thresholds, so the zone boundaries line up across all five. ` +
       `p75 is the assessed figure; LCP, INP and CLS are the three Core Web Vitals.`;
   if (c.loads == null) {
@@ -1835,6 +1936,73 @@ function renderCwv() {
   }
   setSlot("experience-slot",
     `<div class="metric-grid">${CWV_ROWS.map((r) => metricTile(r, c)).join("")}</div>`);
+}
+
+// ─── 1b. LCP breakdown ───────────────────────────────────────────────
+// The four parts add up to LCP on any one load; their p75s across loads do not,
+// so the page-wide row is tiles and only the sampled load gets a stacked bar.
+// Colours match the TTFB / FP / FCP / LCP markers on the waterfall.
+const LCP_PART_DEFS = [
+  { key: "ttfb", label: "TTFB", color: "#358F66", what: "server response" },
+  { key: "loadDelay", label: "Resource load delay", color: "#B87C25", what: "TTFB until the LCP resource is requested" },
+  { key: "loadDuration", label: "Resource load duration", color: "#3F6FBF", what: "fetching the LCP resource" },
+  { key: "renderDelay", label: "Element render delay", color: "#AF5285", what: "until the element paints" },
+];
+const xpathText = (xp) => (xp && xp.length ? xp.join(" › ") : null);
+const xpathTail = (xp, n = 3) => (xp && xp.length ? (xp.length > n ? "… › " : "") + xp.slice(-n).join(" › ") : null);
+
+function renderLcp() {
+  const p = DATA.lcpParts || {}, d = summary.lcpDetail;
+  const note = document.getElementById("lcp-note");
+  if (p.n == null && !d) {
+    note.textContent = "";
+    setSlot("lcp-parts-slot", emptyNote("No LCP breakdown was returned for this page."));
+    return;
+  }
+  note.innerHTML = `LCP split into the four parts that add up to it on each load. Page-wide figures are p75 over ` +
+    `<strong>${fmtInt(p.n)}</strong> loads that reported LCP and TTFB; the parts' p75s do not add up to the LCP p75. ` +
+    `The two resource parts cover image LCPs only — text has no resource to fetch.`;
+  setSlot("lcp-parts-slot", `<div class="metrics-row">` +
+    rateTile("LCP element is an image", p.imageN, p.n, "loads") +
+    LCP_PART_DEFS.map((x) => tile(x.label, fmt(p[x.key + "P75"], formatMs), `p75 · ${x.what}`)).join("") +
+    `</div>`);
+
+  let sample = "";
+  if (d) {
+    const parts = LCP_PART_DEFS.map((x) => ({ ...x, v: d.parts[x.key] })).filter((x) => x.v != null && x.v > 0);
+    sample = `<div class="lcp-sub">This action</div>` +
+      (parts.length
+        ? `<div class="lcp-bar">${parts.map((x) => `<span style="flex:${x.v} 0 0;background:${x.color}" title="${escHtml(x.label + " " + formatMs(x.v))}"></span>`).join("")}</div>` +
+          `<div class="lcp-key">${parts.map((x) => `<span><i style="background:${x.color}"></i>${escHtml(x.label)} <b>${escHtml(formatMs(x.v))}</b></span>`).join("")}</div>`
+        : "") +
+      `<dl class="report-context">` + [
+        ["LCP", fmt(summary.lcpMs, formatMs)],
+        ["Element", summary.lcpElementType ? `&lt;${escHtml(summary.lcpElementType.toLowerCase())}&gt;` : NIL],
+        ["Resource", summary.lcpElementUrl ? `<span class="xpath">${escHtml(summary.lcpElementUrl)}</span>` : "none — text"],
+        ["Size", d.sizePx != null ? `${fmtInt(d.sizePx)} px²` : NIL],
+        ["LCP updates", fmtInt(d.updateCount)],
+      ].map(([k, v]) => `<div><dt>${escHtml(k)}</dt><dd>${v}</dd></div>`).join("") + `</dl>` +
+      (d.xpath ? `<div class="xpath">${escHtml(xpathText(d.xpath))}</div>` : "");
+  }
+  setSlot("lcp-sample-slot", sample);
+
+  const rows = DATA.lcpElements || [];
+  // Text LCPs have no resource and are listed by element path instead.
+  const noun = rows.every((r) => r.url) ? "resource" : "element";
+  setSlot("lcp-elements-slot", !rows.length ? "" : `<div class="lcp-sub">Most common LCP ${noun}s</div>` + aggTable([
+    { label: noun[0].toUpperCase() + noun.slice(1), cell: (r) => {
+        const full = r.url || xpathText(r.xpath) || "—";
+        const shown = r.url ? r.url.replace(/^https?:\/\/[^/]+/, "") : (xpathTail(r.xpath) || "—");
+        // Keep the end: on long CMS paths the filename is the part that identifies the image.
+        return `<span class="path lcp-el" title="${escHtml(full)}">${escHtml(shown.length > 60 ? "…" + shown.slice(-59) : shown)}</span>`;
+      } },
+    { label: "Kind", cell: (r) => (r.url ? "image" : "text") + (r.tag ? ` &lt;${escHtml(r.tag.toLowerCase())}&gt;` : "") },
+    { label: "Share of loads", cell: (r) => coverageCell(r.loads, DATA.cwv.lcpN, false) },
+    { label: "LCP p75", num: true, cls: "lead", cell: (r) => ratingCell(r.lcpP75, "lcp", formatMs) },
+    { label: "Load delay p75", num: true, cell: (r) => fmt(r.loadDelayP75, formatMs) },
+    { label: "Load duration p75", num: true, cell: (r) => fmt(r.loadDurationP75, formatMs) },
+    { label: "Render delay p75", num: true, cell: (r) => fmt(r.renderDelayP75, formatMs) },
+  ], rows));
 }
 
 // ─── 2 & 3. Slowest and heaviest resources ────────────────────────────
@@ -1853,6 +2021,9 @@ const RESOURCE_COLS = [
   { label: "p95", num: true, cell: (r) => fmt(r.durationP95, formatMs) },
   { label: "Transfer p75", num: true, cell: (r) => fmt(r.transferP75, formatBytes) },
 ];
+// The PDF shows fewer rows than the screen (see the print stylesheet), so the
+// count in each note carries both and print swaps which one shows.
+const TOP_N = `<span class="scr-only">20</span><span class="print-only">8</span>`;
 // Nulls sort last in both directions — an unreported figure is not a small one.
 const byDesc = (field) => (a, b) =>
   (b[field] == null ? -Infinity : b[field]) - (a[field] == null ? -Infinity : a[field]);
@@ -1872,33 +2043,27 @@ function renderResourceTable(slotId, noteId, field, blurb) {
 }
 
 // ─── 4. Third parties ─────────────────────────────────────────────────
+// Rows are third party by url.provider, the RUM agent's own classification
+// (fpa-thirdparty-agg.dql) — the report trusts it rather than second-guessing
+// it against the sampled page's hostname, so the table does not depend on the
+// instance summary being present.
 function renderThirdParty() {
-  let origin = null;
-  try { origin = new URL(summary.pageUrl).hostname; } catch { /* pageUrl may be a path */ }
   const note = document.getElementById("thirdparty-note");
-  // Without an origin, "third party" cannot be told apart from "first party" —
-  // mirrors computeFindings' suppression of slow-third-party in findings.mjs:
-  // an empty note beats a table where the filter matches everything, including
-  // the page's own domain.
-  if (!origin) {
-    note.textContent = "";
-    setSlot("thirdparty-slot", emptyNote("Third-party domains could not be determined because the page's own URL was not available (instance summary missing)."));
-    return;
-  }
-  const rows = DATA.thirdParty.filter((r) => r.domain && r.domain !== origin).sort(byDesc("transferP75"));
+  const rows = DATA.thirdParty.filter((r) => r.domain).sort(byDesc("transferP75"));
   if (!rows.length) {
     note.textContent = "";
-    setSlot("thirdparty-slot", emptyNote(`No requests to domains other than ${origin} were recorded for this page.`));
+    setSlot("thirdparty-slot", emptyNote("No third-party requests were recorded for this page."));
     return;
   }
-  note.innerHTML = `${rows.length} domain${rows.length > 1 ? "s" : ""} other than ` +
-    `<strong>${escHtml(origin)}</strong>, by transfer size.`;
+  note.innerHTML = `${rows.length} third-party domain${rows.length > 1 ? "s" : ""}, by transfer size. ` +
+    `<strong>Request time per load</strong> sums the domain's requests on each load; parallel requests overlap, ` +
+    `so it is time spent fetching, not time added to the page load.`;
   setSlot("thirdparty-slot", aggTable([
     { label: "Domain", cell: (r) => `<span class="path">${escHtml(r.domain)}</span>` },
     { label: "Present in", cell: (r) => coverageCell(r.loads, DATA.loadCount, true) },
     { label: "Requests", num: true, cell: (r) => fmtInt(r.requests) },
     { label: "Per load", num: true, cell: (r) => (r.loads ? (r.requests / r.loads).toFixed(1) : NIL) },
-    { label: "Total per load p75", num: true, cls: "lead", cell: (r) => fmt(r.durationP75, formatMs) },
+    { label: "Request time per load p75", num: true, cls: "lead", cell: (r) => fmt(r.durationP75, formatMs) },
     { label: "Transfer p75", num: true, cell: (r) => fmt(r.transferP75, formatBytes) },
   ], rows));
 }
@@ -1935,10 +2100,21 @@ function renderMainThread() {
     rateTile("Loads with a JS exception", er.loadsWithException, er.loads, "loads") +
     rateTile("Loads with a 4xx", er.loadsWith4xx, er.loads, "loads") +
     rateTile("Loads with a 5xx", er.loadsWith5xx, er.loads, "loads") +
+    rateTile("Loads with another failed request", er.loadsWithHttpOther, er.loads, "loads") +
+    rateTile("Loads with a CSP violation", er.loadsWithCsp, er.loads, "loads") +
     tile("Exceptions", fmtInt(er.exceptionTotal), "total across all loads") +
     tile("4xx responses", fmtInt(er.http4xxTotal), "total across all loads") +
     tile("5xx responses", fmtInt(er.http5xxTotal), "total across all loads") +
-    `</div>`);
+    tile("Other failed requests", fmtInt(er.httpOtherTotal), "total across all loads") +
+    tile("CSP violations", fmtInt(er.cspTotal), "total across all loads") +
+    `</div>` +
+    // One bug often appears as several rows: each browser words the message differently.
+    ((DATA.topExceptions || []).length ? `<div class="lcp-sub">Most common exceptions</div><div class="table-scroll">` + aggTable([
+      { label: "Exception", cell: (r) => `<span class="path lcp-el" title="${escHtml(r.message || "")}">${escHtml(truncate(r.message || "—", 90))}</span>` },
+      { label: "Type", cell: (r) => escHtml(r.type || "—") },
+      { label: "Loads affected", cell: (r) => coverageCell(r.loads, er.loads, true) },
+      { label: "Occurrences", num: true, cell: (r) => fmtInt(r.occurrences) },
+    ], DATA.topExceptions) + `</div>` : ""));
 }
 
 // ─── 6. Browser and device ────────────────────────────────────────────
@@ -2018,12 +2194,17 @@ function renderWaterfallContext() {
     : null;
   contextGrid("waterfall-context", [
     ["Captured", escHtml(captured || "—")],
+    ...(action && action.name ? [["Action", escHtml(action.name)]] : []),
     ["Browser", escHtml([summary.browserName, summary.browserVersion].filter(Boolean).join(" ") || "—")],
     ["Platform", escHtml([summary.osName, summary.deviceType].filter(Boolean).join(" · ") || "—")],
     // The session id is deliberately not shown: 34 opaque characters, and
     // nothing a reader uses by eye. It is in the href instead, which is the
     // one thing it is actually good for.
     ["Action instance", sessionViewerLink(uaId)],
+    // Only when it did not simply complete: a timed-out or abandoned action
+    // stretches the axis to its end, and this is what explains that.
+    ...(action && action.completeReason && action.completeReason !== "completed"
+      ? [["Action ended", escHtml(action.completeReason.replace(/_/g, " "))]] : []),
   ]);
 }
 
@@ -2032,8 +2213,9 @@ function renderAggregates() {
   renderSkipped();
   renderFindings();
   renderCwv();
-  renderResourceTable("slowest-slot", "slowest-note", "durationP75", "Top 20 by p75 duration.");
-  renderResourceTable("heaviest-slot", "heaviest-note", "transferP75", "Top 20 by p75 transfer size.");
+  renderLcp();
+  renderResourceTable("slowest-slot", "slowest-note", "durationP75", `Top ${TOP_N} by p75 duration.`);
+  renderResourceTable("heaviest-slot", "heaviest-note", "transferP75", `Top ${TOP_N} by p75 transfer size.`);
   renderThirdParty();
   renderMainThread();
   renderBrowserDevice();

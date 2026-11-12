@@ -1,0 +1,11 @@
+// The exceptions behind the error rate. One bug often shows up as several rows,
+// one per browser's wording of the same message.
+fetch user.events, from: {{.timeframe}}
+| filter frontend.name == "{{.frontend}}"
+| filter page.detected_name == "{{.page}}"
+| filter characteristics.has_exception == true
+| filter dt.rum.user_type == "real_user"
+| summarize occurrences = count(), loads = countDistinctExact(view.instance_id),
+    by: {exception.type, exception.message}
+| sort loads desc
+| limit 10

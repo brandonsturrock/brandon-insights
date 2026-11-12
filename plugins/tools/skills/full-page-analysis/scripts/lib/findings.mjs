@@ -49,13 +49,25 @@ export const THRESHOLDS = {
 const num = (v) => (typeof v === "number" && !Number.isNaN(v) ? v : null);
 const pct = (n, d) => (d ? Math.round((n / d) * 100) : 0);
 
+// Names the LCP part with the largest p75 — the one to work on first. p75s of
+// the parts do not sum to the LCP p75, so no shares are given.
+const LCP_PARTS = [["ttfbP75", "TTFB"], ["loadDelayP75", "resource load delay"],
+  ["loadDurationP75", "resource load duration"], ["renderDelayP75", "element render delay"]];
+function lcpLargestPart(parts) {
+  const top = LCP_PARTS.map(([k, label]) => [label, num(parts?.[k])])
+    .filter(([, v]) => v != null).sort((x, y) => y[1] - x[1])[0];
+  return top ? ` Largest LCP part at p75: ${top[0]} (${Math.round(top[1])}ms).` : "";
+}
+
 export function computeFindings(data) {
   const out = [];
   // Three different populations, three different denominators. Mixing them
   // produces ratios above 1 and silently wrong percentages.
   const cwvLoads = num(data.cwv?.loads) || 0;        // page-summary events
   const pageLoads = num(data.loadCount) || 0;        // distinct hard navigations
-  const loads = cwvLoads;                            // CWV rules only
+  // Each CWV metric has its own sample (LCP/FCP/CLS/TTFB from hard-navigation
+  // user actions, INP from page summaries), so evidence cites that metric's n.
+  const nFor = (key) => num(data.cwv?.[key + "N"]) ?? cwvLoads;
 
   // Evidence strings are read by a person, in prose, so counts carry thousands
   // separators — "29,829 loads" is read at a glance where "29829 loads" has to
@@ -71,7 +83,7 @@ export function computeFindings(data) {
       id: "slow-ttfb",
       severity: ttfb > THRESHOLDS.ttfb.poor ? "high" : "medium",
       title: "Slow time to first byte",
-      evidence: `TTFB p75 is ${Math.round(ttfb)}ms across ${n(loads)} loads. Phases at p75 — DNS ${Math.round(num(p.dnsP75) ?? 0)}ms, connect ${Math.round(num(p.connectionP75) ?? 0)}ms, waiting ${Math.round(num(p.waitingP75) ?? 0)}ms, request ${Math.round(num(p.requestP75) ?? 0)}ms.`,
+      evidence: `TTFB p75 is ${Math.round(ttfb)}ms across ${n(nFor("ttfb"))} loads. Phases at p75 — DNS ${Math.round(num(p.dnsP75) ?? 0)}ms, connect ${Math.round(num(p.connectionP75) ?? 0)}ms, waiting ${Math.round(num(p.waitingP75) ?? 0)}ms, request ${Math.round(num(p.requestP75) ?? 0)}ms.`,
     });
   }
 
@@ -83,8 +95,9 @@ export function computeFindings(data) {
       id: "slow-lcp",
       severity: lcp > THRESHOLDS.lcp.poor ? "high" : "medium",
       title: "LCP above the good threshold",
-      evidence: `LCP p75 is ${Math.round(lcp)}ms across ${n(loads)} loads (good is under ${THRESHOLDS.lcp.good}ms).` +
-        (el ? ` LCP element in the sampled load was <${el.toLowerCase()}>${url ? ` (${url})` : ""}.` : ""),
+      evidence: `LCP p75 is ${Math.round(lcp)}ms across ${n(nFor("lcp"))} loads (good is under ${THRESHOLDS.lcp.good}ms).` +
+        (el ? ` LCP element in the example action was <${el.toLowerCase()}>${url ? ` (${url})` : ""}.` : "") +
+        lcpLargestPart(data.lcpParts),
     });
   }
 
@@ -94,7 +107,7 @@ export function computeFindings(data) {
       id: "slow-inp",
       severity: inp > THRESHOLDS.inp.poor ? "high" : "medium",
       title: "Interaction latency above the good threshold",
-      evidence: `INP p75 is ${Math.round(inp)}ms across ${n(loads)} loads (good is under ${THRESHOLDS.inp.good}ms).`,
+      evidence: `INP p75 is ${Math.round(inp)}ms across ${n(nFor("inp"))} loads (good is under ${THRESHOLDS.inp.good}ms).`,
     });
   }
 
@@ -104,7 +117,7 @@ export function computeFindings(data) {
       id: "layout-shift",
       severity: cls > THRESHOLDS.cls.poor ? "high" : "medium",
       title: "Cumulative layout shift above the good threshold",
-      evidence: `CLS p75 is ${cls.toFixed(3)} across ${n(loads)} loads (good is under ${THRESHOLDS.cls.good}).`,
+      evidence: `CLS p75 is ${cls.toFixed(3)} across ${n(nFor("cls"))} loads (good is under ${THRESHOLDS.cls.good}).`,
     });
   }
 
@@ -120,7 +133,13 @@ export function computeFindings(data) {
   // takes 60ms or 600ms, and the fix (preload/self-host/font-display) is the
   // same either way. A duration floor made that invisible; duration instead
   // scales severity below.
-  const isBlocker = (r) => r.requests > 0 && r.blocking / r.requests >= THRESHOLDS.prevalence.widespread && prevalent(r);
+  //
+  // The share is over requests that reported a render_blocking_status at all.
+  // Only Chromium reports it, so dividing by every request let Safari/Firefox
+  // traffic dilute a stylesheet that blocks on every Chrome load below the gate.
+  // Falls back to all requests for a data dir built before blocking_known.
+  const blockDenom = (r) => num(r.blockingKnown) ?? r.requests;
+  const isBlocker = (r) => blockDenom(r) > 0 && r.blocking / blockDenom(r) >= THRESHOLDS.prevalence.widespread && prevalent(r);
   const blockers = (data.resources || [])
     .filter(isBlocker)
     .sort((a, b) => (num(b.durationP75) ?? 0) - (num(a.durationP75) ?? 0));
@@ -132,7 +151,7 @@ export function computeFindings(data) {
       severity: worstDuration >= THRESHOLDS.resourceSlowMs ? "high" : "medium",
       title: "Render-blocking resources on most loads",
       evidence: `${plural(blockers.length, "render-blocking resource")} block${blockers.length === 1 ? "s" : ""} on at least ${Math.round(THRESHOLDS.prevalence.widespread * 100)}% of their own requests. Worst: ` +
-        top.map((r) => `${r.domain}${r.path} (blocks on ${n(r.blocking)} of ${n(r.requests)} requests across ${pct(r.loads, pageLoads)}% of loads, p75 ${Math.round(num(r.durationP75) ?? 0)}ms)`).join("; ") + ".",
+        top.map((r) => `${r.domain}${r.path} (blocks on ${n(r.blocking)} of ${n(blockDenom(r))} requests across ${pct(r.loads, pageLoads)}% of loads, p75 ${Math.round(num(r.durationP75) ?? 0)}ms)`).join("; ") + ".",
     });
   }
 
@@ -150,10 +169,10 @@ export function computeFindings(data) {
   }
 
   // First-party rows are excluded upstream: fpa-thirdparty-agg.dql filters on
-  // `url.provider == "third_party"`, the RUM agent's own classification, so
-  // every row here is already third-party by definition. The `d.domain` guard
-  // stays as a cheap defence against a stale data directory built before that
-  // filter existed. Gate on prevalence too: `thirdParty[].loads` exists for
+  // `url.provider == "third_party"`, the RUM agent's own classification, which
+  // the report trusts. `durationP75` is the p75 of each load's *summed* request
+  // time on the domain — parallel requests overlap, so it is not wall-clock time
+  // and the evidence says so. Gate on prevalence too: `thirdParty[].loads` exists for
   // exactly this, and a domain hit on 3 of 77,000 loads is noise, not a
   // page-wide dependency.
   const thirdParty = (data.thirdParty || [])
@@ -166,7 +185,7 @@ export function computeFindings(data) {
       severity: "medium",
       title: "Slow third-party domains",
       evidence: thirdParty.slice(0, 5)
-        .map((d) => `${d.domain} (p75 total per load ${Math.round(num(d.durationP75) ?? 0)}ms, ${n(d.loads)} of ${n(pageLoads)} loads)`)
+        .map((d) => `${d.domain} (p75 summed request time per load ${Math.round(num(d.durationP75) ?? 0)}ms, ${n(d.loads)} of ${n(pageLoads)} loads)`)
         .join("; ") + ".",
     });
   }
@@ -197,7 +216,7 @@ export function computeFindings(data) {
       id: "errors",
       severity: (num(err.loadsWith5xx) ?? 0) / errLoads > THRESHOLDS.error5xxShare ? "high" : "medium",
       title: "Errors on a meaningful share of loads",
-      evidence: `${pct(failing, errLoads)}% of ${n(errLoads)} loads had at least one error — ${pct(num(err.loadsWithException) ?? 0, errLoads)}% a JS exception, ${pct(num(err.loadsWith4xx) ?? 0, errLoads)}% a 4xx, ${pct(num(err.loadsWith5xx) ?? 0, errLoads)}% a 5xx.`,
+      evidence: `${pct(failing, errLoads)}% of ${n(errLoads)} loads had at least one error — ${pct(num(err.loadsWithException) ?? 0, errLoads)}% a JS exception, ${pct(num(err.loadsWith4xx) ?? 0, errLoads)}% a 4xx, ${pct(num(err.loadsWith5xx) ?? 0, errLoads)}% a 5xx, ${pct(num(err.loadsWithHttpOther) ?? 0, errLoads)}% another failed request, ${pct(num(err.loadsWithCsp) ?? 0, errLoads)}% a CSP violation.`,
     });
   }
 

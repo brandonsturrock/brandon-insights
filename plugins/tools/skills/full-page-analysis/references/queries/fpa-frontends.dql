@@ -1,6 +1,11 @@
-fetch user.events, from: {{.timeframe}}
+// Sampled: this only ranks frontends for a picker, and an unsampled scan of every
+// frontend's events hits the 500 GB scan limit on large tenants. Counts are
+// scaled back up, so they are approximate; frontends under ~100 hard
+// navigations in the window can drop out.
+fetch user.events, from: {{.timeframe}}, samplingRatio: 100
 | filter isNotNull(frontend.name)
-| summarize hard_navs = countIf(user_action.type == "hard_navigation"), by: {frontend.name}
+| filter dt.rum.user_type == "real_user"
+| summarize hard_navs = countIf(user_action.type == "hard_navigation") * 100, by: {frontend.name}
 | filter hard_navs > 0
 | sort hard_navs desc
 | limit 30

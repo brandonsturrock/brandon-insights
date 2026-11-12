@@ -4,13 +4,38 @@ fetch user.events, from: {{.timeframe}}
 | filter characteristics.has_user_action == true
 | filter user_action.type == "hard_navigation"
 | filter browser.name == "{{.browser}}"
+| filter dt.rum.user_type == "real_user"
+| filterOut user_action.complete_reason == "timeout"
 | filter lcp.status == "reported"
-| fieldsAdd lcp_ms = toLong(lcp.render_time)
+| fieldsAdd lcp_ms = toDouble(coalesce(lcp.render_time, lcp.start_time))
 | filter lcp_ms >= {{.low_bound}} AND lcp_ms <= {{.high_bound}}
-| fields user_action.instance_id, view.instance_id, dt.rum.session.id, lcp_ms,
-         lcp.url, lcp.ui_element.tag_name,
-         ttfb.value, browser.name, browser.version,
-         device.type, os.name, timestamp
+| fieldsAdd lcp_kind = if(isNotNull(lcp.url), "image", else: "text"),
+            lcp_key = coalesce(lcp.url, toString(lcp.ui_element.xpath), "unknown")
+| fields user_action.instance_id, view.instance_id, dt.rum.session.id, lcp_ms, lcp_kind, lcp_key
+// How common this load's LCP kind (image/text) and LCP element are across the
+// page (all browsers), so the pick shows the typical LCP, not just a typical time.
+| join [
+    fetch user.events, from: {{.timeframe}}
+    | filter frontend.name == "{{.frontend}}"
+    | filter page.detected_name == "{{.page}}"
+    | filter characteristics.has_user_action == true
+    | filter user_action.type == "hard_navigation"
+    | filter dt.rum.user_type == "real_user"
+    | filter lcp.status == "reported"
+    | fieldsAdd lcp_kind = if(isNotNull(lcp.url), "image", else: "text")
+    | summarize loads = count(), by: {lcp_kind}
+  ], on: {lcp_kind}, prefix: "kind."
+| join [
+    fetch user.events, from: {{.timeframe}}
+    | filter frontend.name == "{{.frontend}}"
+    | filter page.detected_name == "{{.page}}"
+    | filter characteristics.has_user_action == true
+    | filter user_action.type == "hard_navigation"
+    | filter dt.rum.user_type == "real_user"
+    | filter lcp.status == "reported"
+    | fieldsAdd lcp_key = coalesce(lcp.url, toString(lcp.ui_element.xpath), "unknown")
+    | summarize loads = count(), by: {lcp_key}
+  ], on: {lcp_key}, prefix: "element."
 | join [
     fetch user.events, from: {{.timeframe}}
     | filter frontend.name == "{{.frontend}}"
@@ -29,5 +54,8 @@ fetch user.events, from: {{.timeframe}}
                 by: {user_action.instance_id, dt.rum.session.id}
     | filter navs > 0 AND bad_navs == 0
   ], on: {user_action.instance_id, dt.rum.session.id}, prefix: "requests."
-| sort lcp_ms asc
+| fieldsAdd p75_distance = abs(lcp_ms - {{.p75}})
+// Most common LCP kind first, then most common element, then closest to p75 —
+// every candidate is already within the p75 window.
+| sort kind.loads desc, element.loads desc, p75_distance asc
 | limit 1

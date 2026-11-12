@@ -20,9 +20,6 @@ assert.equal(out.summary.performanceTimeOriginMs, Date.parse("2026-08-01T10:00:0
 assert.equal(out.summary.lcpMs, 2400);
 assert.equal(out.summary.fcpMs, 900);
 
-// a "not_reported" status yields null, never 0
-assert.equal(out.summary.inpMs, null);
-
 // ttfb phase fields pass through as plain numbers
 assert.equal(out.summary.ttfbMs, 420);
 assert.equal(out.summary.ttfbDnsMs, 12);
@@ -83,5 +80,33 @@ assert.equal(real.requests[0].domContentLoadedEventStartNs, 1259500000);
 assert.equal(real.requests[0].domContentLoadedEventEndNs, 1314399993);
 assert.equal(real.requests[0].loadEventStartNs, 1437799987);
 assert.equal(real.requests[0].loadEventEndNs, 1439099990);
+
+// The hard-navigation action's own vitals (ms) win over the page summary's
+// where the action reported them; an unreported one leaves the summary value.
+{
+  const withAction = normalizeRaw({ ...raw, action: {
+    "lcp.status": "reported", "lcp.render_time": 1800.5, "lcp.url": "https://example.com/hero.jpg", "lcp.ui_element.tag_name": "IMG",
+    "fcp.status": "not_reported", "fcp.value": 1,
+    "ttfb.status": "reported", "ttfb.value": 300,
+    "lcp.resource.load_delay": 500, "lcp.resource.load_duration": 700,
+    "lcp.ui_element.xpath": ["html", "body", "img"], "lcp.size": "18480",
+  } });
+  assert.equal(withAction.summary.lcpMs, 1800.5);
+  assert.equal(withAction.summary.lcpElementType, "IMG");
+  assert.equal(withAction.summary.fcpMs, 900); // action FCP not reported: page summary kept
+  // no render_delay reported: it is the remainder, so the four parts sum to LCP
+  assert.deepEqual(withAction.summary.lcpDetail.parts, { ttfb: 300, loadDelay: 500, loadDuration: 700, renderDelay: 300.5 });
+  assert.deepEqual(withAction.summary.lcpDetail.xpath, ["html", "body", "img"]);
+  assert.equal(withAction.summary.lcpDetail.sizePx, 18480);
+  // no render_time: falls back to start_time
+  const noRender = normalizeRaw({ ...raw, action: { "lcp.status": "reported", "lcp.start_time": 1500 } });
+  assert.equal(noRender.summary.lcpMs, 1500);
+}
+
+// a non-"reported" status nulls the value even when a number is present
+{
+  const bg = normalizeRaw({ ...raw, summary: { ...raw.summary, "lcp.status": "backgrounded" } });
+  assert.equal(bg.summary.lcpMs, null);
+}
 
 console.log("test-normalize: all assertions passed");

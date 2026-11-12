@@ -12,6 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { normalizeRaw } from "./lib/normalize.mjs";
 import { THRESHOLDS, computeFindings } from "./lib/findings.mjs";
+import { buildContext } from "./lib/context.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SKILL_ROOT = path.dirname(__dirname);
@@ -38,9 +39,13 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 }
 
-// Minimal markdown -> HTML: bullet lists + plain paragraphs, nothing exotic
-// (matches what findings-prompt.md actually produces).
-function markdownToHtml(body) {
+// Minimal markdown -> HTML: bullet lists, plain paragraphs, and the two inline
+// forms findings-prompt.md allows — `code` and **bold**. Applied after
+// escaping, so neither can inject markup.
+const inline = (s) => escapeHtml(s)
+  .replace(/`([^`]+)`/g, "<code>$1</code>")
+  .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+export function markdownToHtml(body) {
   if (!body.trim()) return "";
   const lines = body.split(/\r?\n/).filter((l) => l.trim() !== "");
   let html = "";
@@ -49,10 +54,10 @@ function markdownToHtml(body) {
     const bullet = line.match(/^-\s+(.*)$/);
     if (bullet) {
       if (!inList) { html += "<ul>"; inList = true; }
-      html += `<li>${escapeHtml(bullet[1])}</li>`;
+      html += `<li>${inline(bullet[1])}</li>`;
     } else {
       if (inList) { html += "</ul>"; inList = false; }
-      html += `<p>${escapeHtml(line)}</p>`;
+      html += `<p>${inline(line)}</p>`;
     }
   }
   if (inList) html += "</ul>";
@@ -86,7 +91,12 @@ export function loadRecords(dataDir, filename) {
   const parsed = JSON.parse(fs.readFileSync(p, "utf8"));
   if (Array.isArray(parsed)) return parsed;
   const result = parsed.result ?? parsed;
-  if (result && Array.isArray(result.records)) return result.records;
+  // --agent compacts any column identical across every row into
+  // result.constant (row = constant + record). Merge it back, or a column that
+  // happens to be uniform — device.type on a desktop-only page — reads as null.
+  if (result && Array.isArray(result.records)) {
+    return result.constant ? result.records.map((r) => ({ ...result.constant, ...r })) : result.records;
+  }
   // A query that legitimately matches zero rows still comes back as
   // kind: "records" but with records: null (not []). Zero exceptions on a
   // page load is the common case, not a malformed response.
@@ -99,15 +109,17 @@ const isMain = import.meta.url === `file://${process.argv[1]}`;
 if (isMain) {
 const args = parseArgs(process.argv.slice(2));
 if (!args.data) { console.error("Missing --data <dir>"); process.exit(1); }
-// --print-findings computes the findings and prints them, nothing else, so it
-// needs neither an output path nor a page title.
-if (!args["print-findings"]) {
+// --print-findings / --print-context compute and print, nothing else, so they
+// need neither an output path nor a page title.
+if (!args["print-findings"] && !args["print-context"]) {
   if (!args.out) { console.error("Missing --out <report.html>"); process.exit(1); }
   if (!args["page-title"]) { console.error("Missing --page-title <title>"); process.exit(1); }
 }
 
+const actionRow = loadRecords(args.data, "instance-action.json")[0] || {};
 const raw = {
   summary: loadRecords(args.data, "instance-summary.json")[0] || {},
+  action: actionRow,
   requests: loadRecords(args.data, "instance-requests.json"),
   exceptions: loadRecords(args.data, "instance-exceptions.json"),
 };
@@ -133,14 +145,20 @@ const cwvRow = first(loadRecords(args.data, "cwv-percentiles.json"));
 const ttfbRow = first(loadRecords(args.data, "ttfb-phases.json"));
 const longTaskRow = first(loadRecords(args.data, "longtasks-agg.json"));
 const errorRow = first(loadRecords(args.data, "errors-agg.json"));
+const lcpPartsRow = first(loadRecords(args.data, "lcp-parts.json"));
 
 const data = {
   instance: normalizeRaw(raw),
   // Denominator for every request-scoped rule. Distinct hard-navigation loads
   // for the page — NOT the page-summary count in `cwv.loads`.
   loadCount: num(loadCountRow.loads),
+  // LCP / FCP / CLS / TTFB come from hard-navigation user actions, INP from
+  // page summaries (see fpa-cwv-percentiles.dql) — so each metric carries its
+  // own sample size, and none of them is `loads`.
   cwv: {
     loads: num(cwvRow.loads),
+    lcpN: num(cwvRow.lcp_n), fcpN: num(cwvRow.fcp_n), inpN: num(cwvRow.inp_n),
+    clsN: num(cwvRow.cls_n), ttfbN: num(cwvRow.ttfb_n),
     lcpP50: num(cwvRow.lcp_p50), lcpP75: num(cwvRow.lcp_p75), lcpP95: num(cwvRow.lcp_p95),
     fcpP50: num(cwvRow.fcp_p50), fcpP75: num(cwvRow.fcp_p75), fcpP95: num(cwvRow.fcp_p95),
     inpP50: num(cwvRow.inp_p50), inpP75: num(cwvRow.inp_p75), inpP95: num(cwvRow.inp_p95),
@@ -166,6 +184,9 @@ const data = {
     durationP95: num(r.duration_p95),
     transferP75: num(r.transfer_p75),
     blocking: num(r.blocking) ?? 0,
+    // Requests whose render_blocking_status was reported at all (Chromium only).
+    // Null in a data dir built before the field existed.
+    blockingKnown: num(r.blocking_known),
     failures: num(r.failures) ?? 0,
   })),
   thirdParty: loadRecords(args.data, "thirdparty-agg.json").map((r) => ({
@@ -187,10 +208,33 @@ const data = {
     loadsWithException: num(errorRow.loads_with_exception),
     loadsWith4xx: num(errorRow.loads_with_4xx),
     loadsWith5xx: num(errorRow.loads_with_5xx),
+    loadsWithHttpOther: num(errorRow.loads_with_http_other),
+    loadsWithCsp: num(errorRow.loads_with_csp),
     exceptionTotal: num(errorRow.exception_total),
     http4xxTotal: num(errorRow.http_4xx_total),
     http5xxTotal: num(errorRow.http_5xx_total),
+    httpOtherTotal: num(errorRow.http_other_total),
+    cspTotal: num(errorRow.csp_total),
   },
+  // Page-wide LCP parts (fpa-lcp-parts.dql) and the elements that were LCP.
+  lcpParts: {
+    n: num(lcpPartsRow.n), imageN: num(lcpPartsRow.image_n),
+    ttfbP75: num(lcpPartsRow.ttfb_p75), loadDelayP75: num(lcpPartsRow.load_delay_p75),
+    loadDurationP75: num(lcpPartsRow.load_duration_p75), renderDelayP75: num(lcpPartsRow.render_delay_p75),
+  },
+  lcpElements: loadRecords(args.data, "lcp-elements.json").map((r) => {
+    let xpath = null;
+    try { xpath = r.xpath ? JSON.parse(r.xpath) : null; } catch { /* left null: shown as unknown */ }
+    return {
+      tag: r["lcp.ui_element.tag_name"] || null, url: r["lcp.url"] || null, xpath,
+      loads: num(r.loads) ?? 0, lcpP75: num(r.lcp_p75),
+      loadDelayP75: num(r.load_delay_p75), loadDurationP75: num(r.load_duration_p75), renderDelayP75: num(r.render_delay_p75),
+    };
+  }),
+  topExceptions: loadRecords(args.data, "exceptions-top.json").map((r) => ({
+    type: r["exception.type"] || null, message: r["exception.message"] || null,
+    loads: num(r.loads) ?? 0, occurrences: num(r.occurrences) ?? 0,
+  })),
   browserDevice: loadRecords(args.data, "browser-device.json").map((r) => ({
     browser: r["browser.name"],
     device: r["device.type"],
@@ -200,7 +244,6 @@ const data = {
   thresholds: THRESHOLDS,
 };
 
-const actionRow = loadRecords(args.data, "instance-action.json")[0] || {};
 data.instance.action = {
   // `id` is the user-action event's own 32-hex identifier, which the Users &
   // Sessions viewer takes as its `event` parameter to select this action inside
@@ -208,7 +251,7 @@ data.instance.action = {
   // the action across the data model, this one names the event row.
   eventId: actionRow.id ?? null,
   name: actionRow["user_action.name"] ?? null,
-  type: actionRow["user_action.type"] ?? null,
+  completeReason: actionRow["user_action.complete_reason"] ?? null,
   durationMs: actionRow.duration != null ? Number(actionRow.duration) / 1e6 : null,
   startAbsoluteMs: actionRow.start_time ? Date.parse(actionRow.start_time) : null,
   endAbsoluteMs: actionRow.end_time ? Date.parse(actionRow.end_time) : null,
@@ -225,18 +268,23 @@ data.findings = computeFindings(data);
 // whole report once against a placeholder findings file, then grepping DATA out
 // of the rendered HTML, then building again. The findings are already computed
 // here, on coerced numbers, so just print them and skip the render.
-if (args["print-findings"]) {
-  console.log(JSON.stringify(data.findings, null, 2));
-  process.exit(0);
-}
 // The page's detected name, as passed on the command line. summary.pageTitle is
 // the document's own <title> ("easyTravel"), which is a different fact from the
 // page this report is about ("/") — the header shows both.
 data.page = args["page-title"] || null;
+if (args["print-findings"]) {
+  console.log(JSON.stringify(data.findings, null, 2));
+  process.exit(0);
+}
+// Everything findings-prompt.md lets the notes cite, in one compact document.
+if (args["print-context"]) {
+  console.log(JSON.stringify(buildContext(data), null, 1));
+  process.exit(0);
+}
 
-const analystNotesHtml = args.findings
-  ? markdownToHtml(extractMarkdownSection(fs.readFileSync(args.findings, "utf8"), "analyst notes"))
-  : "";
+const findingsMd = args.findings ? fs.readFileSync(args.findings, "utf8") : "";
+const analystNotesHtml = markdownToHtml(extractMarkdownSection(findingsMd, "analyst notes"));
+const execSummaryHtml = markdownToHtml(extractMarkdownSection(findingsMd, "executive summary"));
 
 const template = fs.readFileSync(path.join(SKILL_ROOT, "assets", "report.html.tmpl"), "utf8");
 const tokens = fs.readFileSync(path.join(SKILL_ROOT, "assets", "strato-tokens.css"), "utf8");
@@ -294,8 +342,16 @@ let html = template
   .split("{{STRATO_TOKENS}}").join(tokens)
   .split("{{FONT_FACES}}").join(fontFaceCss())
   .split("{{ANALYST_NOTES}}").join(analystNotesHtml)
+  .split("{{EXEC_SUMMARY}}").join(execSummaryHtml)
   .replace("{{DATA_JSON}}", () =>
     JSON.stringify(data).replace(/<\/script>/g, "<\\/script>"));
+
+// No executive summary written: drop its panel rather than show an empty card.
+if (!execSummaryHtml) html = html.replace(/<section class="panel" id="summary-panel">[\s\S]*?<\/section>\n*/, "");
+
+// The PDF prints in the report's dark theme; --print-theme light swaps the
+// print stylesheet to Strato's light roles (see the @media print block).
+if (args["print-theme"] === "light") html = html.replace('<html lang="en">', '<html lang="en" data-print-theme="light">');
 
 // Mirrors monthly-report: the analyst-notes area stays editable in the
 // browser after the file is opened, same as every other exec-body block.

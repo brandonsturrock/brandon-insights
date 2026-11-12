@@ -1,0 +1,23 @@
+// LCP split into its four parts, which sum to LCP on each load: TTFB, resource
+// load delay (TTFB to the LCP resource's request), resource load duration, and
+// element render delay. Text LCPs have no resource, so the two resource parts
+// are null there. render_delay is not reported by every agent version; the
+// remainder after the other three is the same quantity.
+fetch user.events, from: {{.timeframe}}
+| filter frontend.name == "{{.frontend}}"
+| filter page.detected_name == "{{.page}}"
+| filter characteristics.has_user_action == true
+| filter user_action.type == "hard_navigation"
+| filter dt.rum.user_type == "real_user"
+| filter lcp.status == "reported" and ttfb.status == "reported"
+| fieldsAdd lcp_ms = toDouble(coalesce(lcp.render_time, lcp.start_time)),
+            ttfb_ms = toDouble(ttfb.value),
+            ld = toDouble(lcp.resource.load_delay), ldur = toDouble(lcp.resource.load_duration)
+| fieldsAdd rd = coalesce(toDouble(lcp.ui_element.render_delay), lcp_ms - ttfb_ms - coalesce(ld, 0.0) - coalesce(ldur, 0.0))
+| summarize
+    n = count(),
+    image_n = countIf(isNotNull(lcp.url)),
+    ttfb_p75 = percentile(ttfb_ms, 75),
+    load_delay_p75 = percentile(ld, 75),
+    load_duration_p75 = percentile(ldur, 75),
+    render_delay_p75 = percentile(rd, 75)
