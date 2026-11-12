@@ -1,0 +1,23 @@
+// The elements that were LCP across loads. Images group by URL; text has no URL,
+// so it groups by element path (lcp.ui_element.xpath, an array, stringified).
+fetch user.events, from: {{.timeframe}}
+| filter frontend.name == "{{.frontend}}"
+| filter page.detected_name == "{{.page}}"
+| filter characteristics.has_user_action == true
+| filter user_action.type == "hard_navigation"
+| filter dt.rum.user_type == "real_user"
+| filter lcp.status == "reported"
+| fieldsAdd lcp_ms = toDouble(coalesce(lcp.render_time, lcp.start_time)),
+            ttfb_ms = if(ttfb.status == "reported", toDouble(ttfb.value)),
+            ld = toDouble(lcp.resource.load_delay), ldur = toDouble(lcp.resource.load_duration),
+            xpath = if(isNull(lcp.url), toString(lcp.ui_element.xpath))
+| fieldsAdd rd = coalesce(toDouble(lcp.ui_element.render_delay), lcp_ms - ttfb_ms - coalesce(ld, 0.0) - coalesce(ldur, 0.0))
+| summarize
+    loads = count(),
+    lcp_p75 = percentile(lcp_ms, 75),
+    load_delay_p75 = percentile(ld, 75),
+    load_duration_p75 = percentile(ldur, 75),
+    render_delay_p75 = percentile(rd, 75),
+    by: {lcp.ui_element.tag_name, lcp.url, xpath}
+| sort loads desc
+| limit 10

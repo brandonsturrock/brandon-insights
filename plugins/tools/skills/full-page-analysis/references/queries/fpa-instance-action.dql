@@ -1,5 +1,11 @@
 fetch user.events, from: {{.timeframe}}
 | filter user_action.instance_id == "{{.ua_instance}}"
 | filter characteristics.has_user_action == true
-| fields id, user_action.name, user_action.type, duration, start_time, end_time
+| fields id, user_action.name = coalesce(user_action.name, user_action.custom_name),
+         user_action.complete_reason,
+         duration, start_time, end_time,
+         lcp.status, lcp.render_time, lcp.start_time, lcp.url, lcp.ui_element.tag_name,
+         lcp.ui_element.xpath, lcp.size, lcp.update_count,
+         lcp.resource.load_delay, lcp.resource.load_duration, lcp.ui_element.render_delay,
+         fcp.status, fcp.value, ttfb.status, ttfb.value
 | limit 1

@@ -6,7 +6,7 @@ fetch user.events, from: {{.timeframe}}
 | filter dt.rum.user_type == "real_user"
 | filter lcp.status == "reported"
 | summarize
-    p50_lcp = percentile(toLong(lcp.render_time), 50),
-    p75_lcp = percentile(toLong(lcp.render_time), 75),
-    p95_lcp = percentile(toLong(lcp.render_time), 95),
+    p50_lcp = percentile(toDouble(coalesce(lcp.render_time, lcp.start_time)), 50),
+    p75_lcp = percentile(toDouble(coalesce(lcp.render_time, lcp.start_time)), 75),
+    p95_lcp = percentile(toDouble(coalesce(lcp.render_time, lcp.start_time)), 95),
     hard_navs = count()

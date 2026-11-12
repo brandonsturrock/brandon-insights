@@ -2,6 +2,7 @@ fetch user.events, from: {{.timeframe}}
 | filter frontend.name == "{{.frontend}}"
 | filter characteristics.has_user_action == true
 | filter user_action.type == "hard_navigation"
+| filter dt.rum.user_type == "real_user"
 | filter lcp.status == "reported"
 | summarize hard_navs = count(), by: {page.detected_name}
 | filterOut isNull(page.detected_name)

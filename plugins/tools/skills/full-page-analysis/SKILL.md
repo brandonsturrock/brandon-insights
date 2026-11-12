@@ -32,7 +32,7 @@ Emit exactly one line when each of these completes, and no other prose:
 | Application chosen | `Application: FRONTEND` |
 | Page chosen | `Page: PAGE (N hard navigations)` |
 | Instance selected | `Instance: UA_INSTANCE_ID — LCP Nms, p75 Nms` |
-| Queries finished | `Queried N of 12 files.` — only if some came back empty; silent otherwise |
+| Queries finished | `Queried N of 15 files.` — only if some came back empty; silent otherwise |
 | Report built | `Report: /tmp/...html` |
 | PDF written | the two `~/Downloads/` paths |
 
@@ -142,8 +142,8 @@ params to check whether the instance exists at all but is the wrong type:
 
 Set `TF` to whichever window returned results. Extract and set from the
 returned record: `VIEW_INSTANCE_ID` (`view.instance_id`), `FRONTEND`
-(`frontend.name`), `PAGE` (`page.detected_name`), and browser/device
-metadata for later use in the report.
+(`frontend.name`), `PAGE` (`page.detected_name`), and the instance LCP
+(`coalesce(lcp.render_time, lcp.start_time)`) for the "Instance selected" line.
 
 Report the one line for "Instance selected" (see **Output discipline**).
 
@@ -162,7 +162,8 @@ user pick one `frontend.name`. Show **at most 3 results at a time** plus a
 window by 3 and ask again (results 4–6 + "Show more..." if more remain, or
 the remainder without "Show more..." if ≤ 3 left). Pass options in **exactly
 the order the query returned them** (highest `hard_navs` first). Include the
-count in each option label, e.g. `"My Frontend (12,450 hard navigations)"`.
+count in each option label, e.g. `"My Frontend (~12,400 hard navigations)"`.
+The frontend counts are sampled and approximate, so prefix them with `~`.
 Set `FRONTEND`.
 
 Run `fpa-pages.dql` with `timeframe=TF`, `frontend=FRONTEND`. Same paging
@@ -187,7 +188,12 @@ Compute the selection window from `p75_lcp`:
 - `high_bound = round(p75_lcp * 1.15)`
 
 Run `fpa-select-instance.dql` with `timeframe=TF`, `frontend=FRONTEND`,
-`page=PAGE`, `browser=BROWSER`, `low_bound`, `high_bound`. The joins only
+`page=PAGE`, `browser=BROWSER`, `low_bound`, `high_bound`, `p75=p75_lcp`.
+Within that window it prefers, in order: the page's most common LCP kind
+(image or text), then its most common LCP element, then the LCP closest to
+`p75`. It is always a real-user load and never a
+timed-out action (a timeout stretches the waterfall to the timeout). A
+user-supplied instance ID (Step 1) is reported as-is, timed out or not. The joins only
 return instances that have a linked page_summary, at least one request, and a
 navigation document request that returned under 400 — no separate validation
 step needed. That last condition is what keeps error pages (a 403/500 served
@@ -215,7 +221,7 @@ dashes; use `home` if `PAGE` is `/`). Create the data directory:
 mkdir -p /tmp/fpa-SLUG
 ```
 
-Run each of the 12 queries below (the four "Instance-scoped" plus eight
+Run each of the 15 queries below (the four "Instance-scoped" plus eleven
 "Aggregate" rows in `references/queries.md` — that file is authoritative
 for parameter names and output filenames; the list here is a pointer, not a
 copy) as:
@@ -225,10 +231,10 @@ dtctl query -f <SKILL_BASE_DIR>/references/queries/<file>.dql --set <params> -o 
 ```
 
 The four instance-scoped queries take `timeframe=TF` plus `view_instance` or
-`ua_instance` as `queries.md` specifies per file. The eight aggregate
+`ua_instance` as `queries.md` specifies per file. The eleven aggregate
 queries all take `timeframe=TF`, `frontend=FRONTEND`, `page=PAGE`.
 
-Background all 12 `dtctl query` invocations with `&`, then `wait` for them
+Background all 15 `dtctl query` invocations with `&`, then `wait` for them
 all before proceeding.
 
 - `--spill=never` forces rows inline (`result.kind == "records"`). If
@@ -249,18 +255,20 @@ prose. Write the result to:
 /tmp/fpa-SLUG/findings.md
 ```
 
-The required heading is `## Analyst notes`.
+It has two headings, `## Executive summary` then `## Analyst notes`.
 
-Read the computed findings first, from the build script rather than from the
-raw query JSON — the raw counters are unparsed strings until `build-report.mjs`
-coerces them, so rules run against them by hand can disagree with the report:
+Read the context digest first. It is built by the build script rather than from
+the raw query JSON: the raw counters are unparsed strings until
+`build-report.mjs` coerces them, so anything read by hand can disagree with the
+report.
 
 ```bash
-node <SKILL_BASE_DIR>/scripts/build-report.mjs --data /tmp/fpa-SLUG --print-findings
+node <SKILL_BASE_DIR>/scripts/build-report.mjs --data /tmp/fpa-SLUG --page-title "PAGE" --print-context
 ```
 
-That prints the same `{ id, severity, title, evidence }` array the report
-embeds, and exits without rendering.
+That prints the computed findings, the page-wide aggregates, the LCP breakdown
+and the example action, and exits without rendering. `--print-findings` prints
+the findings alone.
 
 ---
 

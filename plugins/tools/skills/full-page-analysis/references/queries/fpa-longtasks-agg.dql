@@ -3,6 +3,7 @@ fetch user.events, from: {{.timeframe}}
 | filter characteristics.has_page_summary == true
 | filter dt.rum.user_type == "real_user"
 | filter page.detected_name == "{{.page}}"
+| filterOut in(long_task.status, "disabled", "not_supported")
 | summarize
     loads = count(),
     loads_with_long_tasks = countIf(toLong(long_task.all.count) > 0),
