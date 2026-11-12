@@ -185,6 +185,9 @@ export function buildTrendingData(dataDir) {
   const weeklyRows = loadRecords(dataDir, "cwv-weekly.json").filter(inWindow).sort(byWeek);
   const trafficWeeklyRows = (loadRecordsOptional(dataDir, "traffic-weekly.json") ?? []).filter(inWindow).sort(byWeek);
   const browserRows = loadRecords(dataDir, "browser-perf-monthly.json");
+  // Optional (postdates the original set): per-device weekly CWV, read only by
+  // the findings tables so a blended move can be told apart from a mix shift.
+  const weeklyDeviceRows = (loadRecordsOptional(dataDir, "cwv-weekly-device.json") ?? []).filter(inWindow).sort(byWeek);
 
   const trafficMonthly = {
     labels: metricsRows.map((r) => monthYearLabel(r.month)),
@@ -203,8 +206,13 @@ export function buildTrendingData(dataDir) {
     cls: cwvRows.map((r) => (r["Cumulative Layout Shift"] == null ? null : r["Cumulative Layout Shift"] / 10000)),
   };
 
+  const weekLabel = (w) => new Date(w).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  const cwvWeeklyByDevice = weeklyDeviceRows.map((r) => ({
+    week: weekLabel(r.week), device: r["device.type"] ? r["device.type"][0].toUpperCase() + r["device.type"].slice(1) : null,
+    lcp: absentIfZero(r.lcp), inp: absentIfZero(r.inp), cls: r.cls == null ? null : r.cls / 10000,
+  })).filter((r) => r.device);
   const cwvWeekly = {
-    labels: weeklyRows.map((r) => new Date(r.week).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })),
+    labels: weeklyRows.map((r) => weekLabel(r.week)),
     lcp: weeklyRows.map((r) => absentIfZero(r.lcp)),
     inp: weeklyRows.map((r) => absentIfZero(r.inp)),
     cls: weeklyRows.map((r) => (r.cls == null ? null : r.cls / 10000)),
@@ -280,7 +288,7 @@ export function buildTrendingData(dataDir) {
     { label: "Navigations", value: compact(last?.["Navigations"]), change: pctChange(last?.["Navigations"], prev?.["Navigations"]), lowerIsBetter: false },
   ];
 
-  return { kpis, trafficMonthly, trafficWeekly, cwvMonthly, cwvWeekly, browserPerf };
+  return { kpis, trafficMonthly, trafficWeekly, cwvMonthly, cwvWeekly, cwvWeeklyByDevice, browserPerf };
 }
 
 // ── findings tables ──────────────────────────────────────────────────────
@@ -304,6 +312,8 @@ export function renderTables(data) {
       cm.labels.map((m, i) => [m, fmtMs(cm.lcp[i]), fmtMs(cm.inp[i]), fmtCls(cm.cls[i])])),
     table("Weekly CWV p75", ["Week", "LCP", "INP", "CLS"],
       cw.labels.map((w, i) => [w, fmtMs(cw.lcp[i]), fmtMs(cw.inp[i]), fmtCls(cw.cls[i])])),
+    ...((data.cwvWeeklyByDevice || []).length ? [table("Weekly CWV p75 by Device", ["Week", "Device", "LCP", "INP", "CLS"],
+      data.cwvWeeklyByDevice.map((r) => [r.week, r.device, fmtMs(r.lcp), fmtMs(r.inp), fmtCls(r.cls)]))] : []),
     table("Browser & Device (shown panels)", ["Panel", "Month", "Visits", "LCP", "INP", "CLS"],
       browserPerf.panels.filter(Boolean).flatMap((p) =>
         p.months.map((m) => [p.label, m.label, fmtN(m.visits), fmtMs(m.lcp), fmtMs(m.inp), fmtCls(m.cls)]))),

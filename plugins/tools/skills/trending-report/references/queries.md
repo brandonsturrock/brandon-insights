@@ -16,11 +16,11 @@ Runs every `references/queries/*.dql` concurrently through `dtctl query -f <file
 
 `build-report.mjs --data <dir>` reads these exact names (`<query>.dql` -> `<query>.json`):
 
-`metrics-monthly`, `cwv-monthly`, `cwv-weekly`, `browser-perf-monthly`, `traffic-weekly` (optional: the build tolerates it being absent).
+`metrics-monthly`, `cwv-monthly`, `cwv-weekly`, `browser-perf-monthly`, `traffic-weekly`, `cwv-weekly-device` (the last two optional: the build tolerates them being absent).
 
 ## Unit conversions
 
-- All five are timeseries queries: LCP/INP already **ms**; CLS is stored **x10000**, so `build-report.mjs` divides by `10000`.
+- All six are timeseries queries: LCP/INP already **ms**; CLS is stored **x10000**, so `build-report.mjs` divides by `10000`.
 - LCP/INP of `0` = not measured (INP needs an interaction); the build turns it into null / "—". CLS `0` is a real value.
 - Thresholds: LCP good `<2500ms` / poor `>=4000ms`; INP good `<200ms` / poor `>=500ms`; CLS good `<0.1` / poor `>=0.25`.
 
@@ -30,8 +30,9 @@ Runs every `references/queries/*.dql` concurrently through `dtctl query -f <file
 - `cwv-monthly` — monthly LCP/INP/CLS p75, page-load-weighted (page 1 CWV KPI tiles, page 3 status row). Columns: `Largest Contentful Paint`, `Interaction to Next Paint`, `Cumulative Layout Shift` (x10000), `month`. ~6 rows.
 - `cwv-weekly` — weekly LCP/INP/CLS p75 (page 3 trend charts). Columns: `week`, `lcp`, `inp`, `cls` (x10000). ~26 rows.
 - `browser-perf-monthly` — monthly visits and CWV by device and browser (page 4 panels; the build keeps the top `--max-browsers`, default 6, ranked by latest-month visits). Columns: `Visits`, `Largest Contentful Paint`, `Interaction to Next Paint`, `Cumulative Layout Shift` (x10000), `device.type`, `browser.name`, `month`.
+- `cwv-weekly-device` — weekly LCP/INP/CLS p75 by `device.type`. Not charted: it feeds the `Weekly CWV p75 by Device` findings table, so a blended move can be told apart from a device-mix shift. Columns: `week`, `device.type`, `lcp`, `inp`, `cls` (x10000).
 - `traffic-weekly` — weekly traffic (page 2 weekly sessions chart; only `sessions` is plotted). Columns: `week`, `sessions`, `xhr`, `navigations`. ~26 rows, same 7d bucketing as `cwv-weekly` so the x-axes line up.
 
 ## `union: true`
 
-All five queries are multi-metric `timeseries` and set `union: true`. Without it the metrics are inner-joined on dimensions, so when one metric (e.g. INP) has no `device.type` split the query returns 0 rows and the report shows blank CWV and browser pages. Keep it on any new multi-metric `timeseries`.
+All six queries are multi-metric `timeseries` and set `union: true`. Without it the metrics are inner-joined on dimensions, so when one metric (e.g. INP) has no `device.type` split the query returns 0 rows and the report shows blank CWV and browser pages. Keep it on any new multi-metric `timeseries`.

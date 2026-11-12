@@ -161,6 +161,10 @@ export function buildCurrentMonthData(dataDir) {
   const errorCountRows = loadRecords(dataDir, "cm-error-count.json");
   const topExceptionsRows = loadRecords(dataDir, "cm-top-exceptions.json");
   const topRequestErrorsRows = loadRecords(dataDir, "cm-top-request-errors.json");
+  // Postdates the original query set: a data dir without it has no
+  // month-over-month figures rather than failing the build.
+  const prevPath = path.join(dataDir, "cm-prev-month.json");
+  const prevMonthRows = fs.existsSync(prevPath) ? loadRecords(dataDir, "cm-prev-month.json") : [];
 
   // Strip warm-up days (queries start 2d before month start to avoid timeseries
   // artifacts on day 1). The report month is the month of the newest day in the
@@ -354,15 +358,46 @@ export function buildCurrentMonthData(dataDir) {
   // three vitals as rated metric-tiles read straight off cmCwvDistribution's
   // p75 (see renderKpis). Per-KPI `color` is gone with them — it was a raw
   // hex assigned per metric rather than per state, so it said nothing.
+  // Previous month, same blend as the current month, for the KPI MoM badges
+  // and the Month over Month table the findings are written from.
+  const prevTotal = (key) => prevMonthRows.reduce((s, r) => s + (r[key] || 0), 0);
+  const prevBlended = (key) => {
+    const rows = prevMonthRows.filter((r) => absentIfZero(r[key]) != null && r.page_loads > 0);
+    const w = rows.reduce((s, r) => s + r.page_loads, 0);
+    return w > 0 ? rows.reduce((s, r) => s + r[key] * r.page_loads, 0) / w : null;
+  };
+  const prev = prevMonthRows.length ? {
+    sessions: prevTotal("sessions"), pageLoads: prevTotal("page_loads"),
+    lcpP75: prevBlended("lcp_p75"), inpP75: prevBlended("inp_p75"),
+    clsP75: prevBlended("cls_p75") == null ? null : prevBlended("cls_p75") / 10000,
+    mobileShare: prevTotal("sessions") > 0
+      ? (prevMonthRows.filter((r) => r.device_type === "mobile").reduce((s, r) => s + (r.sessions || 0), 0) / prevTotal("sessions")) * 100 : null,
+  } : null;
+  const pctChange = (cur, old) => (cur == null || !old ? null : Number((((cur - old) / old) * 100).toFixed(1)));
+
   const hasDeviceData = deviceCompareRows.length > 0;
   const kpis = [
-    { label: "Sessions", value: hasDeviceData ? compact(totalSessions) : "—", change: null, lowerIsBetter: false },
-    { label: "Page Loads", value: hasDeviceData ? compact(totalPageLoads) : "—", change: null, lowerIsBetter: false },
+    { label: "Sessions", value: hasDeviceData ? compact(totalSessions) : "—", change: prev ? pctChange(totalSessions, prev.sessions) : null, lowerIsBetter: false },
+    { label: "Page Loads", value: hasDeviceData ? compact(totalPageLoads) : "—", change: prev ? pctChange(totalPageLoads, prev.pageLoads) : null, lowerIsBetter: false },
   ];
+  const prevMonthLabel = new Date(Date.UTC(monthStartDate.getUTCFullYear(), monthStartDate.getUTCMonth() - 1, 1))
+    .toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+  const monthOverMonth = prev ? {
+    prevMonthLabel,
+    rows: [
+      ["Sessions", prev.sessions, totalSessions, "n"],
+      ["Page Loads", prev.pageLoads, totalPageLoads, "n"],
+      ["LCP p75", prev.lcpP75, blended("lcp_p75"), "ms"],
+      ["INP p75", prev.inpP75, blended("inp_p75"), "ms"],
+      ["CLS p75", prev.clsP75, blended("cls_p75") == null ? null : blended("cls_p75") / 10000, "cls"],
+      ["Mobile share", prev.mobileShare, allSessions > 0 ? (mobileSessions / allSessions) * 100 : null, "pct"],
+    ],
+  } : null;
 
   return {
     monthLabel,
     kpis,
+    monthOverMonth,
     cmDailyDevice,
     deviceCompareRows: deviceCompare,
     cmCwvTier,
@@ -393,7 +428,18 @@ export function renderTables(data) {
   const sessionCols = [["Desktop", dd.desktop], ["Mobile", dd.mobile]].filter(([, s]) => s);
   const devices = ["desktop", "mobile"].filter((d) => cwv.lcp[d]);
   const types = Object.keys(ec.byType);
+  const mom = data.monthOverMonth;
+  const momFmt = { n: fmtN, ms: fmtDur, cls: fmt3, pct: fmtPct };
+  const momDelta = (old, cur, kind) => {
+    if (old == null || cur == null) return NA;
+    if (kind === "pct") return `${cur - old >= 0 ? "+" : ""}${(cur - old).toFixed(1)} pts`;
+    if (!old) return NA;
+    const d = ((cur - old) / old) * 100;
+    return `${d >= 0 ? "+" : ""}${d.toFixed(1)}%`;
+  };
   return [
+    ...(mom ? [table(`Month over Month (${mom.prevMonthLabel} → ${monthLabel})`, ["Metric", mom.prevMonthLabel, monthLabel, "Change"],
+      mom.rows.map(([name, old, cur, kind]) => [name, momFmt[kind](old), momFmt[kind](cur), momDelta(old, cur, kind)]))] : []),
     table(`Daily Sessions (${monthLabel})`, ["Day", ...sessionCols.map(([n]) => n)],
       dd.labels.map((d, i) => [d, ...sessionCols.map(([, s]) => fmtN(s[i]))])),
     table(`Daily CWV p75 (${monthLabel})`, ["Day", "Device", "LCP", "INP", "CLS"],
