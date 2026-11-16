@@ -2,6 +2,15 @@
 
 Every version bump in `.claude-plugin/plugin.json` gets an entry here, newest first.
 
+## 2.15.0 — 2026-11-16
+
+- **full-page-analysis:** Core Web Vitals now come from the hard-navigation user action (n shown per tile); real users only; new LCP breakdown section (four LCP parts at p75, common LCP elements/resources); executive summary at the top; error counts include failed requests and CSP violations, plus top exceptions.
+- **full-page-analysis:** PDF condensed to 4 pages with a dark theme by default (`--print-theme light` for the old look); full waterfall kept as an appendix.
+- **monthly-report, trending-report:** findings rewritten as analysis instead of chart narration — ranked by visitors affected, with candidate causes and plain-language leads.
+- **monthly-report:** Sessions / Page Loads month-over-month badges now populate, with a new Month over Month findings table.
+- **trending-report:** new weekly CWV p75 by device table, so device-mix shifts can be told apart from real changes.
+- **user-journeys:** paths built from hard and soft navigations; hover/click traces only the sessions through a node or link; funnels allow detours by default (strict selectable) and split drop-off into Exited / Went elsewhere; ID-like URL segments grouped as `{id}`; live controls for steps, pages per step and hiding single-page sessions.
+
 ## 2.14.2 — 2026-11-05
 
 - Housekeeping release; no changes to available skills.
