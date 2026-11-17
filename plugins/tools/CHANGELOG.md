@@ -2,6 +2,10 @@
 
 Every version bump in `.claude-plugin/plugin.json` gets an entry here, newest first.
 
+## 2.15.1 — 2026-11-17
+
+- **monthly-report, trending-report:** Core Web Vitals trend charts no longer pin a metric to the top of the chart when it runs past twice its poor threshold (an INP of 5.5s drew as a flat line at 1.0s). Such a chart now plots the real values on a linear axis, with the good and poor lines at their real values.
+
 ## 2.15.0 — 2026-11-16
 
 - **full-page-analysis:** Core Web Vitals now come from the hard-navigation user action (n shown per tile); real users only; new LCP breakdown section (four LCP parts at p75, common LCP elements/resources); executive summary at the top; error counts include failed requests and CSP violations, plus top exceptions.
