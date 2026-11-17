@@ -1,6 +1,8 @@
 # Attaches one zip per skill to every published release, so somebody who wants
 # a single skill can download it without cloning the repo or installing the
-# plugin. Publish a release in the GitHub UI and the assets appear on it.
+# plugin, plus one zip per plugin (<plugin>-plugin.zip) for Customize > Plugins
+# > Add > Upload plugin in the Claude apps. Publish a release in the GitHub UI
+# and the assets appear on it.
 name: Release skill zips
 
 on:
@@ -20,6 +22,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # On a manual run, pack the tagged release, not whatever main holds now.
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
 
       - name: Build one zip per skill
         run: |
@@ -35,6 +40,20 @@ jobs:
             # Zip from the skills dir so the archive unpacks as <name>/,
             # ready to drop straight into ~/.claude/skills/.
             (cd "$(dirname "$skill")" && zip -qr "$GITHUB_WORKSPACE/dist/$name.zip" "$name" -x '*.DS_Store')
+            echo "packed $name"
+          done
+
+      - name: Build one zip per plugin
+        run: |
+          for plugin in plugins/*/; do
+            name="$(basename "$plugin")-plugin"
+            if [ -e "dist/$name.zip" ]; then
+              echo "::error::a skill named '$name' clashes with the plugin zip — rename the skill"
+              exit 1
+            fi
+            # Zipped from inside the plugin folder so .claude-plugin/plugin.json
+            # sits at the archive root, which is what Upload plugin looks for.
+            (cd "$plugin" && zip -qr "$GITHUB_WORKSPACE/dist/$name.zip" . -x '*.DS_Store')
             echo "packed $name"
           done
 
