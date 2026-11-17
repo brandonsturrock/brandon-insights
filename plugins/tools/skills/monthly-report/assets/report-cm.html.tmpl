@@ -1257,6 +1257,11 @@ function thresholdPos(value, t) {
   if (v <= t.poor) return 40 + 30 * ((v - t.good) / (t.poor - t.good));
   return Math.min(100, 70 + 30 * ((v - t.poor) / t.poor));
 }
+// True when any value sits past twice the poor boundary, where thresholdPos()
+// clamps at 100 and would pin the line to the chart ceiling.
+function exceedsScale(values, t) {
+  return (values || []).some(v => typeof v === "number" && v > t.poor * 2);
+}
 
 // Populate empty findings cards with a fallback message so an editable panel
 // never renders as a blank, easy-to-miss box.
@@ -1621,6 +1626,10 @@ Chart.register({
 // outlier inside the plot instead of stretching it. y is no longer a linear
 // ramp, so the ticks are the boundaries themselves. Raw values are not lost —
 // the tooltip prints the real measurement and the tiles print the p75.
+//
+// Exception: a chart whose data goes past twice the poor boundary switches to
+// a plain linear axis (linearYScale), because the clamp would flatten the
+// whole series against the ceiling and hide every value it holds.
 const ZONE_TICKS = [0, 40, 70, 100];
 function semanticSeries(values, t) {
   return (values || []).map(v => (typeof v === "number" ? thresholdPos(v, t) : null));
@@ -1637,6 +1646,17 @@ function semanticYScale(metric, printing) {
       callback: v => (atTick[v] === undefined ? "" : fmtFn(atTick[v])),
     },
     afterBuildTicks: axis => { axis.ticks = ZONE_TICKS.map(v => ({ value: v })); },
+  };
+}
+// Linear counterpart of semanticYScale(), for a chart whose data runs past
+// twice the poor boundary (see renderDailyCwv).
+function linearYScale(metric, printing) {
+  const fmtFn = metric === "cls" ? fmtCls : fmtMs;
+  return {
+    min: 0,
+    grid: { color: ctVar("grid", printing) },
+    title: { display: true, text: "linear scale", color: ctVar("axis-text", printing), font: { size: 10 } },
+    ticks: { color: ctVar("axis-text", printing), font: { size: 10 }, maxTicksLimit: 5, callback: v => fmtFn(v) },
   };
 }
 
@@ -1729,13 +1749,15 @@ function renderDailyCwv() {
     // Raw values, kept so the tooltip can report the real measurement rather
     // than the normalised position the chart actually plots.
     const raw = { Desktop: m.desktop, Mobile: m.mobile };
+    const linear = exceedsScale([...(m.desktop || []), ...(m.mobile || [])], t);
+    const plot = vals => (linear ? (vals || []).map(v => (typeof v === "number" ? v : null)) : semanticSeries(vals, t));
     mkChart(el, {
       type: "line",
       data: {
         labels: d.labels,
         datasets: [
-          { label: "Desktop", data: semanticSeries(m.desktop, t), borderColor: ctVar("series-1", PRINTING), backgroundColor: ctVar("series-1", PRINTING), borderWidth: 2, tension: 0.25, pointRadius: 0, spanGaps: true },
-          ...(m.mobile ? [{ label: "Mobile", data: semanticSeries(m.mobile, t), borderColor: ctVar("series-2", PRINTING), backgroundColor: ctVar("series-2", PRINTING), borderWidth: 2, tension: 0.25, pointRadius: 0, spanGaps: true }] : []),
+          { label: "Desktop", data: plot(m.desktop), borderColor: ctVar("series-1", PRINTING), backgroundColor: ctVar("series-1", PRINTING), borderWidth: 2, tension: 0.25, pointRadius: 0, spanGaps: true },
+          ...(m.mobile ? [{ label: "Mobile", data: plot(m.mobile), borderColor: ctVar("series-2", PRINTING), backgroundColor: ctVar("series-2", PRINTING), borderWidth: 2, tension: 0.25, pointRadius: 0, spanGaps: true }] : []),
         ],
       },
       options: {
@@ -1743,7 +1765,10 @@ function renderDailyCwv() {
         interaction: { mode: "index", intersect: false },
         plugins: {
           legend: { display: false },
-          thresholdLines: { rules: [
+          thresholdLines: { rules: linear ? [
+            { at: t.good, color: ctVar("threshold-good", PRINTING) },
+            { at: t.poor, color: ctVar("threshold-poor", PRINTING) },
+          ] : [
             { at: 40, color: ctVar("threshold-good", PRINTING) },
             { at: 70, color: ctVar("threshold-poor", PRINTING) },
           ] },
@@ -1751,7 +1776,7 @@ function renderDailyCwv() {
             label: ctx => `${ctx.dataset.label}: ${fmtFn((raw[ctx.dataset.label] || [])[ctx.dataIndex])}`,
           } },
         },
-        scales: { x: DAY_AXIS, y: semanticYScale(metric, PRINTING) },
+        scales: { x: DAY_AXIS, y: linear ? linearYScale(metric, PRINTING) : semanticYScale(metric, PRINTING) },
       },
     });
   });

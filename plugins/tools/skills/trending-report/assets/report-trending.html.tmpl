@@ -926,6 +926,11 @@ function thresholdPos(value, t) {
   if (v <= t.poor) return 40 + 30 * ((v - t.good) / (t.poor - t.good));
   return Math.min(100, 70 + 30 * ((v - t.poor) / t.poor));
 }
+// True when any value sits past twice the poor boundary, where thresholdPos()
+// clamps at 100 and would pin the line to the chart ceiling.
+function exceedsScale(values, t) {
+  return (values || []).some((v) => typeof v === "number" && v > t.poor * 2);
+}
 // Strato's status vocabulary is shape-first (circle+check / triangle+! /
 // diamond+X) so colour is never the sole carrier of a verdict. Reproduced
 // as inline SVG (currentColor) because this report ships as one
@@ -1197,20 +1202,41 @@ function baseChartOptions(yTitle, printing) {
 // what a reader actually wants to locate a point against. Raw values are not
 // lost: the tooltip prints the real measurement, and the metric tiles above
 // print the p75 figure.
+//
+// Exception: a chart whose data goes past twice the poor boundary switches to
+// a plain linear axis (see semanticScale()), because the clamp would flatten
+// the whole series against the ceiling and hide every value it holds.
 const ZONE_TICKS = [0, 40, 70, 100];
 function semanticScale(metric, series, printing) {
   const t = CWV_THRESHOLDS[metric];
   const fmt = CWV_METRICS.find((m) => m.key === metric).fmt;
+  // Chart.js hands the tooltip the plotted y; the reader needs the
+  // measurement, so it is looked back up out of the source series.
+  const rawAt = (i) => fmt((series || [])[i]);
+  // Past twice the poor boundary the clamp would draw the whole series as a
+  // flat line at the ceiling (a 5.5s INP read as "1.0s"), so that chart plots
+  // the raw values on a linear axis, with both boundaries at their real values.
+  if (exceedsScale(series, t)) {
+    return {
+      linear: true,
+      data: (series || []).map((v) => (typeof v === "number" ? v : null)),
+      tickLabel: (v) => fmt(v),
+      rawAt,
+      rules: [
+        { at: t.good, color: ctVar("threshold-good", printing) },
+        { at: t.poor, color: ctVar("threshold-poor", printing) },
+      ],
+    };
+  }
   // Tick -> the real value that position represents, so the axis reads in the
   // metric's own unit even though the spacing is semantic.
   const atTick = { 0: 0, 40: t.good, 70: t.poor, 100: t.poor * 2 };
   return {
+    linear: false,
     data: (series || []).map((v) => (typeof v === "number" ? thresholdPos(v, t) : null)),
     ticks: ZONE_TICKS,
     tickLabel: (v) => (atTick[v] === undefined ? "" : fmt(atTick[v])),
-    // Chart.js hands the tooltip the normalised y; the reader needs the
-    // measurement, so it is looked back up out of the source series.
-    rawAt: (i) => fmt((series || [])[i]),
+    rawAt,
     // Both boundaries are drawn on every chart whether or not the data goes
     // anywhere near them — "nowhere close to poor" is itself the answer the
     // page exists to give, and it only reads if the line is there to be far
@@ -1251,8 +1277,11 @@ function renderCwvWeeklyCharts(printing) {
   // read, which accent they take and which thresholds scale them.
   const build = (canvas, metric, label, seriesVar) => {
     const s = semanticScale(metric, d[metric], printing);
-    const o = baseChartOptions("vs thresholds", printing);
-    o.scales.y = Object.assign(o.scales.y, {
+    const o = baseChartOptions(s.linear ? "linear scale" : "vs thresholds", printing);
+    o.scales.y = Object.assign(o.scales.y, s.linear ? {
+      min: 0,
+      ticks: Object.assign({}, o.scales.y.ticks, { callback: (v) => s.tickLabel(v), maxTicksLimit: 5 }),
+    } : {
       min: 0, max: 100,
       ticks: Object.assign({}, o.scales.y.ticks, {
         // An explicit tick list, because the positions that matter are the
